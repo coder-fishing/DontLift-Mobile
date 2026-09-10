@@ -2,7 +2,7 @@
 
 > **Status:** APPROVED
 > **Sources:** `docs/project-brief.md` · `docs/project-context.md`
-> **Version:** 1.3.0
+> **Version:** 1.5.0
 
 ---
 
@@ -276,7 +276,49 @@ As a user, I want to configure basic app preferences so the app behaves as I exp
 | OQ-4 | Early termination vote timeout | 30 seconds; dismissed server-side on expiry, session continues. |
 | OQ-5 | Backend stack | Spring Boot + MySQL replaced by Firebase Authentication + Firestore + Cloud Functions. Realtime sync via Firestore listeners replaces WebSocket/STOMP. |
 
-## 8. Exclusions (Strict — Reject Without Approval)
+## 8. Monetization Strategy
+
+### 8.1 Revenue Model
+- **Type:** Freemium with Lifetime Premium
+- **Price:** 99,000 VNĐ (one-time purchase)
+- **Payment Method:** VietQR via external website
+- **Delivery:** Activation code via email
+
+### 8.2 Free Tier
+| Feature | Limit |
+|---------|-------|
+| Solo Focus Mode | Unlimited |
+| Group Room participants | Max 5 |
+| Rooms created/month | 7 |
+| Violation Log retention | 7 days |
+| Penalty Leaderboard | Basic |
+| Ads | Light, non-intrusive |
+
+### 8.3 Premium Features
+| Feature | Benefit |
+|---------|---------|
+| Unlimited Group Room | No participant limit |
+| Permanent Violation Log | Never lose history |
+| Advanced Leaderboard | Themes, export, insights |
+| Detailed Analytics | Charts, patterns |
+| Custom Themes | Personalization |
+| Ad-free | Clean experience |
+| Priority Support | Faster response |
+
+### 8.4 Activation Flow
+1. User visits website → pays via VietQR
+2. System generates activation code (DONTLIFT-XXXX-XXXX-XXXX)
+3. Code sent via email
+4. User enters code in app → Premium unlocked
+5. Code verified offline via checksum
+
+### 8.5 Constraints Compliance
+- ✅ No In-App Wallet
+- ✅ No payment gateway custody
+- ✅ No real funds handling in app
+- ✅ VietQR only for P2P settlement between users
+
+## 9. Exclusions (Strict — Reject Without Approval)
 
 - No payment gateway, in-app wallet, escrow, or custodial balances.
 - No Kiosk Mode, Device Administrator, forced screen lock, or OS lockdown.
@@ -288,7 +330,7 @@ As a user, I want to configure basic app preferences so the app behaves as I exp
 
 ---
 
-## 9. Phased Scope
+## 10. Phased Scope
 
 | Phase | Scope |
 |-------|-------|

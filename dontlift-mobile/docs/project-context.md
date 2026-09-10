@@ -92,6 +92,50 @@
 
 ## 5. Source Hierarchy
 
-1. **Newer human-approved decisions** (highest priority).
+1. **Newer human-approved decisions** (highest priority; includes Freemium + Lifetime Premium Monetization Strategy).
 2. **Approved Project Brief** (`docs/project-brief.md`).
 3. **AI technical recommendations / proposals** (lowest priority).
+
+---
+
+## 6. Monetization Strategy
+
+### 6.1 Revenue Model
+- **Type:** Freemium with Lifetime Premium
+- **Price:** 99,000 VNĐ (one-time purchase)
+- **Payment Method:** VietQR via external website
+- **Delivery:** Activation code via email
+
+### 6.2 Free Tier
+| Feature | Limit |
+|---------|-------|
+| Solo Focus Mode | Unlimited |
+| Group Room participants | Max 5 |
+| Rooms created/month | 7 |
+| Violation Log retention | 7 days |
+| Penalty Leaderboard | Basic |
+| Ads | Light, non-intrusive |
+
+### 6.3 Premium Features
+| Feature | Benefit |
+|---------|---------|
+| Unlimited Group Room | No participant limit |
+| Permanent Violation Log | Never lose history |
+| Advanced Leaderboard | Themes, export, insights |
+| Detailed Analytics | Charts, patterns |
+| Custom Themes | Personalization |
+| Ad-free | Clean experience |
+| Priority Support | Faster response |
+
+### 6.4 Activation Flow
+1. User visits website → pays via VietQR
+2. System generates activation code (DONTLIFT-XXXX-XXXX-XXXX)
+3. Code sent via email
+4. User enters code in app → Premium unlocked
+5. Code verified offline via checksum
+
+### 6.5 Constraints Compliance
+- ✅ No In-App Wallet
+- ✅ No payment gateway custody
+- ✅ No real funds handling in app
+- ✅ VietQR only for P2P settlement between users
