@@ -355,7 +355,7 @@ As a user who purchased Premium, I want to enter my activation code so I can unl
 | Phase | Scope |
 |-------|-------|
 | **MVP** | Auth, Solo Focus Mode, Phone-Down Detection, Group Room (create/join/lobby/active/end), Early Exit, Early Termination, Penalty Leaderboard, Bill Entry, Bill Breakdown, VietQR, Session History, Profile, Settings |
-| **Post-MVP (v1.1)** | Configurable penalty weights per room, extended session history analytics |
+│ **Post-MVP (v1.1)** │ Social Login (Google/Facebook/Apple), Configurable penalty weights per room, extended session history analytics │
 | **Post-MVP (v2.0)** | Additional gamification modes — to be defined after MVP validation |
 
 ---
