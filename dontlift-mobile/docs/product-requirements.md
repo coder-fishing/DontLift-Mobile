@@ -2,7 +2,7 @@
 
 > **Status:** APPROVED
 > **Sources:** `docs/project-brief.md` · `docs/project-context.md`
-> **Version:** 1.5.0
+> **Version:** 1.6.0
 
 ---
 
@@ -101,6 +101,7 @@ As a Host, I want to create a room so participants can join and I can manage the
 - Room is created with a unique 4-digit PIN and scannable QR code.
 - Room transitions: `CREATED → WAITING` on creation.
 - Host identity is stored in Firestore and cannot be changed mid-session.
+- If Host is on Free tier and has reached the limit of 7 created rooms in the current calendar month, room creation is blocked with a clear prompt to upgrade to Premium.
 
 **US-07 — Join Room (Member)**
 As a Member, I want to join a room via PIN or QR code so I can participate in a group session.
@@ -109,7 +110,7 @@ As a Member, I want to join a room via PIN or QR code so I can participate in a 
 - Valid PIN or QR code resolves to the correct room in `WAITING` state and adds the member.
 - Invalid or expired PIN returns a clear error without exposing room internals.
 - Joining is idempotent: scanning the QR twice does not duplicate membership.
-
+- If the room Host is on Free tier and participant count reaches 5, additional members are blocked from joining with a clear error indicating the room size limit for Free Hosts.
 **US-08 — Room Lobby**
 As any participant, I want to see who is in the room before the session starts so I can confirm the group is ready.
 
@@ -169,11 +170,12 @@ As a Host, I want to enter the total bill amount so the app can calculate each m
 As any participant, I want to see the calculated breakdown so I know exactly what each person owes.
 
 *Acceptance Criteria:*
-- Each member's share is calculated by a Firestore Cloud Function using the approved penalty-weighted formula.
+- Each member's share is calculated by default using a penalty-weighted formula computed via a Firestore Cloud Function.
+- The Host may optionally override default penalty weights by manually assigning percentage or absolute VND penalty amounts per member; the remaining bill balance is split equally among non-penalized members.
 - Shares are rounded to the nearest 1,000 VND with deterministic rounding adjustment such that SUM(Member Shares) = Total Bill exactly.
 - Members with 0 violations receive a valid non-zero base share.
-- Early Exit members participate in bill allocation using the same penalty-weighted formula as regular members, based on their Penalty Score frozen at exit time. A member with zero violations at exit pays a normal equal base share identical to any non-penalized member.
-- Bill breakdown is read-only; no client-side recalculation is trusted.
+- Early Exit members participate in bill allocation using the same formula (automated penalty weight or Host override) based on their Penalty Score frozen at exit time. A member with zero violations at exit pays a normal equal base share identical to any non-penalized member.
+- Bill breakdown is read-only for Members; only the Host can trigger calculation or override adjustments.
 
 **US-15 — VietQR Payment**
 As a Member, I want to generate a VietQR code so I can pay the Host directly in my banking app.
@@ -194,6 +196,7 @@ As a user, I want to view past sessions so I can track my progress over time.
 *Acceptance Criteria:*
 - History lists completed solo and group sessions with date, duration, violation count, and Penalty Score.
 - History loads from local SQLite first; backend sync fills gaps when online.
+- For Free tier users, Violation Logs older than 7 days are automatically purged from local SQLite and filtered out in history views. Premium users retain permanent violation logs.
 
 **US-17 — User Profile**
 As a user, I want to view and edit my profile so I can manage my account.
@@ -208,7 +211,19 @@ As a user, I want to configure basic app preferences so the app behaves as I exp
 *Acceptance Criteria:*
 - Configurable: haptic feedback on/off, optional violation sound on/off.
 - Settings persist locally across app restarts.
+- Free tier displays non-intrusive ads on non-session screens (e.g. Lobby, History, Profile); Premium tier hides all ads completely.
 
+---
+
+**US-19 — Activation Code Entry (Premium Unlock)**
+As a user who purchased Premium, I want to enter my activation code so I can unlock Lifetime Premium features.
+
+*Acceptance Criteria:*
+- Input field validates code format `DONTLIFT-XXXX-XXXX-XXXX` (uppercase alphanumeric).
+- Code validity is verified offline using an embedded checksum algorithm (and validated online with Firestore if connected).
+- Upon successful verification, entitlement status `is_premium = true` is persisted to local SQLite (and synced to user profile in Firestore).
+- UI immediately unlocks all Premium features: unlimited room size, unlimited room creations, permanent log retention, advanced leaderboards, analytics, custom themes, and ad-free experience.
+- Invalid or already-redeemed code displays a clear, actionable error message.
 ---
 
 ## 4. Functional Requirements
@@ -235,9 +250,13 @@ As a user, I want to configure basic app preferences so the app behaves as I exp
 ### FR-05 — Bill Splitting
 - Integer VND arithmetic throughout; no floating point.
 - Deterministic rounding: SUM(shares) = Total Bill always.
-- **Bill allocation model:** The Host manually enters a percentage or absolute VND amount for each penalized member. Members with no assigned penalty amount pay an equal share of the remaining bill after all penalty amounts are deducted.
+- **Hybrid Bill Allocation Model:** Default calculation applies automated penalty-weighted formula: Score = (LiftCount × 10) + (ViolationDurationSeconds × 1). The Host possesses an override interface to manually assign specific penalty percentages or absolute VND amounts per member, with unassigned remainder divided equally among zero-violation members.
 - Early leavers (approved Early Exit) are included in bill allocation; their Penalty Score is frozen at exit time and used in the same formula as remaining members.
 - Allocation logic is isolated as replaceable business logic; the UI and sync layer have no dependency on its internals.
+
+### FR-06 — Non-Intrusive Ad Engine & Retention Purge
+- Local SQLite database executes scheduled cleanup of Violation Logs older than 7 days for users with `is_premium = false`.
+- Ad engine displays light, non-intrusive banner ads strictly on non-focus screens (Home, Lobby, History, Settings). Ads are suppressed entirely during active Solo Focus and Group Room sessions and for users with `is_premium = true`.
 
 ---
 
@@ -270,11 +289,12 @@ As a user, I want to configure basic app preferences so the app behaves as I exp
 
 | # | Question | Decision |
 |---|----------|----------|
-| OQ-1 | Bill split model | Host manually assigns a percentage or absolute VND penalty amount per penalized member; remainder split equally among non-penalized members. |
-| OQ-2 | Early Exit member bill rule | Included in bill allocation. Penalty Score frozen at exit time; applied via the same penalty-weighted formula. Zero violations at exit = normal equal base share. |
+| OQ-1 | Bill split model | Hybrid model: Automated penalty-weighted calculation by default; Host option to manually override per-member penalty percentages or absolute VND amounts with remaining bill split equally. |
+| OQ-2 | Early Exit member bill rule | Included in bill allocation. Penalty Score frozen at exit time; applied via the same penalty-weighted/hybrid formula. Zero violations at exit = normal equal base share. |
 | OQ-3 | Grace period on OS background/inactive | Violation recorded at transition detection. iOS: extend via `beginBackgroundTask`, monitor `backgroundTimeRemaining`, call `endBackgroundTask` before expiry. Android: observe lifecycle events; use WorkManager for deferred guaranteed work. |
 | OQ-4 | Early termination vote timeout | 30 seconds; dismissed server-side on expiry, session continues. |
 | OQ-5 | Backend stack | Spring Boot + MySQL replaced by Firebase Authentication + Firestore + Cloud Functions. Realtime sync via Firestore listeners replaces WebSocket/STOMP. |
+| OQ-6 | Free Tier vs. Premium Limits | Free tier: max 5 participants/room, max 7 created rooms/month, 7-day violation log retention, light ads. Premium: unlimited rooms & participants, permanent logs, ad-free, offline checksum activation code (`DONTLIFT-XXXX-XXXX-XXXX`). |
 
 ## 8. Monetization Strategy
 
