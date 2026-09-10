@@ -1,6 +1,6 @@
 # DontLift — Product Design Brief
 
-> **Status:** APPROVED DRAFT  
+> **Status:** APPROVED  
 > **Source Artifacts:** PRD v1.6.0 · Feature Spec v1.1.0 · Project Context v1.0.0  
 > **Version:** 1.0.0  
 > **Canonical Path:** `docs/product-design-brief.md`  
@@ -31,7 +31,7 @@ DontLift is designed to solve phone distraction in focus and social contexts thr
 - **Error Handling:** Invalid credentials display a generic `"Invalid email or password"` error.
 
 ### 2.3 Token Security
-- Access Tokens and Refresh Tokens are stored in Expo `SecureStore` (iOS Keychain / Android EncryptedSharedPreferences). Plaintext `AsyncStorage` for token storage is strictly prohibited.
+- Access Tokens and Refresh Tokens are stored in Expo `SecureStore` (Keychain on iOS / EncryptedSharedPreferences on Android). Plaintext `AsyncStorage` for token storage is strictly prohibited.
 
 ### 2.4 Scope & Deferred Features
 - **Deferred to Post-MVP v1.1:** Social Login (Google, Facebook, Apple). No UI components or stubs for social login are rendered in MVP.
@@ -66,15 +66,15 @@ DontLift is designed to solve phone distraction in focus and social contexts thr
 ## 4. Group Room Mode UX
 
 ### 4.1 Room Creation (Host)
-- Host taps "Create Room". Server/Cloud Function generates 4-digit PIN (e.g. `4829`) and scannable QR string (`dontlift://room/4829`). Room enters `WAITING` state.
+- Host taps "Create Room". Server/Cloud Function generates 4-digit PIN (e.g. `4829`) and scannable QR string (`dontlift://room/4829`). Room enters `WAITING` state. Local SQLite `rooms` row inserted.
 - **Free Tier Limit:** If Host is on Free Tier and has created 7 rooms in the current calendar month, creation is blocked with inline modal: `"Monthly room limit reached (7/month). Upgrade to Premium for unlimited creations."`
 
 ### 4.2 Room Join (Member)
-- Member enters 4-digit PIN or scans QR code. Idempotent action resolves room metadata in `WAITING` state.
+- Member enters 4-digit PIN or scans QR code. Idempotent action resolves room metadata in `WAITING` state. Local SQLite `rooms` and `room_members` cached.
 - **Free Tier Capacity Limit:** If room Host is on Free Tier and participant count is 5, additional joins are blocked with inline modal: `"Room capacity limit reached (5 participants). Upgrade to Premium for larger rooms."`
 
 ### 4.3 Lobby & Real-Time Sync
-- Firestore real-time snapshot listener syncs participant list across all connected devices in $\le 2\text{s}$.
+- Firestore real-time snapshot listener syncs participant list across all connected devices in $\le 2\text{s}$. Local `room_members` cache updated.
 - **Host View:** Sees participant count, participant roster, "Start Session" button, and quota status.
 - **Member View:** Sees participant list and waiting banner. Host controls are completely hidden (not just disabled).
 
