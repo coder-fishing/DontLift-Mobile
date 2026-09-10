@@ -88,7 +88,6 @@ Use `$brainstorm` to challenge the DontLift user journey before choosing visual 
 - **Permission request:** On first session start, request accelerometer permission with clear rationale.
 - **Permission denied:** Inline message "Motion detection requires sensor access. Enable in Settings."
 - **Sensor unavailable:** Error state "Accelerometer unavailable on this device. Focus sessions require motion sensors."
-
 #### 8.2 App Lifecycle Interruption
 - **iOS background:** Notice "Session continues in background for up to 3 minutes."
 - **Android background:** Notice "Session may pause if app is killed."
