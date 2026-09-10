@@ -16,7 +16,7 @@
 ### 1.2 Group Room Mode
 - **Host:** Creates and configures the room, manages room lifecycle (start/end), approves **Early Exit** requests, inputs the total bill amount (in integer VND), and views the live/final **Penalty Leaderboard** and bill breakdown.
 - **Member:** Joins via 4-digit PIN or QR code, views session state and personal violations, requests Early Exit, votes for **Early Termination**, views final rankings, and generates **VietQR** for peer-to-peer (P2P) payment to the Host.
-- Real-time room state is synchronized across all connected clients via WebSocket (STOMP) when network is available.
+- Real-time room state is synchronized across all connected clients via Firebase Firestore real-time listeners when network is available.
 
 ### 1.3 Phone-Down Detection & 3-Second Grace Period
 - Isolates raw motion sensor detection from UI logic through abstract application states:
@@ -35,8 +35,8 @@
 
 ### 2.2 Offline-First SQLite Reconciliation
 - All violation events are immediately written to local SQLite storage with a unique `event_id` (UUID) before being queued for synchronization.
-- Sync mechanism to Spring Boot backend must be **Idempotent**, **Retryable**, and **Duplicate-safe**.
-- **Backend Authority:** The Spring Boot backend is the single source of truth. Mobile clients cannot authoritatively finalize session state, penalty scores, or bill allocations.
+- Sync mechanism to Firebase Firestore backend must be **Idempotent**, **Retryable**, and **Duplicate-safe**.
+- **Backend Authority:** Firebase Firestore and Cloud Functions are the single source of truth. Mobile clients cannot authoritatively finalize session state, penalty scores, or bill allocations.
 
 ### 2.3 VietQR P2P Settlement
 - Generates NAPAS / VietQR compliant QR codes populated with Host bank details, exact member payment share, and structured transfer memo: `DL [RoomCode] [MemberName]`.
@@ -58,7 +58,7 @@
 
 ### 3.2 System Assumptions
 1. All target diod devices feature reliable accelerometer sensors supported by Expo Development Build.
-2. WebSocket STOMP connections automatically retry and resynchronize room state upon network recovery.
+2. Firebase Firestore listeners automatically retry and resynchronize room state upon network recovery.
 
 ### 3.3 Open Questions (To resolve in technical specification phase)
 1. Exact ratio split between base fee allocation vs. penalty weighted adjustment in bill splitting algorithm.
@@ -92,6 +92,50 @@
 
 ## 5. Source Hierarchy
 
-1. **Newer human-approved decisions** (highest priority).
+1. **Newer human-approved decisions** (highest priority; includes Freemium + Lifetime Premium Monetization Strategy).
 2. **Approved Project Brief** (`docs/project-brief.md`).
 3. **AI technical recommendations / proposals** (lowest priority).
+
+---
+
+## 6. Monetization Strategy
+
+### 6.1 Revenue Model
+- **Type:** Freemium with Lifetime Premium
+- **Price:** 99,000 VNĐ (one-time purchase)
+- **Payment Method:** VietQR via external website
+- **Delivery:** Activation code via email
+
+### 6.2 Free Tier
+| Feature | Limit |
+|---------|-------|
+| Solo Focus Mode | Unlimited |
+| Group Room participants | Max 5 |
+| Rooms created/month | 7 |
+| Violation Log retention | 7 days |
+| Penalty Leaderboard | Basic |
+| Ads | Light, non-intrusive |
+
+### 6.3 Premium Features
+| Feature | Benefit |
+|---------|---------|
+| Unlimited Group Room | No participant limit |
+| Permanent Violation Log | Never lose history |
+| Advanced Leaderboard | Themes, export, insights |
+| Detailed Analytics | Charts, patterns |
+| Custom Themes | Personalization |
+| Ad-free | Clean experience |
+| Priority Support | Faster response |
+
+### 6.4 Activation Flow
+1. User visits website → pays via VietQR
+2. System generates activation code (DONTLIFT-XXXX-XXXX-XXXX)
+3. Code sent via email
+4. User enters code in app → Premium unlocked
+5. Code verified offline via checksum
+
+### 6.5 Constraints Compliance
+- ✅ No In-App Wallet
+- ✅ No payment gateway custody
+- ✅ No real funds handling in app
+- ✅ VietQR only for P2P settlement between users
