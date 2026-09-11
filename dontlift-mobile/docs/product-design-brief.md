@@ -285,9 +285,52 @@ Before prototype execution (P4.4), the human partner must approve:
 ## 15. Visual Direction & Design System Foundations
 
 ### 15.1 Reference Direction (Non-Binding)
-- **Frosted Glass / Liquid Pearl:** Translucent blurred cards, subtle ambient depth, soft gradients.
-- **Reference Warning:** ⚠️ *Frosted Glass / Liquid Pearl is a non-binding reference direction, NOT a rigid target. Developers must research additional references (modern landing pages, Pinterest, Dribbble).*
-
+- **Reference 01:** Apple Liquid Glass — Navigation Bar
+- Source: Dribbble
+- Link: https://dribbble.com/shots/26294545-Apple-Liquid-Glass-Design-Navigation-Bar
+- Inspect Date: 2026-09-12
+- Screenshot: screenshots/01-apple-liquid-glass-nav.png
+- Observed direction:
+Background: #1A1A1A (dark gray, near-black)
+Glass Fill: rgba(255,255,255,0.06–0.08)
+Glass Border: rgba(255,255,255,0.15–0.20)
+Active Item Fill: rgba(255,255,255,0.15)
+Text / Icon: #F9FAFB
+Accent: Green gradient / ambient green glow
+Radius: ~28px
+Padding: ~12px
+Item Spacing: ~24px
+Navigation: 4-item bottom navigation with a separate active pill
+Blur: ~20–30px backdrop blur
+Depth: subtle shadow + edge highlight + two glass layers (navigation surface + active pill)
+Typography: SF Pro / Inter, ~13–15pt, Regular/Medium
+- Design takeaways for DontLift:
+Use subtle glass rather than heavy blur.
+Use a separate active pill to make the current navigation state immediately clear.
+Preserve the layered glass treatment to create depth without visual clutter.
+Use a restrained green accent/glow as the primary visual accent.
+Keep blur at or below ~20px where possible; use a solid fallback on lower-end devices.
+Do not copy the reference's exact navigation structure; DontLift requires more product-specific destinations such as Timer, Leaderboard, Bill, History, and Activation.
+- **Reference 02:** AI-powered learning platform mobile app for creators
+- Source: Dribbble
+- Link: https://dribbble.com/shots/27420485-AI-Learning-Platform-Mobile-App-for-Creators
+- Review date: 2026-09-12
+- Observations:
+Modern glassmorphism / Liquid glass style.
+Dark background with frosted glass surfaces.
+Rounded components with large corner radii, particularly for cards, panels, buttons, and navigation elements.
+Subtle blurring, soft shadows, and edge highlights to create depth.
+Generous spacing, airy layout, and clearly separated components.
+Purple/pink accents replaced with green (per Reference 01).
+- Design specifications for DontLift:
+Use rounded glass components as the primary visual language.
+Main cards/containers: ~24–28px corner radius.
+Secondary components: ~16–20px corner radius.
+Glass effect + subtle borders + opacity + soft shadows.
+Prioritize floating/rounded cards over standard rectangular frames.
+Green used for CTAs, active states, and key focal points.
+Avoid excessive blur/glow effects to ensure readability and performance.
+- **Reference Warning**:These references are non-binding visual references, NOT rigid implementation targets. The product must preserve DontLift's functional requirements, accessibility constraints, offline-first behavior, and performance fallback rules.
 ### 15.2 Core Design Principles
 - **Clarity First:** Timer numbers, violation alerts, and error states maintain max contrast and readability.
 - **Subtle Depth:** Layering achieved through backdrop blur and soft shadow, never decorative clutter.
@@ -313,7 +356,7 @@ Before prototype execution (P4.4), the human partner must approve:
 - **Background Deep:** `#0B0F19` (Rich Dark Slate)
 - **Glass Card Fill:** `rgba(255, 255, 255, 0.07)`
 - **Glass Card Border:** `rgba(255, 255, 255, 0.12)`
-- **Primary Focus Accent:** `#3B82F6` (Electric Sapphire)
+- **Primary Focus Accent:** `#64C96B` 
 - **Violation Danger:** `#EF4444` (Crimson Alert)
 - **Success / Marked Paid:** `#10B981` (Emerald Green)
 - **Text Primary:** `#F9FAFB` (99% White)
