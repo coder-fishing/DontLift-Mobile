@@ -1,0 +1,490 @@
+<!DOCTYPE html><html class="h-full" lang="en"><head><meta charset="utf-8"><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"><title>DontLift</title><link href="https://fonts.googleapis.com" rel="preconnect"><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"><style>
+  @layer base {
+    html, body { width: 100%; min-height: 100%; margin: 0; padding: 0; }
+    .pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+    .pt-safe { padding-top: env(safe-area-inset-top, 0px); }
+  }
+  ::-webkit-scrollbar { display: none; }
+  .mesh-gradient-bg {
+    background: linear-gradient(135deg, #E0E7FF 0%, #EDE9FE 45%, #D1FAE5 100%);
+    background-attachment: fixed;
+  }
+  .frosted-glass {
+    background: rgba(255, 255, 255, 0.32) !important;
+    backdrop-filter: blur(40px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(40px) saturate(180%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.9) !important;
+    box-shadow: inset 1px 1px 2px 0px rgba(255, 255, 255, 0.95), inset -1px -1px 2px 0px rgba(255, 255, 255, 0.25), 0 8px 32px rgba(0, 0, 0, 0.08) !important;
+  }
+  .frosted-glass-pill {
+    background: rgba(255, 255, 255, 0.45) !important;
+    backdrop-filter: blur(28px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(28px) saturate(180%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.95) !important;
+    box-shadow: inset 1px 1px 1.5px 0px rgba(255, 255, 255, 0.95), inset -1px -1px 1.5px 0px rgba(255, 255, 255, 0.25), 0 4px 16px rgba(0, 0, 0, 0.04) !important;
+  }
+  .header-glass {
+    background: rgba(255, 255, 255, 0.40) !important;
+    backdrop-filter: blur(40px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(40px) saturate(180%) !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.85) !important;
+    box-shadow: inset 0 -1px 1px 0 rgba(255, 255, 255, 0.6), 0 4px 20px 0 rgba(0, 0, 0, 0.03) !important;
+  }
+  .bottom-nav-glass {
+    background: rgba(255, 255, 255, 0.45) !important;
+    backdrop-filter: blur(40px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(40px) saturate(180%) !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.85) !important;
+    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.04) !important;
+  }
+  body {
+    min-height: max(884px, 100dvh);
+  }
+</style><script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { colors: { "on-tertiary-fixed": "#002113", "background": "#faf8ff", "tertiary": "#006947", "on-secondary-container": "#fffbff", "on-tertiary-fixed-variant": "#005236", "primary-container": "#2170e4", "on-primary-fixed": "#001a42", "on-secondary": "#ffffff", "secondary-container": "#6063ee", "tertiary-fixed-dim": "#4edea3", "on-background": "#131b2e", "primary": "#0058be", "on-tertiary-container": "#f5fff6", "inverse-primary": "#adc6ff", "secondary": "#4648d4", "on-primary": "#ffffff", "surface-container": "#eaedff", "surface-dim": "#d3daef", "on-error-container": "#93000a", "on-surface": "#131b2e", "on-tertiary": "#ffffff", "secondary-fixed": "#e1e0ff", "surface-container-lowest": "#ffffff", "secondary-fixed-dim": "#c0c1ff", "surface-container-low": "#f1f3ff", "surface-container-high": "#e1e8fd", "primary-fixed-dim": "#adc6ff", "error": "#ba1a1a", "outline": "#727785", "surface": "#faf8ff", "tertiary-container": "#00855b", "on-secondary-fixed": "#07006c", "outline-variant": "#c2c6d6", "on-secondary-fixed-variant": "#2f2ebe", "on-primary-fixed-variant": "#004395", "inverse-on-surface": "#edf0ff", "on-surface-variant": "#434655", "inverse-surface": "#293040", "surface-variant": "#dce2f7", "surface-bright": "#faf8ff", "on-primary-container": "#fefcff", "primary-fixed": "#d8e2ff", "surface-tint": "#005ac2", "surface-container-highest": "#dce2f7", "tertiary-fixed": "#6ffbbe", "error-container": "#ffdad6", "on-error": "#ffffff" }, borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "2xl": "1.25rem", "3xl": "1.75rem", "full": "9999px" }, spacing: { "space-md": "1rem", "space-sm": "0.5rem", "space-xl": "2rem", "margin": "1rem", "space-xs": "0.25rem", "space-lg": "1.5rem" }, fontFamily: { "headline-lg": ["Plus Jakarta Sans"], "headline-sm": ["Plus Jakarta Sans"], "body-lg": ["Plus Jakarta Sans"], "label-mono": ["JetBrains Mono"], "timer-display-mobile": ["JetBrains Mono"], "caption": ["Plus Jakarta Sans"], "body-sm": ["Plus Jakarta Sans"], "headline-md": ["Plus Jakarta Sans"], "body-md": ["Plus Jakarta Sans"] }, fontSize: { "headline-lg": ["28px", { lineHeight: "36px", letterSpacing: "-0.02em", fontWeight: "700" }], "headline-sm": ["18px", { lineHeight: "24px", letterSpacing: "-0.01em", fontWeight: "700" }], "body-lg": ["16px", { lineHeight: "24px", fontWeight: "500" }], "label-mono": ["12px", { lineHeight: "16px", letterSpacing: "0.02em", fontWeight: "600" }], "timer-display-mobile": ["48px", { lineHeight: "56px", letterSpacing: "-0.03em", fontWeight: "700" }], "caption": ["12px", { lineHeight: "16px", fontWeight: "500" }], "body-sm": ["12px", { lineHeight: "16px", letterSpacing: "0.01em", fontWeight: "500" }], "headline-md": ["22px", { lineHeight: "28px", letterSpacing: "-0.015em", fontWeight: "700" }], "body-md": ["14px", { lineHeight: "20px", letterSpacing: "0.005em", fontWeight: "500" }] } } } };</script></head><body class="mesh-gradient-bg text-on-surface font-body-md text-body-md antialiased min-h-screen relative flex flex-col overflow-x-hidden">
+<!-- Ambient Atmospheric Radiant Orbs behind frosted glass stack -->
+<div class="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+<div class="absolute -top-20 -left-16 w-80 h-80 rounded-full bg-indigo-300/45 blur-[90px]"></div>
+<div class="absolute top-1/4 -right-16 w-88 h-88 rounded-full bg-purple-300/40 blur-[100px]"></div>
+<div class="absolute top-1/2 left-1/4 w-72 h-72 rounded-full bg-emerald-300/35 blur-[95px]"></div>
+<div class="absolute top-2/3 -left-12 w-80 h-80 rounded-full bg-blue-300/35 blur-[100px]"></div>
+<div class="absolute -bottom-24 right-0 w-96 h-96 rounded-full bg-teal-300/40 blur-[110px]"></div>
+</div>
+<!-- Header with Real Frosted Glass -->
+<header class="fixed top-0 w-full z-50 pt-safe header-glass">
+<div class="h-6 w-full px-6 flex items-center justify-between text-on-surface select-none pt-1">
+<span class="font-headline-sm text-body-sm tracking-tight font-bold text-[#0F172A]">9:41</span>
+<div class="flex items-center gap-1.5 text-[#0F172A]">
+<span class="material-symbols-outlined text-[16px]">signal_cellular_alt</span>
+<span class="material-symbols-outlined text-[16px]">wifi</span>
+<span class="material-symbols-outlined text-[18px]">battery_full</span>
+</div>
+</div>
+<div class="h-14 px-4 flex items-center justify-between">
+<div class="flex items-center gap-2">
+<img alt="DontLift Logo" class="h-8 w-auto object-contain" src="https://lh3.googleusercontent.com/aida/AEtjO1Voxd6n6Iwws-a_GhtOnXZ_6cwDWmYFORyM2L4TeSSVmRYenCAeCWAlkCF9Oir2VKs0Ed39DWYkeVpRK4MZA11hfg4NI81jAc3WOfNR2PVqugsbapjJHaPGyuz-d1WbTEWgOguR5gNxSy8Lr1thOVzRLRjhgsFTTIBbdkQgt1g8p5j5yqwNX-Dzt1XhDrkn9-OEnM4jPCL1gzyvndzSI0ySEbAUZy5q-cpTG26EkrPS1YjyK3A460NWO_9V">
+<div class="flex flex-col">
+<span class="font-headline-sm text-body-lg font-bold tracking-tight text-[#0F172A] leading-none">DontLift</span>
+<span class="font-caption text-caption text-[#434655] font-semibold mt-0.5">Solo Focus</span>
+</div>
+</div>
+<div class="flex items-center gap-2.5">
+<div class="frosted-glass-pill flex items-center gap-1.5 px-3 py-1 rounded-full text-secondary">
+<span class="w-2 h-2 rounded-full bg-secondary animate-pulse"></span>
+<span class="font-label-mono text-caption text-secondary font-bold uppercase tracking-wider">Synced</span>
+</div>
+<div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center shadow-md shadow-primary/25">
+<span class="material-symbols-outlined text-on-primary text-[18px]">person</span>
+</div>
+</div>
+</div>
+</header>
+<main class="relative z-10 flex-1 w-full pt-20 pb-28 px-margin bg-transparent">
+<div class="flex flex-col w-full pb-8">
+<div class="flex flex-col gap-4 w-full">
+<!-- Room Status & Telemetry Header (Frosted Glass) -->
+<div class="relative overflow-hidden rounded-2xl p-4 frosted-glass">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="frosted-glass-pill px-2.5 py-1 rounded-full text-[#0F172A] font-label-mono text-xs font-bold tracking-wider">ROOM #4829</span>
+<div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-800 font-label-mono text-[11px] font-bold">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-ping"></span>
+<span class="">LIVE (4 MEMBERS)</span>
+</div>
+</div>
+<div class="flex items-center gap-1 text-[#434655] font-label-mono text-xs font-medium">
+<span class="material-symbols-outlined text-[15px] text-emerald-700 animate-spin" style="animation-duration: 3s;">sync</span>
+<span class="truncate max-w-[110px]">Updating status...</span>
+</div>
+</div>
+<p class="mt-2 text-[#434655] font-body-sm text-xs flex items-center gap-1.5 font-medium">
+<span class="material-symbols-outlined text-[16px] text-primary">wifi_off</span>
+<span class="">Offline tracking active. Will sync when online.</span>
+</p>
+</div>
+<!-- Active Violation Emergency Alert Strip (Translucent Rose Glass) -->
+<div class="relative overflow-hidden rounded-2xl p-3.5" id="violation-alert" style="background: rgba(254, 226, 226, 0.48); backdrop-filter: blur(40px) saturate(180%); -webkit-backdrop-filter: blur(40px) saturate(180%); border: 1px solid rgba(248, 113, 113, 0.7); box-shadow: inset 1px 1px 2px 0 rgba(255, 255, 255, 0.8), 0 8px 24px rgba(186, 26, 26, 0.12);">
+<div class="relative z-10 flex items-center justify-between gap-2">
+<div class="flex items-center gap-2.5 min-w-0">
+<div class="w-8 h-8 rounded-full bg-error text-on-error flex items-center justify-center shrink-0 shadow-sm animate-bounce" style="animation-duration: 1.5s;">
+<span class="material-symbols-outlined text-[18px]">screen_rotation</span>
+</div>
+<div class="flex flex-col min-w-0">
+<div class="flex items-center gap-1.5">
+<span class="font-label-mono text-xs font-bold tracking-tight text-error uppercase">Lift Detected</span>
+<span class="w-1 h-1 rounded-full bg-error"></span>
+<span class="font-headline-sm text-xs font-bold text-[#0F172A]">Sarah Jenkins</span>
+</div>
+<p class="font-body-sm text-xs truncate text-[#434655] font-medium">
+<span class="font-bold text-error">02s</span> remaining in Grace Window
+              </p>
+</div>
+</div>
+<button class="shrink-0 flex items-center gap-1 px-3.5 py-1.5 rounded-full bg-error text-on-error font-label-mono text-xs font-bold active:scale-95 transition-transform shadow-md shadow-error/30" onclick="triggerNudge(this)">
+<span class="material-symbols-outlined text-[15px]">notifications_active</span>
+<span class="">Nudge</span>
+</button>
+</div>
+</div>
+<!-- Active Focus Timer Card (Real Frosted Glass) -->
+<div class="relative overflow-hidden rounded-3xl p-6 frosted-glass flex flex-col items-center text-center">
+<!-- Top Pills -->
+<div class="w-full flex items-center justify-between">
+<div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full" style="background: rgba(207, 44, 48, 0.12); border: 1px solid rgba(207, 44, 48, 0.3);">
+<span class="material-symbols-outlined text-error text-[15px]">phonelink_lock</span>
+<span class="font-label-mono text-[11px] font-bold tracking-wider uppercase text-error">DO NOT LIFT PHONE</span>
+</div>
+<div class="frosted-glass-pill flex items-center gap-1 px-2.5 py-1 rounded-full text-[#0F172A] font-label-mono text-xs font-semibold">
+<span class="w-2 h-2 rounded-full bg-secondary animate-pulse"></span>
+<span class="">Detection: Active</span>
+</div>
+</div>
+<!-- Timer Dial with Frosted Glass Ring & 32:45 Bold Readout -->
+<div class="relative w-56 h-56 flex items-center justify-center my-4">
+<!-- Ambient Glow Underlay -->
+<div class="absolute inset-4 rounded-full bg-primary/15 blur-2xl"></div>
+<svg class="w-full h-full transform -rotate-90 drop-shadow-sm" viewBox="0 0 160 160">
+<circle class="text-white/55" cx="80" cy="80" fill="transparent" r="68" stroke="currentColor" stroke-width="8"></circle>
+<circle class="text-primary transition-all duration-1000 ease-out" cx="80" cy="80" fill="transparent" id="session-progress-ring" r="68" stroke="currentColor" stroke-dasharray="427.25" stroke-dashoffset="116" stroke-linecap="round" stroke-width="8"></circle>
+</svg>
+<div class="absolute flex flex-col items-center justify-center text-center pointer-events-none">
+<span class="font-timer-display-mobile text-[48px] leading-[52px] font-extrabold text-[#0F172A] tracking-tight tabular-nums drop-shadow-sm" id="session-timer">32:45</span>
+<span class="frosted-glass-pill px-3 py-0.5 rounded-full font-label-mono text-[11px] font-semibold text-[#434655] mt-1.5">Target: 45:00</span>
+</div>
+</div>
+<!-- Metric Pills (Real Frosted Glass Tiles) -->
+<div class="grid grid-cols-2 gap-2.5 w-full pt-1">
+<div class="frosted-glass-pill flex flex-col p-3 rounded-2xl text-left">
+<div class="flex items-center gap-1.5 text-[#434655]">
+<span class="material-symbols-outlined text-[16px] text-secondary">check_circle</span>
+<span class="font-label-mono text-xs font-semibold">Clean Time</span>
+</div>
+<span class="font-timer-display-mobile text-lg font-bold text-[#0F172A] mt-1">31m 20s</span>
+</div>
+<div class="frosted-glass-pill flex flex-col p-3 rounded-2xl text-left">
+<div class="flex items-center gap-1.5 text-[#434655]">
+<span class="material-symbols-outlined text-[16px] text-error">warning</span>
+<span class="font-label-mono text-xs font-semibold">Total Violations</span>
+</div>
+<span class="font-timer-display-mobile text-lg font-bold text-[#0F172A] mt-1">3 Breaches</span>
+</div>
+</div>
+</div>
+<!-- Penalty Leaderboard -->
+<div class="relative flex flex-col gap-2.5">
+<div class="flex items-center justify-between px-1">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[18px] text-primary">leaderboard</span>
+<h2 class="font-headline-sm text-base text-[#0F172A] font-bold">Penalty Leaderboard</h2>
+</div>
+<span class="font-body-sm text-xs text-[#434655] font-medium">Lowest pts ranks highest</span>
+</div>
+<!-- Rank 1: Alex Rivers (Host) -->
+<div class="frosted-glass flex items-center justify-between p-3.5 rounded-2xl">
+<div class="flex items-center gap-3 min-w-0">
+<div class="w-7 h-7 rounded-full bg-secondary-fixed text-on-secondary-fixed flex items-center justify-center font-label-mono text-xs font-bold shrink-0">
+              1
+            </div>
+<div class="flex flex-col min-w-0">
+<div class="flex items-center gap-1.5">
+<span class="font-headline-sm text-sm text-[#0F172A] font-bold truncate">Alex Rivers</span>
+<span class="frosted-glass-pill px-1.5 py-0.5 rounded-full text-[#434655] font-label-mono text-[10px] uppercase font-bold">Host</span>
+</div>
+<span class="font-body-sm text-xs text-[#434655]">0 lifts logged</span>
+</div>
+</div>
+<div class="flex items-center gap-2.5 shrink-0">
+<div class="text-right">
+<span class="font-label-mono text-sm font-bold text-[#0F172A]">0</span>
+<span class="font-label-mono text-xs text-[#434655]">pts</span>
+</div>
+<span class="px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-800 font-label-mono text-xs font-bold">CLEAN</span>
+</div>
+</div>
+<!-- Rank 2: Minh Tran (YOU) -->
+<div class="frosted-glass relative overflow-hidden flex items-center justify-between p-3.5 rounded-2xl ring-1 ring-primary/40">
+<div class="absolute left-0 top-0 bottom-0 w-1.5 bg-primary"></div>
+<div class="flex items-center gap-3 min-w-0 pl-1">
+<div class="w-7 h-7 rounded-full bg-primary text-on-primary flex items-center justify-center font-label-mono text-xs font-bold shrink-0 shadow-sm shadow-primary/30">
+              2
+            </div>
+<div class="flex flex-col min-w-0">
+<div class="flex items-center gap-1.5">
+<span class="font-headline-sm text-sm text-[#0F172A] font-extrabold truncate">Minh Tran</span>
+<span class="px-1.5 py-0.5 rounded-full bg-primary text-on-primary font-label-mono text-[10px] font-bold uppercase shadow-xs">YOU</span>
+</div>
+<span class="font-body-sm text-xs text-[#434655]">0 lifts logged</span>
+</div>
+</div>
+<div class="flex items-center gap-2.5 shrink-0">
+<div class="text-right">
+<span class="font-label-mono text-sm font-bold text-[#0F172A]">0</span>
+<span class="font-label-mono text-xs text-[#434655]">pts</span>
+</div>
+<span class="px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-800 font-label-mono text-xs font-bold">CLEAN</span>
+</div>
+</div>
+<!-- Rank 3: David K. -->
+<div class="frosted-glass flex items-center justify-between p-3.5 rounded-2xl">
+<div class="flex items-center gap-3 min-w-0">
+<div class="w-7 h-7 rounded-full bg-white/60 border border-white/80 text-[#0F172A] flex items-center justify-center font-label-mono text-xs font-bold shrink-0">
+              3
+            </div>
+<div class="flex flex-col min-w-0">
+<span class="font-headline-sm text-sm text-[#0F172A] font-bold truncate">David K.</span>
+<span class="font-body-sm text-xs text-[#434655]">1 lift • 18s duration</span>
+</div>
+</div>
+<div class="flex items-center gap-2.5 shrink-0">
+<div class="text-right">
+<span class="font-label-mono text-sm font-bold text-[#0F172A]">4</span>
+<span class="font-label-mono text-xs text-[#434655]">pts</span>
+</div>
+<span class="frosted-glass-pill px-2.5 py-1 rounded-full text-[#0F172A] font-label-mono text-xs font-bold">MINOR</span>
+</div>
+</div>
+<!-- Rank 4: Sarah Jenkins -->
+<div class="relative overflow-hidden flex items-center justify-between p-3.5 rounded-2xl" style="background: rgba(254, 226, 226, 0.40); backdrop-filter: blur(40px) saturate(180%); -webkit-backdrop-filter: blur(40px) saturate(180%); border: 1px solid rgba(248, 113, 113, 0.6); box-shadow: inset 1px 1px 2px 0 rgba(255, 255, 255, 0.8), 0 8px 32px rgba(186, 26, 26, 0.06);">
+<div class="flex items-center gap-3 min-w-0">
+<div class="w-7 h-7 rounded-full bg-red-100 border border-red-300 text-error flex items-center justify-center font-label-mono text-xs font-bold shrink-0">
+              4
+            </div>
+<div class="flex flex-col min-w-0">
+<span class="font-headline-sm text-sm text-[#0F172A] font-bold truncate">Sarah Jenkins</span>
+<span class="font-body-sm text-xs text-error font-semibold">2 lifts • 1m 45s off table</span>
+</div>
+</div>
+<div class="flex items-center gap-2.5 shrink-0">
+<div class="text-right">
+<span class="font-label-mono text-sm font-extrabold text-error">18</span>
+<span class="font-label-mono text-xs text-error">pts</span>
+</div>
+<span class="px-2.5 py-1 rounded-full bg-error text-on-error font-label-mono text-xs font-bold shadow-xs">BREACH</span>
+</div>
+</div>
+</div>
+<!-- Violation Log Tray (Frosted Glass Panel) -->
+<div class="frosted-glass relative overflow-hidden rounded-2xl p-4">
+<div class="flex items-center justify-between mb-3">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[16px] text-primary">history</span>
+<span class="font-headline-sm text-sm font-bold text-[#0F172A]">Recent Violation Log</span>
+</div>
+<span class="font-caption text-caption text-[#434655] font-semibold">Live Updates</span>
+</div>
+<div class="flex flex-col gap-2">
+<div class="frosted-glass-pill flex items-center justify-between py-2 px-3 rounded-xl">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-error animate-pulse"></span>
+<span class="font-body-sm text-xs font-bold text-[#0F172A]">Sarah J.</span>
+<span class="font-caption text-caption text-[#434655]">10:14:02 AM</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="font-label-mono text-xs text-[#434655]">1m 12s</span>
+<span class="font-label-mono text-xs font-extrabold text-error">+12 pts</span>
+</div>
+</div>
+<div class="frosted-glass-pill flex items-center justify-between py-2 px-3 rounded-xl">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-error"></span>
+<span class="font-body-sm text-xs font-bold text-[#0F172A]">Sarah J.</span>
+<span class="font-caption text-caption text-[#434655]">09:58:19 AM</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="font-label-mono text-xs text-[#434655]">33s</span>
+<span class="font-label-mono text-xs font-extrabold text-error">+6 pts</span>
+</div>
+</div>
+<div class="frosted-glass-pill flex items-center justify-between py-2 px-3 rounded-xl">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-secondary"></span>
+<span class="font-body-sm text-xs font-bold text-[#0F172A]">David K.</span>
+<span class="font-caption text-caption text-[#434655]">09:42:50 AM</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="font-label-mono text-xs text-[#434655]">18s</span>
+<span class="font-label-mono text-xs font-extrabold text-secondary">+4 pts</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Early Exit & Consensus Actions (Session Governance) -->
+<div class="flex flex-col gap-3 pt-1">
+<div class="flex items-center gap-1.5 px-1">
+<span class="material-symbols-outlined text-[18px] text-primary">gavel</span>
+<h3 class="font-headline-sm text-base font-bold text-[#0F172A]">Session Governance</h3>
+</div>
+<!-- Action Card 1: Request Early Exit -->
+<div class="frosted-glass flex flex-col p-4 rounded-2xl">
+<div class="flex items-start justify-between gap-2">
+<div class="flex flex-col">
+<span class="font-headline-sm text-sm font-bold text-[#0F172A]">Request Early Exit</span>
+<p class="font-body-sm text-xs text-[#434655] mt-0.5 leading-relaxed">Score will pause. Everyone must confirm to exit.</p>
+</div>
+<button class="frosted-glass-pill shrink-0 px-3.5 py-2 rounded-xl text-[#0F172A] font-label-mono text-xs font-bold hover:bg-white/70 active:scale-95 transition-all" onclick="toggleModal('modal-early-exit')">
+              Request
+            </button>
+</div>
+</div>
+<!-- Action Card 2: Consensus Termination Vote -->
+<div class="frosted-glass flex flex-col p-4 rounded-2xl">
+<div class="flex items-start justify-between gap-2">
+<div class="flex flex-col">
+<div class="flex items-center gap-1.5">
+<span class="font-headline-sm text-sm font-bold text-[#0F172A]">Initiate Termination Vote</span>
+<span class="px-2 py-0.5 rounded-full bg-secondary-fixed text-on-secondary-fixed font-label-mono text-[10px] font-bold">100% REQUIRED</span>
+</div>
+<p class="font-body-sm text-xs text-[#434655] mt-0.5 leading-relaxed">Score will pause. Everyone must confirm to exit.</p>
+</div>
+<button class="frosted-glass-pill shrink-0 px-3.5 py-2 rounded-xl text-[#0F172A] font-label-mono text-xs font-bold hover:bg-white/70 active:scale-95 transition-all" onclick="toggleModal('modal-consensus-vote')">
+              Call Vote
+            </button>
+</div>
+</div>
+<!-- Host Action: End Session & Proceed to Settlement -->
+<div class="pt-1">
+<button class="w-full py-3.5 px-4 rounded-2xl bg-primary text-on-primary font-headline-sm text-sm font-bold flex items-center justify-center gap-2 shadow-[0_8px_24px_rgba(0,88,190,0.30)] active:scale-[0.98] transition-transform" onclick="toggleModal('modal-host-end')">
+<span class="material-symbols-outlined text-[20px]">receipt_long</span>
+<span class="">End Session &amp; Proceed to Bill Settlement</span>
+</button>
+<p class="text-center font-caption text-caption text-[#434655] font-medium mt-2">
+            Host action will finalize telemetry and allocate penalties across dinner tabs.
+          </p>
+</div>
+</div>
+</div>
+</div>
+<!-- Interactive Modal 1: Early Exit Confirmation -->
+<div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/30 backdrop-blur-md hidden opacity-0 transition-opacity duration-200" id="modal-early-exit">
+<div class="w-full max-w-sm rounded-3xl p-5 frosted-glass shadow-[0_24px_48px_rgba(0,0,0,0.14)]" style="background: rgba(255, 255, 255, 0.70) !important;">
+<div class="w-10 h-10 rounded-full bg-primary/15 text-primary flex items-center justify-center mb-3">
+<span class="material-symbols-outlined text-[22px]">logout</span>
+</div>
+<h4 class="font-headline-sm text-base text-[#0F172A] font-bold">Request Early Exit?</h4>
+<p class="font-body-md text-body-md text-[#434655] mt-1.5">
+        Your current score of <span class="font-bold text-[#0F172A]">0 pts</span> will freeze. You will be logged as departed early in the room telemetry archive.
+      </p>
+<div class="flex gap-2 mt-5">
+<button class="frosted-glass-pill flex-1 py-2.5 rounded-xl text-[#0F172A] font-label-mono text-xs font-bold" onclick="toggleModal('modal-early-exit')">
+          Stay Active
+        </button>
+<button class="flex-1 py-2.5 rounded-xl bg-error text-on-error font-label-mono text-xs font-bold shadow-md shadow-error/25" onclick="confirmAction('Early exit logged. Score locked.'); toggleModal('modal-early-exit')">
+          Confirm Exit
+        </button>
+</div>
+</div>
+</div>
+<!-- Interactive Modal 2: Termination Vote -->
+<div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/30 backdrop-blur-md hidden opacity-0 transition-opacity duration-200" id="modal-consensus-vote">
+<div class="w-full max-w-sm rounded-3xl p-5 frosted-glass shadow-[0_24px_48px_rgba(0,0,0,0.14)]" style="background: rgba(255, 255, 255, 0.70) !important;">
+<div class="w-10 h-10 rounded-full bg-secondary-fixed text-on-secondary-fixed flex items-center justify-center mb-3">
+<span class="material-symbols-outlined text-[22px]">how_to_vote</span>
+</div>
+<h4 class="font-headline-sm text-base text-[#0F172A] font-bold">Call Termination Vote</h4>
+<p class="font-body-md text-body-md text-[#434655] mt-1.5">
+        All 4 table members will receive a 30-second prompt. If all 4 agree, the focus timer ends immediately with bill penalties dismissed.
+      </p>
+<div class="flex gap-2 mt-5">
+<button class="frosted-glass-pill flex-1 py-2.5 rounded-xl text-[#0F172A] font-label-mono text-xs font-bold" onclick="toggleModal('modal-consensus-vote')">
+          Cancel
+        </button>
+<button class="flex-1 py-2.5 rounded-xl bg-secondary text-on-secondary font-label-mono text-xs font-bold shadow-md shadow-secondary/25" onclick="confirmAction('Vote ballot issued to 4 members.'); toggleModal('modal-consensus-vote')">
+          Issue Vote
+        </button>
+</div>
+</div>
+</div>
+<!-- Interactive Modal 3: Host End & Settle -->
+<div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/30 backdrop-blur-md hidden opacity-0 transition-opacity duration-200" id="modal-host-end">
+<div class="w-full max-w-sm rounded-3xl p-5 frosted-glass shadow-[0_24px_48px_rgba(0,0,0,0.14)]" style="background: rgba(255, 255, 255, 0.70) !important;">
+<div class="w-10 h-10 rounded-full bg-primary-fixed text-on-primary-fixed flex items-center justify-center mb-3">
+<span class="material-symbols-outlined text-[22px]">account_balance_wallet</span>
+</div>
+<h4 class="font-headline-sm text-base text-[#0F172A] font-bold">End Session &amp; Settle?</h4>
+<p class="font-body-md text-body-md text-[#434655] mt-1.5">
+        Session timer will conclude. Penalty ratios (Sarah Jenkins 18 pts, David K. 4 pts) will apply directly to the shared dining check.
+      </p>
+<div class="flex gap-2 mt-5">
+<button class="frosted-glass-pill flex-1 py-2.5 rounded-xl text-[#0F172A] font-label-mono text-xs font-bold" onclick="toggleModal('modal-host-end')">
+          Back
+        </button>
+<button class="flex-1 py-2.5 rounded-xl bg-primary text-on-primary font-label-mono text-xs font-bold shadow-md shadow-primary/30" onclick="confirmAction('Session finalized. Redirecting to Settlement...'); toggleModal('modal-host-end')">
+          Proceed
+        </button>
+</div>
+</div>
+</div>
+<!-- Notification Toast -->
+<div class="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-full bg-inverse-surface text-inverse-on-surface font-label-mono text-xs font-semibold shadow-xl pointer-events-none transition-all duration-300 opacity-0 translate-y-4 max-w-[90%] text-center" id="action-toast">
+    Toast message
+  </div>
+</main>
+<!-- Frosted Glass Bottom Navigation Bar -->
+<nav class="fixed bottom-0 w-full z-50 pb-safe bottom-nav-glass" data-active-classes="text-primary font-bold">
+<div class="flex justify-around items-center h-16 px-2">
+<a aria-current="page" class="flex flex-col items-center justify-center gap-1 min-w-[64px] min-h-[44px] transition-colors text-primary font-bold" data-path="solo-focus" href="#">
+<span class="material-symbols-outlined text-[24px]">timer</span>
+<span class="font-caption text-caption">Solo Focus</span>
+</a>
+<a class="flex flex-col items-center justify-center gap-1 min-w-[64px] min-h-[44px] text-[#434655] hover:text-[#0F172A] transition-colors" data-path="group-room" href="#">
+<span class="material-symbols-outlined text-[24px]">groups</span>
+<span class="font-caption text-caption">Group Room</span>
+</a>
+<a class="flex flex-col items-center justify-center gap-1 min-w-[64px] min-h-[44px] text-[#434655] hover:text-[#0F172A] transition-colors" data-path="settlement" href="#">
+<span class="material-symbols-outlined text-[24px]">account_balance_wallet</span>
+<span class="font-caption text-caption">Settlement</span>
+</a>
+<a class="flex flex-col items-center justify-center gap-1 min-w-[64px] min-h-[44px] text-[#434655] hover:text-[#0F172A] transition-colors" data-path="activation" href="#">
+<span class="material-symbols-outlined text-[24px]">shield</span>
+<span class="font-caption text-caption">Activation</span>
+</a>
+</div>
+<div class="w-full flex justify-center pb-1.5 pointer-events-none">
+<div class="w-32 h-1 rounded-full bg-[#0F172A]/25"></div>
+</div>
+</nav>
+<script>
+  function toggleModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (!modal) return;
+    if (modal.classList.contains('hidden')) {
+      modal.classList.remove('hidden');
+      setTimeout(() => {
+        modal.classList.remove('opacity-0');
+      }, 10);
+    } else {
+      modal.classList.add('opacity-0');
+      setTimeout(() => {
+        modal.classList.add('hidden');
+      }, 200);
+    }
+  }
+
+  function triggerNudge(btn) {
+    btn.innerHTML = '<span class="material-symbols-outlined text-[15px]">done</span><span>Nudged!</span>';
+    btn.classList.replace('bg-error', 'bg-tertiary');
+    showToast('Nudge ping sent to Sarah Jenkins device');
+    setTimeout(() => {
+      btn.innerHTML = '<span class="material-symbols-outlined text-[15px]">notifications_active</span><span>Nudge</span>';
+      btn.classList.replace('bg-tertiary', 'bg-error');
+    }, 4000);
+  }
+
+  function confirmAction(message) {
+    showToast(message);
+  }
+
+  function showToast(msg) {
+    const toast = document.getElementById('action-toast');
+    if (!toast) return;
+    toast.textContent = msg;
+    toast.classList.remove('opacity-0', 'translate-y-4');
+    toast.classList.add('opacity-100', 'translate-y-0');
+    setTimeout(() => {
+      toast.classList.remove('opacity-100', 'translate-y-0');
+      toast.classList.add('opacity-0', 'translate-y-4');
+    }, 3200);
+  }
+</script>
+
+
+</body></html>
