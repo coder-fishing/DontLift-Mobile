@@ -1,0 +1,177 @@
+erDiagram
+    FIRESTORE_USER ||--o{ FIRESTORE_ROOM : hosts
+    FIRESTORE_USER ||--o{ FIRESTORE_MEMBER : participates
+    FIRESTORE_USER ||--o{ FIRESTORE_USAGE : consumes
+    FIRESTORE_USER ||--o{ FIRESTORE_SYNC_RECEIPT : owns
+    FIRESTORE_ROOM ||--|{ FIRESTORE_MEMBER : contains
+    FIRESTORE_ROOM ||--o{ FIRESTORE_VIOLATION : records
+    FIRESTORE_ROOM ||--o{ FIRESTORE_BILL_SHARE : allocates
+    FIRESTORE_ROOM ||--o{ FIRESTORE_EARLY_EXIT_REQUEST : receives
+    FIRESTORE_ROOM ||--o{ FIRESTORE_TERMINATION_VOTE : opens
+    FIRESTORE_TERMINATION_VOTE ||--o{ FIRESTORE_BALLOT : contains
+    FIRESTORE_ROOM_PIN ||--|| FIRESTORE_ROOM : resolves
+    FIRESTORE_ACTIVATION_CODE }o--o| FIRESTORE_USER : redeemed_by
+
+    SQLITE_SESSION ||--o{ SQLITE_VIOLATION_LOG : contains
+    SQLITE_ROOM ||--o{ SQLITE_ROOM_MEMBER : caches
+    SQLITE_ROOM ||--o{ SQLITE_VIOLATION_LOG : scopes
+    SQLITE_SESSION ||--o{ SQLITE_SYNC_OUTBOX : orders
+
+    FIRESTORE_USER {
+        string uid PK
+        string displayName
+        boolean isPremium
+        timestamp createdAt
+        timestamp updatedAt
+    }
+    FIRESTORE_ROOM {
+        string roomId PK
+        string hostId FK
+        string pin
+        string status
+        int participantCount
+        timestamp hostHeartbeatAt
+        timestamp startedAt
+        timestamp endedAt
+        int totalBillVnd
+        string reconciliationStatus
+        int pendingMemberCount
+        timestamp finalizedAt
+        string finalizedBy
+        string finalizationReason
+    }
+    FIRESTORE_MEMBER {
+        string uid PK
+        string role
+        string status
+        int liftCount
+        int violationDurationSeconds
+        int penaltyScore
+        timestamp earlyExitAt
+        timestamp syncAcknowledgedAt
+    }
+    FIRESTORE_VIOLATION {
+        string eventId PK
+        string userId FK
+        timestamp startedAt
+        timestamp endedAt
+        int durationSeconds
+        timestamp receivedAt
+        boolean excludedFromFinalScore
+    }
+    FIRESTORE_BILL_SHARE {
+        string uid PK
+        int baseShareVnd
+        int penaltyShareVnd
+        int overrideShareVnd
+        int shareVnd
+        string paymentStatus
+    }
+    FIRESTORE_EARLY_EXIT_REQUEST {
+        string requestId PK
+        string requesterUid
+        string status
+        timestamp createdAt
+        timestamp decidedAt
+    }
+    FIRESTORE_TERMINATION_VOTE {
+        string voteId PK
+        timestamp createdAt
+        timestamp expiresAt
+        string status
+    }
+    FIRESTORE_BALLOT {
+        string uid PK
+        boolean approve
+        timestamp castAt
+    }
+    FIRESTORE_ROOM_PIN {
+        string pin PK
+        string roomId FK
+        timestamp expiresAt
+    }
+    FIRESTORE_USAGE {
+        string yyyyMM PK
+        int roomsCreated
+    }
+    FIRESTORE_ACTIVATION_CODE {
+        string codeHash PK
+        string redeemedBy
+        timestamp redeemedAt
+    }
+    FIRESTORE_SYNC_RECEIPT {
+        string eventId PK
+        string eventType
+        string payloadHash
+        string outcome
+        timestamp processedAt
+    }
+
+    SQLITE_SESSION {
+        string id PK
+        string mode
+        string status
+        int duration_seconds
+        int started_at_ms
+        int completed_at_ms
+        int synced_at_ms
+    }
+    SQLITE_ROOM {
+        string id PK
+        string host_id
+        string pin
+        string status
+        int participant_count
+        int total_bill_vnd
+        int updated_at_ms
+    }
+    SQLITE_ROOM_MEMBER {
+        string room_id PK
+        string user_id PK
+        string role
+        string status
+        int penalty_score
+        int lift_count
+        int violation_duration_seconds
+        int sync_acknowledged_at_ms
+    }
+    SQLITE_VIOLATION_LOG {
+        string event_id PK
+        string session_id FK
+        string room_id FK
+        string user_id
+        int started_at_ms
+        int ended_at_ms
+        int duration_seconds
+        string sync_status
+        int synced_at_ms
+    }
+    SQLITE_ENTITLEMENT {
+        int id PK
+        boolean is_premium
+        string verification_status
+        string activation_code_hash
+        int activated_at_ms
+    }
+    SQLITE_APP_SETTING {
+        string key PK
+        string value
+    }
+    SQLITE_SYNC_OUTBOX {
+        string event_id PK
+        string event_type
+        int schema_version
+        string aggregate_type
+        string aggregate_id
+        string session_id FK
+        string actor_uid
+        int occurred_at_utc_ms
+        string payload_json
+        string sync_status
+        int attempt_count
+        int next_attempt_at_ms
+        int lease_expires_at_ms
+        string last_error_code
+        int created_at_ms
+        int synced_at_ms
+    }

@@ -1,0 +1,36 @@
+flowchart TB
+    User["Host / Member"]
+    BankApp["Vietnamese banking app"]
+    VietQR["VietQR payload or image service"]
+
+    subgraph Mobile["DontLift Expo Development Build"]
+        UI["Expo Router UI"]
+        Domain["Session, Phone-Down Detection, 3-Second Grace Period"]
+        Repo["Local repositories"]
+        SQLite[("SQLite domain data and sync outbox")]
+        FirebaseAdapter["React Native Firebase adapters"]
+        Sync["Offline sync worker"]
+    end
+
+    subgraph Firebase["Firebase project"]
+        Auth["Firebase Authentication"]
+        Firestore[("Cloud Firestore Standard")]
+        Functions["Cloud Functions 2nd gen"]
+        Scheduler["Scheduled Functions"]
+    end
+
+    User --> UI
+    UI --> Domain
+    Domain --> Repo
+    Repo --> SQLite
+    SQLite --> Sync
+    UI --> FirebaseAdapter
+    Sync --> FirebaseAdapter
+    FirebaseAdapter --> Auth
+    FirebaseAdapter -->|"authorized reads and realtime listeners"| Firestore
+    FirebaseAdapter -->|"callable commands and syncEvents"| Functions
+    Functions -->|"Admin SDK transactions"| Firestore
+    Scheduler -->|"abort stale rooms and cleanup expired votes"| Firestore
+    UI -->|"authoritative share + Host bank details"| VietQR
+    VietQR --> BankApp
+    BankApp -.->|"payment occurs outside DontLift"| User
