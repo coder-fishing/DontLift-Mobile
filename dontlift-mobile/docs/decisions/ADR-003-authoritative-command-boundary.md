@@ -18,15 +18,18 @@ Dùng hybrid boundary:
 - Shared-state mutations đi qua callable Cloud Functions.
 - Offline queue chỉ chứa allowlisted facts/events, không chứa state-dependent commands.
 - Commands có `requestId`; events có `eventId`.
+- `syncEvents` là canonical ingestion path; client không direct `setDoc` violation hoặc Solo summary.
+
+Quyết định này là human-approved override của Feature Spec Section 6.3. Override giữ UUID idempotency nhưng chuyển schema, ownership, lifecycle validation và aggregate update vào một Cloud Function transaction.
 
 `completeRoom` thực hiện `ACTIVE → COMPLETED` nhưng mở `reconciliationStatus = PENDING`. Mỗi Member flush eligible events đến room `endedAt`, rồi gửi sync acknowledgment.
 
 Final score được khóa khi:
 
 1. Mọi relevant Member đã acknowledgment: `ALL_SYNCED`; hoặc
-2. Host xác nhận override sau khi thấy danh sách Member chưa sync: `HOST_OVERRIDE`.
+2. Host xác nhận override sau khi thấy đúng warning: **“Some Members have not synced. Late violations will not affect payment.”**
 
-Bill calculation bị chặn đến khi reconciliation `FINALIZED`. Late event hợp lệ sau Host override vẫn được lưu vào history nhưng được đánh dấu excluded và không thay đổi score snapshot hoặc bill đã khóa.
+`HOST_OVERRIDE` atomically finalizes score và ghi append-only `rooms/{roomId}/reconciliationAudits/{auditId}` với Host UID, `requestId`, unsynced Member UIDs, room end time, created time và resulting score snapshot reference. Bill calculation bị chặn đến khi reconciliation `FINALIZED`. Late event hợp lệ sau Host override vẫn được lưu vào history với `excludedFromFinalScore = true` và `exclusionReason = HOST_OVERRIDE`; score snapshot và bill đã khóa không đổi.
 
 Termination vote dùng authoritative `expiresAt`. Ballot sau expiry bị từ chối ngay cả khi physical cleanup chưa chạy.
 
@@ -74,4 +77,5 @@ Loại vì vi phạm mục tiêu offline reconciliation khi Member có pending e
 
 - PRD FR-02, FR-03, FR-04 và FR-05.
 - Feature Spec Sections 2, 3, 4.2, 5 và 6.
-- Approved finalization policy: Member sync plus explicit Host override.
+- Human decision F-02 ngày 2026-09-23: `syncEvents` thay direct Firestore write trong Feature Spec Section 6.3.
+- Approved finalization policy F-04 ngày 2026-09-23: Member sync plus explicit Host override.

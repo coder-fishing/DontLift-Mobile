@@ -25,18 +25,22 @@ Initial event allowlist:
 - `SOLO_SESSION_COMPLETED`
 - `GROUP_SESSION_LOCAL_SUMMARY`
 
-State machine:
+`SOLO_SESSION_COMPLETED` dùng `session_id` UUID làm idempotency key và ghi canonical summary vào `users/{uid}/sessions/{sessionId}`. Summary gồm duration, lift count, violation duration, Penalty Score, start time và completion time. Owner query history theo `completedAt DESC` với cursor pagination.
 
-- `PENDING → IN_FLIGHT → SYNCED`
-- Transient failure: `IN_FLIGHT → PENDING`
-- Expired lease after crash: `IN_FLIGHT → PENDING`
-- Permanent validation/authorization rejection: `IN_FLIGHT → REJECTED`
+State vocabulary cho `rooms`, `violation_logs` và `sync_outbox`:
+
+- `PENDING → SYNCED` khi backend acknowledgment thành công.
+- Transient failure giữ `PENDING`, cập nhật retry metadata và lease.
+- Permanent validation, authorization hoặc lifecycle rejection chuyển `PENDING → FAILED`.
+- Worker lease một row `PENDING` bằng `lease_expires_at`; lease hết hạn cho phép claim lại mà không cần trạng thái `IN_FLIGHT`.
 
 Worker chạy sau local commit khi online, network recovery, startup, auth restore, app resume và opportunistic background task. Events giữ ordering trong cùng aggregate và được gửi theo bounded batches.
 
 Backend `syncEvents` tạo at-least-once delivery với idempotent effect bằng server-only `syncReceipts/{eventId}` và Firestore transaction. Receipt lưu payload hash; cùng ID và khác hash bị reject.
 
-Success được đánh dấu `SYNCED` bền vững trước khi outbox payload được purge. Domain record có retention riêng. Free-tier `Violation Log` dùng 7-day purge; premium history không dùng free-tier purge.
+`syncEvents` là ingestion path duy nhất. Client không direct-write violation hoặc Solo summary vào Firestore. Quyết định này là human-approved override của Feature Spec Section 6.3; `event_id` vẫn là UUID idempotency key, nhưng server transaction sở hữu validation, domain effect và receipt.
+
+Success được đánh dấu `SYNCED` bền vững trước khi outbox payload được purge. Domain record có retention riêng. Local Premium giữ permanent SQLite `Violation Log`; local non-Premium dùng 7-day purge. Firestore Solo summary chỉ permanent cho verified Server Premium; server non-Premium dùng 7-day purge.
 
 ## Consequences
 
@@ -50,10 +54,10 @@ Success được đánh dấu `SYNCED` bền vững trước khi outbox payload 
 
 ### Negative
 
+- Event có permanent failure cần diagnostics và retention thay vì retry vô hạn.
 - Firestore cache và SQLite projection cần explicit precedence.
 - Generic JSON payload cần versioned validators.
 - Receipt collection tăng theo số event và cần TTL.
-- Event có permanent rejection cần diagnostics và retention thay vì retry vô hạn.
 - Exactly-once network delivery không được bảo đảm; chỉ idempotent backend effect được bảo đảm.
 
 ## Alternatives considered

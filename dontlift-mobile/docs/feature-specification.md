@@ -126,10 +126,10 @@
 7. **Host Session End (`US-12`):** Host taps "End Session". Cloud Function sets room to `COMPLETED`, computes final authoritative Penalty Scores, and navigates Host to Bill Settlement.
 
 ### 4.3 Bill Settlement & VietQR (`US-13` – `US-15`, `FR-05`)
-1. **Total Bill Input (`US-13`):** Host enters total bill amount in VND (e.g. `350000`). Input validated as positive integer $\ge 1,000$.
-2. **Calculation Engine (`US-14`):** Cloud Function executes Hybrid Bill Allocation algorithm (Section 5.2). Generates deterministic share per member.
-3. **Host Override Option (`US-14`):** Host MAY manually set a specific VND share or percentage for specific members. Unassigned balance is automatically split equally among members with 0 violations.
-4. **Breakdown Display (`US-14`):** Real-time snapshot updates members' UI with exact individual share, violation count, and penalty breakdown.
+1. **Total Bill Input (`US-13`):** Host enters a positive integer amount in VND, minimum 1,000 VND; divisibility by 1,000 is not required.
+2. **Calculation Engine (`US-14`):** Cloud Function executes the Hybrid Bill Allocation algorithm in Section 5.2 and applies the same deterministic rounding pipeline to default and override cases.
+3. **Host Override Option (`US-14`):** Host MAY assign a specific VND share or percentage to selected members. Overrides modify the raw share vector; they do not invoke a separate remainder-distribution branch.
+4. **Breakdown Display (`US-14`):** Real-time snapshot updates members' UI with exact individual share, violation count, and penalty breakdown. Final shares always sum exactly to the entered total.
 5. **VietQR Code Generation (`US-15`):**  
    - Member taps "Pay Share".  
    - Client generates NAPAS/VietQR compliant payload string:  
@@ -183,20 +183,20 @@ Total Group Penalty Score: $S_{\text{total}} = \sum_{j=1}^N S_j$.
   $$P_i = \left( \frac{B_{\text{base}}}{N} \right) + \left( B_{\text{penalty}} \times \frac{S_i}{S_{\text{total}}} \right)$$
 
 #### Step 3: Host Manual Override Handling (If Applied)
-If Host manually assigns fixed amount $O_m$ to subset of members $M \subset \{1, \dots, N\}$:
-1. Deduct overrides from total bill: $B_{\text{rem}} = B - \sum_{m \in M} O_m$.
-2. Distribute $B_{\text{rem}}$ among non-overridden members using Step 2 formula over remaining participants.
+Host overrides replace the selected members' raw amounts or percentages before rounding. The complete raw share vector must represent the full bill. Default and override cases continue through the same Step 4; there is no separate remainder-after-override algorithm.
 
-#### Step 4: Deterministic 1,000 VND Rounding & Remainder Distribution
-1. Initial 1,000 VND Rounding:  
-   $$P_i' = \text{round}\left( \frac{P_i}{1000} \right) \times 1000$$
-2. Discrepancy Calculation:  
+#### Step 4: Deterministic 1,000 VND Rounding & Residual Distribution
+1. Initial 1,000 VND rounding uses integer arithmetic and rounds an exact 500 VND tie upward:
+   $$P_i' = \text{roundHalfUp}\left( \frac{P_i}{1000} \right) \times 1000$$
+2. Discrepancy calculation:
    $$\Delta = B - \sum_{i=1}^N P_i'$$
-3. Remainder Adjustment:  
-   - Sort participants by rounding residual $R_i = P_i - P_i'$ descending.  
-   - If $\Delta > 0$, add $+1,000$ VND to the top $\frac{\Delta}{1000}$ participants in residual rank.  
-   - If $\Delta < 0$, subtract $-1,000$ VND from the bottom $\frac{|\Delta|}{1000}$ participants in residual rank.  
-4. Invariant Assertion: $\sum_{i=1}^N P_i'' = B$ exactly. Zero mathematical discrepancy.
+3. Rank participants by residual $R_i = P_i - P_i'$ descending, breaking ties by ascending Member UID.
+4. While $|\Delta| \ge 1,000$:
+   - If $\Delta > 0$, add 1,000 VND following the rank from highest residual downward.
+   - If $\Delta < 0$, subtract 1,000 VND following the rank from lowest residual upward, skipping any adjustment that would make a share negative.
+5. If a non-zero residual smaller than 1,000 VND remains, apply that exact residual to the first eligible member in the same deterministic rank. At most one final share is therefore not a multiple of 1,000 VND.
+6. Invariant assertion:
+   $$\sum_{i=1}^N P_i'' = B$$
 
 ---
 

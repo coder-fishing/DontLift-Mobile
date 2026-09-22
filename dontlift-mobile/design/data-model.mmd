@@ -1,11 +1,14 @@
 erDiagram
     FIRESTORE_USER ||--o{ FIRESTORE_ROOM : hosts
+    FIRESTORE_USER ||--o{ FIRESTORE_SOLO_SESSION : owns
     FIRESTORE_USER ||--o{ FIRESTORE_MEMBER : participates
     FIRESTORE_USER ||--o{ FIRESTORE_USAGE : consumes
     FIRESTORE_USER ||--o{ FIRESTORE_SYNC_RECEIPT : owns
     FIRESTORE_ROOM ||--|{ FIRESTORE_MEMBER : contains
     FIRESTORE_ROOM ||--o{ FIRESTORE_VIOLATION : records
     FIRESTORE_ROOM ||--o{ FIRESTORE_BILL_SHARE : allocates
+    FIRESTORE_ROOM ||--o| FIRESTORE_SETTLEMENT_DETAIL : pays_to
+    FIRESTORE_ROOM ||--o{ FIRESTORE_RECONCILIATION_AUDIT : audits
     FIRESTORE_ROOM ||--o{ FIRESTORE_EARLY_EXIT_REQUEST : receives
     FIRESTORE_ROOM ||--o{ FIRESTORE_TERMINATION_VOTE : opens
     FIRESTORE_TERMINATION_VOTE ||--o{ FIRESTORE_BALLOT : contains
@@ -23,6 +26,15 @@ erDiagram
         boolean isPremium
         timestamp createdAt
         timestamp updatedAt
+    }
+    FIRESTORE_SOLO_SESSION {
+        string sessionId PK
+        int durationSeconds
+        int liftCount
+        int violationDurationSeconds
+        int penaltyScore
+        timestamp startedAt
+        timestamp completedAt
     }
     FIRESTORE_ROOM {
         string roomId PK
@@ -66,6 +78,24 @@ erDiagram
         int overrideShareVnd
         int shareVnd
         string paymentStatus
+    }
+    FIRESTORE_SETTLEMENT_DETAIL {
+        string id PK
+        string bankId
+        string accountNumber
+        string accountName
+        timestamp updatedAt
+        timestamp expiresAt
+    }
+    FIRESTORE_RECONCILIATION_AUDIT {
+        string auditId PK
+        string action
+        string actorUid
+        string requestId
+        string unsyncedMemberUids
+        timestamp roomEndedAt
+        timestamp createdAt
+        string scoreSnapshotRef
     }
     FIRESTORE_EARLY_EXIT_REQUEST {
         string requestId PK
@@ -124,6 +154,7 @@ erDiagram
         int participant_count
         int total_bill_vnd
         int updated_at_ms
+        string sync_status
     }
     SQLITE_ROOM_MEMBER {
         string room_id PK
@@ -148,7 +179,8 @@ erDiagram
     }
     SQLITE_ENTITLEMENT {
         int id PK
-        boolean is_premium
+        boolean local_premium
+        boolean server_premium
         string verification_status
         string activation_code_hash
         int activated_at_ms
