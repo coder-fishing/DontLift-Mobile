@@ -1,0 +1,129 @@
+sequenceDiagram
+    autonumber
+    actor User as Host or Member
+    participant App as Expo mobile app
+    participant DB as SQLite
+    participant Auth as Firebase Auth
+    participant Fn as Cloud Functions
+    participant FS as Firestore
+    participant QR as VietQR or banking app
+
+    rect rgb(238, 244, 255)
+        Note over User,FS: Auth flow
+        User->>App: Register or login with email and password
+        App->>Auth: Authenticate
+        Auth-->>App: Native persisted auth state
+        App->>Fn: completeRegistrationProfile with ID token
+        Fn->>FS: Create or validate users uid
+        FS-->>Fn: Profile result
+        Fn-->>App: Authenticated profile
+    end
+
+    rect rgb(239, 250, 244)
+        Note over User,FS: Solo Focus flow with offline-first capture
+        User->>App: Start Solo Focus Mode
+        App->>DB: Insert ACTIVE session
+        loop Phone-Down Detection
+            App->>App: Evaluate orientation and 3-Second Grace Period
+            alt Confirmed violation
+                App->>DB: Transaction insert Violation Log and sync_outbox
+                DB-->>App: Durable local commit
+            end
+        end
+        User->>App: Complete session
+        App->>DB: Transaction complete session and queue summary
+        opt Network is reachable
+            App->>Fn: syncEvents batch
+            Fn->>FS: Transaction write events and receipts
+            FS-->>Fn: Per-event outcomes
+            Fn-->>App: Acknowledgments
+            App->>DB: Mark events SYNCED
+        end
+    end
+
+    rect rgb(255, 248, 235)
+        Note over User,FS: Group Room create, join, active and completion
+        User->>App: Create or join room
+        App->>Fn: createRoom or joinRoomByPin
+        Fn->>FS: Transaction validate quota, PIN, capacity and membership
+        FS-->>Fn: Room and membership
+        Fn-->>App: WAITING room
+        App->>FS: Listen to room and members
+        User->>App: Host starts session
+        App->>Fn: startRoom
+        Fn->>FS: WAITING to ACTIVE transaction
+        FS-->>App: ACTIVE snapshot
+        loop Active session
+            App->>DB: Capture local violations atomically
+            App->>Fn: syncEvents when reachable
+            Fn->>FS: Idempotent violation and aggregate transaction
+            FS-->>App: Realtime Penalty Leaderboard
+        end
+        User->>App: Host completes room
+        App->>Fn: completeRoom
+        Fn->>FS: ACTIVE to COMPLETED and reconciliation PENDING
+        FS-->>App: Completion snapshot
+        App->>Fn: Flush events then acknowledgeMemberSync
+        Fn->>FS: Record Member sync acknowledgment
+        alt Every Member acknowledged
+            Fn->>FS: Finalize scores with ALL_SYNCED
+        else Host accepts missing Member warning
+            User->>App: Confirm finalization override
+            App->>Fn: finalizeRoomScores
+            Fn->>FS: Finalize scores with HOST_OVERRIDE
+        end
+    end
+
+    rect rgb(255, 240, 240)
+        Note over App,FS: Unexpected network loss and recovery
+        FS--xApp: Connection lost during active use
+        loop While offline
+            App->>DB: Transaction persist domain event and PENDING outbox item
+            DB-->>App: Continue under approved offline policy
+        end
+        App->>App: Connectivity becomes reachable
+        App->>DB: Lease bounded PENDING batch as IN_FLIGHT
+        App->>Fn: syncEvents with event IDs and versioned payloads
+        loop Each event
+            Fn->>FS: Check receipt, ownership and session window
+            alt New valid event
+                Fn->>FS: Transaction domain effect and receipt
+                FS-->>Fn: Success outcome
+            else Existing matching receipt
+                FS-->>Fn: Previous success outcome
+            else Permanent rejection
+                FS-->>Fn: Stable rejection code
+            end
+        end
+        Fn-->>App: Per-event acknowledgment
+        App->>DB: SYNCED, PENDING retry, or REJECTED
+    end
+
+    rect rgb(245, 240, 255)
+        Note over User,QR: Bill Settlement and VietQR P2P
+        User->>App: Host enters total bill and optional overrides
+        App->>Fn: calculateBillShares or applyBillOverrides
+        Fn->>FS: Validate finalized scores and integer VND allocation
+        FS-->>App: Realtime authoritative bill shares
+        User->>App: Member selects Pay Share
+        App->>QR: Generate VietQR from authoritative share
+        QR-->>User: Open or scan in banking app
+        User->>App: Host manually confirms payment
+        App->>Fn: markBillSharePaid
+        Fn->>FS: UNPAID to MARKED_AS_PAID
+    end
+
+    rect rgb(240, 248, 255)
+        Note over User,FS: Activation flow
+        User->>App: Enter activation code
+        alt Offline
+            App->>App: Validate format and checksum
+            App->>DB: Store PENDING_VERIFICATION entitlement
+        else Online
+            App->>Fn: redeemActivationCode
+            Fn->>FS: Transaction redeem hashed code once
+            Fn->>FS: Set users uid isPremium true
+            Fn-->>App: Verified entitlement
+            App->>DB: Store verified premium state
+        end
+    end
