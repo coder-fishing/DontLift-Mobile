@@ -30,7 +30,7 @@ flowchart TB
     FirebaseAdapter -->|"authorized reads and realtime listeners"| Firestore
     FirebaseAdapter -->|"callable commands and syncEvents"| Functions
     Functions -->|"Admin SDK transactions"| Firestore
-    Scheduler -->|"abort stale rooms and cleanup expired votes"| Firestore
+    Scheduler -->|"abort stale rooms; clean votes, Solo history, settlement details"| Firestore
     UI -->|"authoritative share + Host bank details"| VietQR
     VietQR --> BankApp
     BankApp -.->|"payment occurs outside DontLift"| User

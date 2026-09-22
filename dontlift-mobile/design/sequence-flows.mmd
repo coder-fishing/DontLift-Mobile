@@ -34,10 +34,31 @@ sequenceDiagram
         App->>DB: Transaction complete session and queue summary
         opt Network is reachable
             App->>Fn: syncEvents batch
-            Fn->>FS: Transaction write events and receipts
+            Fn->>FS: Transaction write Solo summary or violation plus receipt
             FS-->>Fn: Per-event outcomes
             Fn-->>App: Acknowledgments
             App->>DB: Mark events SYNCED
+            App->>FS: Query own sessions by completedAt DESC with cursor
+            FS-->>App: Authoritative Solo history page
+        end
+    end
+
+    rect rgb(235, 248, 250)
+        Note over App,DB: Platform lifecycle during an active session
+        App->>DB: Persist lifecycle candidate at inactive or background transition
+        App->>App: iOS beginBackgroundTask after durable commit
+        App->>App: Start 3-Second Grace Period
+        alt Returns foreground before 3 seconds
+            App->>DB: Cancel lifecycle candidate
+            App->>App: iOS endBackgroundTask
+        else Condition persists at least 3 seconds
+            App->>DB: Confirm Violation Log and sync_outbox atomically
+            App->>App: iOS endBackgroundTask
+        else OS suspends or kills process first
+            App->>DB: Keep unresolved candidate durable
+            App->>App: iOS expiration handler ends background task
+            App->>App: Android WorkManager schedules deferred reconciliation
+            App->>DB: Startup or resume reconciles elapsed time idempotently
         end
     end
 
@@ -55,7 +76,7 @@ sequenceDiagram
         FS-->>App: ACTIVE snapshot
         loop Active session
             App->>DB: Capture local violations atomically
-            App->>Fn: syncEvents when reachable
+            App->>Fn: syncEvents when reachable, never direct setDoc
             Fn->>FS: Idempotent violation and aggregate transaction
             FS-->>App: Realtime Penalty Leaderboard
         end
@@ -67,10 +88,12 @@ sequenceDiagram
         Fn->>FS: Record Member sync acknowledgment
         alt Every Member acknowledged
             Fn->>FS: Finalize scores with ALL_SYNCED
-        else Host accepts missing Member warning
-            User->>App: Confirm finalization override
-            App->>Fn: finalizeRoomScores
-            Fn->>FS: Finalize scores with HOST_OVERRIDE
+        else Members remain unsynced
+            App-->>User: Some Members have not synced. Late violations will not affect payment.
+            User->>App: Host confirms finalization override
+            App->>Fn: finalizeRoomScores with requestId and HOST_OVERRIDE
+            Fn->>FS: Transaction finalize scores and append audit log
+            FS-->>App: FINALIZED with HOST_OVERRIDE
         end
     end
 
@@ -82,7 +105,7 @@ sequenceDiagram
             DB-->>App: Continue under approved offline policy
         end
         App->>App: Connectivity becomes reachable
-        App->>DB: Lease bounded PENDING batch as IN_FLIGHT
+        App->>DB: Lease bounded PENDING batch, status stays PENDING
         App->>Fn: syncEvents with event IDs and versioned payloads
         loop Each event
             Fn->>FS: Check receipt, ownership and session window
@@ -96,14 +119,18 @@ sequenceDiagram
             end
         end
         Fn-->>App: Per-event acknowledgment
-        App->>DB: SYNCED, PENDING retry, or REJECTED
+        App->>DB: Mark SYNCED, keep PENDING for retry, or mark FAILED
     end
 
     rect rgb(245, 240, 255)
         Note over User,QR: Bill Settlement and VietQR P2P
         User->>App: Host enters total bill and optional overrides
+        App->>Fn: setSettlementDetails as Host
+        Fn->>FS: Write room settlement details with 30-day expiry
+        FS-->>App: Members can read settlement details
         App->>Fn: calculateBillShares or applyBillOverrides
-        Fn->>FS: Validate finalized scores and integer VND allocation
+        Fn->>Fn: Apply one rounding pipeline and exact residual correction
+        Fn->>FS: Transaction store shares with sum equal totalBillVnd
         FS-->>App: Realtime authoritative bill shares
         User->>App: Member selects Pay Share
         App->>QR: Generate VietQR from authoritative share
@@ -116,14 +143,17 @@ sequenceDiagram
     rect rgb(240, 248, 255)
         Note over User,FS: Activation flow
         User->>App: Enter activation code
-        alt Offline
+        alt Offline or network unavailable
             App->>App: Validate format and checksum
-            App->>DB: Store PENDING_VERIFICATION entitlement
+            App->>DB: Enable Local Premium and store PENDING_REDEMPTION
+            App-->>User: Ad-free, permanent local retention, custom themes
         else Online
+            App->>App: Validate format and checksum
             App->>Fn: redeemActivationCode
             Fn->>FS: Transaction redeem hashed code once
             Fn->>FS: Set users uid isPremium true
-            Fn-->>App: Verified entitlement
-            App->>DB: Store verified premium state
+            Fn-->>App: Verified Server Premium
+            App->>DB: Store local_premium and server_premium
+            App-->>User: Unlock server quota, capacity, advanced leaderboard
         end
     end

@@ -11,11 +11,18 @@ DontLift phân bổ bill dựa trên authoritative Penalty Scores. Product cấm
 ## Decision
 
 - Cloud Functions tính authoritative bill shares bằng integer VND sau score reconciliation.
-- `totalBillVnd` phải chia hết cho 1.000 để vừa bảo đảm rounded shares vừa bảo đảm tổng tuyệt đối.
+- `totalBillVnd` là positive integer tối thiểu 1.000 VND; không cần chia hết cho 1.000.
 - Tỷ trọng 40/60 dùng integer basis points `4000/6000`, không dùng floating point.
-- Sau override, phần còn lại dùng cùng penalty formula cho mọi non-overridden Members.
+- Default Hybrid Bill Allocation hoặc Host overrides đều tạo cùng raw share vector `P_i`; không có remainder-after-override branch riêng.
+- Mỗi raw share được round tới 1.000 VND gần nhất bằng integer arithmetic; tie đúng 500 VND round lên mốc 1.000 kế tiếp. Server tính $\Delta = totalBillVnd - \sum roundedShares$.
+- Khi $|\Delta| \ge 1.000$, server phân phối từng bước 1.000 VND theo residual rank: cộng từ residual cao xuống khi $\Delta > 0$, trừ từ residual thấp lên khi $\Delta < 0`; không được làm share âm.
+- Nếu còn sub-1.000 VND residual, server áp dụng chính xác phần còn lại cho eligible Member đứng đầu cùng residual rank. Vì vậy tối đa một final share không chia hết cho 1.000.
+- Tie được phá ổn định bằng Member UID tăng dần. Invariant cuối cùng là $\sum finalShares = totalBillVnd$ chính xác.
 - Early Exit Member dùng score đã đóng băng.
-- Client tạo VietQR từ authoritative `shareVnd`, Host bank details và memo `DL [RoomCode] [MemberName]`.
+- Client tạo VietQR từ authoritative `shareVnd`, room-scoped Host bank details và memo `DL [RoomCode] [MemberName]`.
+- Host ghi `rooms/{roomId}/settlementDetails/current` chỉ qua `setSettlementDetails`; room Members có read access để tạo QR.
+- Settlement details chứa bank ID, account number, account name, timestamps và `expiresAt = room.completedAt + 30 days`.
+- Scheduled cleanup xóa settlement details khi hết hạn. Bank details không được ghi vào logs hoặc analytics.
 - Payment xảy ra hoàn toàn ngoài DontLift.
 - Chỉ Host có thể chuyển `UNPAID → MARKED_AS_PAID` sau khi tự kiểm tra bank notification.
 - Không có bank API polling hoặc reverse transition tự động.
@@ -33,7 +40,7 @@ DontLift phân bổ bill dựa trên authoritative Penalty Scores. Product cấm
 
 - Host confirmation có thể sai hoặc bị quên.
 - Không có automatic reconciliation, dispute resolution hoặc payment proof.
-- Total bill phải được Host nhập theo bội 1.000 VND.
+- Khi bill không chia hết cho 1.000, tối đa một final share chứa sub-1.000 VND residual để giữ tổng chính xác.
 - Member phải rời hoặc chuyển sang banking app để thanh toán.
 
 ## Alternatives considered
@@ -46,11 +53,13 @@ Bị loại bởi strict product exclusions.
 
 Bị loại bởi strict product exclusions và yêu cầu bank integration mới.
 
-### Cho phép total bill không chia hết 1.000
+### Bắt buộc total bill chia hết cho 1.000
 
-Loại vì không thể đồng thời bảo đảm mọi share làm tròn 1.000 và tổng shares bằng chính xác total bill.
+Loại theo human decision F-07. Thay vào đó, một sub-1.000 VND residual cuối cùng được gán deterministically cho một eligible Member.
 
 ## Source
 
 - PRD OQ-1, OQ-2, FR-05, Section 8 và strict exclusions.
 - Feature Spec Sections 4.3 và 5.2.
+- Human decision F-07 ngày 2026-09-23: một rounding pipeline cho default/override và exact sub-1.000 VND residual.
+- Human decision F-08 ngày 2026-09-23: room-scoped settlement details với Host-only Function write và 30-day retention.

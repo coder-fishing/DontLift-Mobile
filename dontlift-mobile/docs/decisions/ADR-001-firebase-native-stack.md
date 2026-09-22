@@ -18,6 +18,8 @@ Dùng React Native Firebase trên Expo SDK 57 Development Build:
 - Không hỗ trợ Expo Go cho runtime tích hợp Firebase.
 - Không sao chép ID token hoặc refresh token vào SQLite, AsyncStorage hay Expo SecureStore.
 
+Đây là human-approved exception của Feature Spec Section 1.1. “Secure mobile storage” được thực hiện bởi native Firebase Auth SDK qua platform-protected persistence. App không đọc, export hoặc tạo bản sao refresh token; callable client lấy ID token qua SDK.
+
 Firestore Standard là database edition cho mobile SDK, Security Rules và document/subcollection model.
 
 ## Consequences
@@ -50,4 +52,5 @@ Loại vì tự quản lý token, refresh, retries và realtime transport làm t
 
 - PRD OQ-5, FR-02, FR-03 và NFR Platform/Token Security.
 - Feature Spec Sections 1, 2 và 6.
+- Human decision F-06 ngày 2026-09-23: SDK-managed native persistence thay Expo SecureStore token copy trong Feature Spec Section 1.1.
 - Expo SDK 57 Firebase integration guidance.
