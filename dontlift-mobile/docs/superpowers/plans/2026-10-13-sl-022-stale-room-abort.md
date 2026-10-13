@@ -46,13 +46,17 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 |---|---|
 | `src/features/rooms/host-heartbeat.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/features/rooms/group-session-controller.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
+| `functions/src/host-heartbeat.cjs` | Authenticated server boundary để Host cập nhật liveness; endpoint, wire contract và frequency chỉ chốt sau D3. |
 | `functions/src/abort-stale-rooms.cjs` | Backend boundary của slice; server identity/validation/transaction. |
 | `functions/index.js` | Backend boundary của slice; server identity/validation/transaction. |
 | `__tests__/stale-room-abort.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
 | `functions/tests/stale-room-abort.test.cjs` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
+| `functions/tests/host-heartbeat.test.cjs` | Auth, Host ownership, ACTIVE-state và heartbeat write-boundary tests. |
+| `functions/tests/host-heartbeat-discovery.test.cjs` | Kiểm tra heartbeat handler được export qua Functions entrypoint. |
+| `functions/tests/host-heartbeat-rules.emulator.test.cjs` | Client SDK bị từ chối khi tự ghi `hostHeartbeatAt` hoặc room authority fields. |
 
 **Unit:** Host heartbeat và abortStaleRooms.
-**Nhận:** Server-validated heartbeat, ACTIVE room và scheduler observation time.
+**Nhận:** Authenticated Host request qua server boundary, ACTIVE room và scheduler observation time.
 **Trả:** Room ABORTED khi Host stale quá 15 phút; local stats còn.
 **Đầu vào từ dependency:** capabilities/records/commands đã nghiệm thu theo các plan liên kết; chưa có dependency output thì không giả coi integration có thật.
 **Đầu ra cho slice sau:** outcome và invariants trong mục tiêu/nghiệm thu dưới đây; tên internal unit là đề xuất, wire names chỉ dùng theo API/ADR đã duyệt.
@@ -83,15 +87,19 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Viết focused failing cases sau đây; runner không tìm thấy hoặc thiếu dependency không được tính là red nghiệp vụ.
 
 - [ ] ACTIVE heartbeat mới → không abort.
+- [ ] Chỉ authenticated Host của room ACTIVE được ghi nhận heartbeat; Member, outsider, unauthenticated user và Host của room không ACTIVE bị từ chối.
+- [ ] Client không thể tự ghi `hostHeartbeatAt` hoặc lifecycle fields qua Firestore; heartbeat chỉ đi qua server boundary.
 - [ ] Stale quá 15 phút → ABORTED một lần.
 - [ ] Room COMPLETED/CANCELLED → không đổi ABORTED.
 
 - [ ] Chạy focused command trong mục 7; xác nhận failure đúng behavior đang thiếu, không từ toolchain lỗi.
 - [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
 
-1. Chốt heartbeat write boundary và frequency trước thêm command; không client write server lifecycle.
-2. Chỉ ACTIVE stale quá 15 phút đủ điều kiện; server time tránh device clock gian lận.
-3. Abort transaction idempotent; Host heartbeat mới trước commit phải được recheck.
+1. Sau khi D3 chốt endpoint/wire/error/frequency, ghi heartbeat qua authenticated Host-only server handler; derive UID từ Auth, dùng server time và không nhận lifecycle values từ client.
+2. Nối `host-heartbeat.ts` với handler theo cadence đã duyệt; lỗi request không được trình bày như heartbeat đã được server xác nhận.
+3. Export handler từ `functions/index.js`; thêm auth/ownership/state tests, client-denial Emulator Suite coverage và discovery test.
+4. Chỉ ACTIVE stale quá 15 phút đủ điều kiện; server time tránh device clock gian lận.
+5. Abort transaction idempotent; Host heartbeat mới trước commit phải được recheck.
 
 - [ ] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
 - [ ] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-022-stale-room-abort]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-022-stale-room-abort.md` và `Task: 1`.
@@ -104,6 +112,8 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 - [ ] Viết các failing cases về integration/recovery sau; không viết tests chỉ mirror implementation.
 
+- [ ] Emulator Suite: active Host được heartbeat; non-Host, outsider, unauthenticated actor và room không ACTIVE bị deny.
+- [ ] Client SDK không thể ghi `hostHeartbeatAt` hoặc room lifecycle fields; Functions discovery export heartbeat handler.
 - [ ] Heartbeat cập nhật đồng thời scan → transaction recheck.
 - [ ] Scheduler lặp → no duplicate effect.
 - [ ] Reconnect aborted room → không tiếp tục capture ngoài window.
@@ -122,6 +132,9 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 ## 6. Nghiệm thu và failure outcomes
 
 - [ ] ACTIVE heartbeat mới → không abort.
+- [ ] Authenticated Host heartbeat refreshes liveness; unauthorized actors and client-side authoritative writes are denied.
+- [ ] Client adapter reports heartbeat confirmed only after successful server response; network failure cannot refresh server liveness.
+- [ ] Functions discovery exposes the approved heartbeat handler.
 - [ ] Stale quá 15 phút → ABORTED một lần.
 - [ ] Room COMPLETED/CANCELLED → không đổi ABORTED.
 - [ ] Heartbeat cập nhật đồng thời scan → transaction recheck.
@@ -136,7 +149,7 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 
 ## 7. Verification và ghi nhận evidence
 
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/stale-room-abort.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/stale-room-abort.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/stale-room-abort.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/host-heartbeat.test.cjs`, `node --test functions/tests/host-heartbeat-discovery.test.cjs`, `node --test functions/tests/host-heartbeat-rules.emulator.test.cjs` và `node --test functions/tests/stale-room-abort.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 

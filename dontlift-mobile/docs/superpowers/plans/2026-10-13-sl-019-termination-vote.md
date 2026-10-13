@@ -15,7 +15,7 @@
 **Plan slug:** `2026-10-13-sl-019-termination-vote`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-019-termination-vote]`.
 **Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13, chưa được phê duyệt. User đã yêu cầu ghi draft P6.1 cho cả 37 slice; không suy thành approval thực thi.
 **Traceability:** US-11; ADR-003; ARCH §9.1.
-**Phụ thuộc bắt buộc:** [SL-017](./2026-10-13-sl-017-group-active.md)
+**Phụ thuộc bắt buộc:** [SL-017](./2026-10-13-sl-017-group-active.md), [SL-018](./2026-10-13-sl-018-early-exit.md)
 **Ưu tiên mềm:** Theo thứ tự đề xuất trong [mục lục](../../implementation-plan.md); thứ tự không tạo thêm hard dependency.
 
 ## 1. Nguồn và ranh giới
@@ -99,12 +99,13 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 - [ ] Một Member không đồng ý → chưa cancel.
 - [ ] Tất cả active Members đồng ý trước expiry → CANCELLED.
+- [ ] Sau khi SL-018 duyệt early exit cho một Member, Member đó vẫn nằm trong session/history nhưng không thuộc voter denominator; unanimity tính trên các active Members còn lại.
 - [ ] Ballot sau expiresAt nhưng doc còn → reject.
 
 - [ ] Chạy focused command trong mục 7; xác nhận failure đúng behavior đang thiếu, không từ toolchain lỗi.
 - [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
 
-1. Chốt wire, voter eligibility khi roster thay đổi và one-active-vote policy.
+1. Chốt wire, voter eligibility khi roster thay đổi và one-active-vote policy; approved early-exit Members vẫn được giữ cho history nhưng không tính vào active voter denominator.
 2. Expiry authoritative sau 30 giây; không chấp nhận ballot chỉ vì physical doc chưa cleanup.
 3. Ballot/receipt/count/transition atomically; 100% active Members mới cancel.
 4. Đăng ký hai callable và scheduled cleanup tại entrypoint Functions hiện có; cleanup chạy trễ không đổi logical expiry 30 giây. Không tự thêm cadence vào contract.
@@ -140,6 +141,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 - [ ] Một Member không đồng ý → chưa cancel.
 - [ ] Tất cả active Members đồng ý trước expiry → CANCELLED.
+- [ ] Early exit được approve trước khi mở hoặc trong lúc vote đang mở → chỉ active Members còn lại được tính vào unanimity theo policy D3 đã duyệt; exited Member vẫn retained trong session/history.
 - [ ] Ballot sau expiresAt nhưng doc còn → reject.
 - [ ] Replay ballot → không cộng count lại.
 - [ ] Hai open-vote requests đồng thời → một active vote.

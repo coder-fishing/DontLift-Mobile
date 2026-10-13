@@ -1,6 +1,6 @@
 # P6.1 — Mục lục kế hoạch DontLift
 
-> **DRAFT v0.11 — backlog và implementation plans chưa được phê duyệt.** Đây là bộ kế hoạch được user yêu cầu soạn và lưu để review cho 37 slice, không phải backlog P6.0 đã duyệt và không phải quyền chạy P6.2.
+> **DRAFT v0.12 — backlog và implementation plans chưa được phê duyệt.** Đây là bộ kế hoạch được user yêu cầu soạn và lưu để review cho 37 slice, không phải backlog P6.0 đã duyệt và không phải quyền chạy P6.2.
 
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Baseline:** `docs/p6.0-implementation-slices`, commit `57ca1eb28a2952c66d01f89b9b89bf755ab4812a`.
@@ -51,7 +51,7 @@ P0 là nền tảng/critical journey trước; P1 là cần hoàn tất MVP; P2 
 | SL-016 | [Lobby realtime và Host bắt đầu](./superpowers/plans/2026-10-13-sl-016-room-lobby-start.md) | P0 | SL-014 | D3 |
 | SL-017 | [Group active, capture và leaderboard](./superpowers/plans/2026-10-13-sl-017-group-active.md) | P0 | SL-016, SL-007, SL-009, SL-010, SL-011 | D3 |
 | SL-018 | [Early exit có Host quyết định](./superpowers/plans/2026-10-13-sl-018-early-exit.md) | P1 | SL-017 | D3 |
-| SL-019 | [Vote kết thúc sớm](./superpowers/plans/2026-10-13-sl-019-termination-vote.md) | P1 | SL-017 | D3 |
+| SL-019 | [Vote kết thúc sớm](./superpowers/plans/2026-10-13-sl-019-termination-vote.md) | P1 | SL-017, SL-018 | D3 |
 | SL-020 | [Host complete và ALL_SYNCED reconciliation](./superpowers/plans/2026-10-13-sl-020-room-completion.md) | P0 | SL-017 | Không xác nhận riêng |
 | SL-021 | [Host override khi còn Member chưa sync](./superpowers/plans/2026-10-13-sl-021-host-finalization-override.md) | P1 | SL-020 | Không xác nhận riêng |
 | SL-022 | [Stale room chuyển ABORTED](./superpowers/plans/2026-10-13-sl-022-stale-room-abort.md) | P1 | SL-017 | D3 |
@@ -112,7 +112,7 @@ D3 chỉ chặn command/event semantics chưa có wire rõ; không blanket-block
 | US-08 | 016: roster/Host Start/Member wait/reconnect |
 | US-09 | 017: local group capture/authoritative realtime leaderboard; reuse 007/009/010/011 |
 | US-10 | 018: request/decision/frozen cutoff và retained participation |
-| US-11 | 019: unanimous consensus/expiry/CANCELLED/no settlement |
+| US-11 | 019: unanimous consensus/expiry/CANCELLED/no settlement; Member đã early-exit được duyệt vẫn giữ trong history nhưng không tính vào voter denominator |
 | US-12 | 020: complete/ACK/ALL_SYNCED; 021: Host override/audit/history-only late events |
 | US-13 | 024: Host/state/amount validation |
 | US-14 | 024: default/zero-score/early-exit/exact integer math; 025: overrides |
@@ -140,7 +140,7 @@ Shared ownership: 001 sở hữu test harness/root lockfile changes; 002 native 
 |---|---|---|
 | `users/{uid}` | 003 sở hữu owner-only read Rules + Emulator Suite trước profile fetch; 004 kiểm chứng login/restore client flow; 029 chỉ sở hữu allowlisted profile-edit Rules + Emulator Suite | Chỉ owner đọc; chỉ field profile allowlist được phép sửa theo plan 029; entitlement/server fields server-only. |
 | `users/{uid}/sessions/{sessionId}` | 012 Solo-history Rules | Owner đọc; client không ghi summary authoritative. |
-| `rooms/{roomId}` và `rooms/{roomId}/members/{uid}` | 016 room/member Rules | Thành viên cùng room đọc; outsider/anonymous/cross-room bị từ chối; client không ghi lifecycle, score hay counters authoritative. |
+| `rooms/{roomId}` và `rooms/{roomId}/members/{uid}` | 016 room/member Rules; 022 regression-checks client heartbeat writes and server authorization | Thành viên cùng room đọc; outsider/anonymous/cross-room bị từ chối; client không ghi lifecycle, heartbeat, score hay counters authoritative. |
 | `rooms/{roomId}/violations/{eventId}` | 017 Group-active Rules | Thành viên cùng room đọc; leaderboard hiện dùng room/member resources đã được SL-016 cấp read. Không thêm projection path nếu chưa có contract duyệt. |
 | Early-exit request resource (path theo contract được duyệt) | 018; sau khi D3 chốt path/schema | Host và requester/member theo policy đã duyệt đọc; client writes chỉ được mở nếu contract/ADR cho phép, mặc định giữ server boundary. |
 | Termination-vote resource (path theo contract được duyệt) | 019; sau khi D3 chốt path/schema | Active members đọc trong room; mở client writes chỉ theo contract được duyệt; expiry/finalization server-owned. |
@@ -158,7 +158,7 @@ Mỗi resource owner chạy allowed/denied Emulator Suite tests bằng client SD
 2. 005 → 006 → 007 → 008; tiếp 009 và 010.
 3. 011 → 012.
 4. 013 → 014; tiếp 015 và 016 → 017.
-5. 018/019/022; 020 → 021.
+5. 018 → 019; 022 alongside 018/019; 020 → 021.
 6. 023 → 024 → 025 và 026 → 027.
 7. 028/029/030.
 8. 031 → 032; tiếp 033/034/035; 036 sau decision.
@@ -188,6 +188,8 @@ Website mua Premium/code generation/email delivery là external operational prer
 - v0.8: SL-013 sở hữu invitation encoder/QR renderer, dependency/lockfiles và canonical contract dùng lại bởi SL-015. Ghi D12 timezone quota và D13 scheme/payload thành blockers, thêm rollover/replay/leading-zero/render-failure/producer-parser scan coverage. Không quyết định timezone/scheme hoặc sửa backlog P6.0.
 - v0.9: Sửa source precedence ở prompt P6.1 và prompt P6.0 theo AGENTS; SL-034 sở hữu app-level provider và migration toàn bộ theme consumers cùng producer prerequisites/rendered-state matrix; SL-028 phụ thuộc SL-024 trước share reads. D6 và D4 vẫn mở, quyền lợi theme Local Premium không phụ thuộc redemption Server Premium.
 - v0.10: SL-028 sở hữu local group-summary completion hook, schema/recorder/repository và atomic outbox enqueue, với rollback/restart/replay/reconnect coverage; D4 vẫn chặn trigger/schema chưa duyệt. SL-031 phụ thuộc SL-006 để giữ profile/session-before-entitlement migration acceptance. Không queue room completion command hoặc sửa canonical backlog.
+- v0.11: SL-018 sở hữu mở rộng syncEvents cho per-member cutoff và boundary/concurrency tests; D3 vẫn chặn policy chưa duyệt. SL-013 phụ thuộc SL-006 để room migration theo sau sessions migration, giữ version và dữ liệu cũ.
+- v0.12: SL-022 sở hữu authenticated server heartbeat write path, Functions export, authorization/client-denial Emulator Suite và discovery coverage sau khi D3 chốt contract. SL-019 phụ thuộc SL-018 và kiểm chứng early-exit Member vẫn retained nhưng không làm voter unanimity bất khả thi. Giữ nguyên D3, IDs và trạng thái draft.
 
 **Trạng thái corrections:** [SL-003 review](./superpowers/reviews/2026-10-13-sl-003-registration-profile-review-plan.md), [SL-005 review](./superpowers/reviews/2026-10-13-sl-005-sensor-availability-review-plan.md), [SL-007 review](./superpowers/reviews/2026-10-13-sl-007-foreground-detection-review-plan.md), [SL-009 review](./superpowers/reviews/2026-10-13-sl-009-android-recovery-review-plan.md), [SL-010 review](./superpowers/reviews/2026-10-13-sl-010-ios-recovery-review-plan.md), [SL-013 review](./superpowers/reviews/2026-10-13-sl-013-room-create-review-plan.md), [SL-016 review](./superpowers/reviews/2026-10-13-sl-016-room-lobby-start-review-plan.md), [SL-028 review](./superpowers/reviews/2026-10-13-sl-028-group-history-review-plan.md), [SL-029 review](./superpowers/reviews/2026-10-13-sl-029-profile-edit-review-plan.md), [SL-030 review](./superpowers/reviews/2026-10-13-sl-030-feedback-settings-review-plan.md), [SL-031 review](./superpowers/reviews/2026-10-13-sl-031-local-premium-review-plan.md), [SL-034 review](./superpowers/reviews/2026-10-13-sl-034-premium-themes-review-plan.md), [SL-037 review](./superpowers/reviews/2026-10-13-sl-037-mvp-release-review-plan.md).
 
@@ -204,3 +206,5 @@ Review batch v0.9: [Prompt precedence](./superpowers/reviews/2026-10-13-implemen
 Review batch v0.10: [SL-028](./superpowers/reviews/2026-10-13-sl-028-group-history-review-plan.md), [SL-031](./superpowers/reviews/2026-10-13-sl-031-local-premium-review-plan.md).
 
 Review batch v0.11: [SL-018](./superpowers/reviews/2026-10-13-sl-018-early-exit-review-plan.md) sở hữu mở rộng syncEvents cho per-member cutoff và boundary/concurrency tests; D3 vẫn chặn policy chưa duyệt. [SL-013](./superpowers/reviews/2026-10-13-sl-013-room-create-review-plan.md) thêm hard dependency SL-006 để room migration theo sau sessions migration thật, giữ version và dữ liệu cũ.
+
+Review batch v0.12: [SL-022](./superpowers/reviews/2026-10-13-sl-022-stale-room-abort-review-plan.md) bổ sung server heartbeat writer và authorization/discovery coverage; [SL-019](./superpowers/reviews/2026-10-13-sl-019-termination-vote-review-plan.md) thêm SL-018 hard dependency và early-exit/vote roster integration case.
