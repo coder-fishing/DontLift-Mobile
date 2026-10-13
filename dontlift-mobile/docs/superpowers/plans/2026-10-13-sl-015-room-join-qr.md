@@ -8,7 +8,7 @@
 
 **Slice:** SL-015. **Ưu tiên đề xuất:** P1. **Release:** MVP + activation/Premium; post-MVP deferred. SL-036 chỉ được tính release sau D6.
 
-**Trạng thái kế hoạch:** DRAFT — chưa được human duyệt; bị chặn bởi E1.
+**Trạng thái kế hoạch:** DRAFT — chưa được human duyệt; bị chặn bởi D13 và E1.
 **Trạng thái implementation quan sát:** Không có scanner/deep-link resolver. Chưa có evidence nghiệm thu slice.
 **Baseline khảo sát:** docs/p6.0-implementation-slices tại 57ca1eb28a2952c66d01f89b9b89bf755ab4812a.
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
@@ -35,6 +35,7 @@ Trong slice này, camera chỉ được dùng để quét QR invitation có cons
 ## 2. Blocker, risk và quyết định cần duyệt
 
 - **E1:** Cần Development Build, Android/iOS physical devices, toolchains và Emulator Suite để có native/integration evidence.
+- **D13:** Canonical invitation scheme/payload phải được duyệt và do SL-013 sở hữu; không chốt riêng format trong parser.
 
 **Rủi ro cụ thể:** Scheme dontliftmobile hiện khác dontlift example; cần duyệt một canonical format.
 
@@ -47,6 +48,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | File dự kiến | Trách nhiệm |
 |---|---|
 | `src/features/rooms/room-invite-parser.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
+| `src/features/rooms/room-invite-contract.ts` | Reuse contract/encoder SL-013; parser không ghi đè hoặc tạo format khác. |
 | `src/screens/JoinRoomScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
 | `package.json` | SL-015 sở hữu việc chọn và khai báo package quét QR tương thích Expo SDK đang dùng sau khi xác minh native support. |
 | `package-lock.json`, `pnpm-lock.yaml` | SL-015 sở hữu cập nhật đồng bộ cả hai lockfile khi thêm package scanner theo quy tắc repo. |
@@ -91,7 +93,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Chạy focused command trong mục 7; xác nhận failure đúng behavior đang thiếu, không từ toolchain lỗi.
 - [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
 
-1. Thống nhất payload và app scheme với server invitation trước config changes.
+1. Kiểm tra D13 và reuse canonical payload/app scheme cùng encoder SL-013; chỉ decode PIN rồi đi qua join boundary SL-014, QR không chứng minh membership hoặc bypass capacity.
 2. Xác minh package camera/QR tương thích Expo SDK và native targets hiện tại; sau đó SL-015 thêm dependency cùng cập nhật cả hai lockfile.
 3. Cấu hình quyền camera và plugin native theo yêu cầu package đã chọn; chỉ xin quyền khi người dùng mở scanner.
 4. Chỉ chấp nhận room invitation shape được duyệt; QR banking/unknown link không join.
@@ -133,6 +135,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Repeated frame cùng QR → một inflight join.
 - [ ] Offline scanning → không queue membership mutation.
 - [ ] Hai devices share/scan invitation thật → đúng WAITING room.
+- [ ] Round-trip payload do SL-013 encode → parser SL-015 trả đúng PIN gồm leading zero; scan QR do Host lobby SL-013 render trên thiết bị thứ hai → đúng WAITING room, không dùng QR fixture thay producer.
 - [ ] QR scan chỉ phục vụ join; không làm camera-based phone detection.
 
 Mỗi case phải có actual result. Unit cases dùng controlled fixtures để chứng minh domain; Firebase boundary cần Rules/Functions emulator tests cho allowed/denied/replay/concurrency khi áp dụng. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.

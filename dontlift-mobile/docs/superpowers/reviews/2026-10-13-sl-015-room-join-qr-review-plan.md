@@ -22,5 +22,7 @@
 
 ## Self-review
 
+- Đồng bộ batch v0.8: parser reuse contract/encoder SL-013; D13 chặn scheme/payload chưa duyệt và two-device acceptance bắt buộc scan QR do Host lobby render. Không dùng fixture để thay producer. Finding và response được theo dõi tại [SL-013 report](./2026-10-13-sl-013-room-create-review-plan.md#pr24-4256751986).
+
 - Finding chỉ được đánh dấu resolved ở mức ownership trong kế hoạch; không khẳng định package đã được cài hay scanner đã chạy trên thiết bị.
 - Quyền camera chỉ được xin khi người dùng mở scanner; QR banking và link sai scheme vẫn bị từ chối.

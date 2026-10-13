@@ -19,6 +19,32 @@
 - **Review reference:** [P1 finding](https://github.com/coder-fishing/DontLift-Mobile/pull/24#discussion_r4256037245).
 - **Response:** Finding được xác nhận: SL-003 tạo migration runner, SL-006 chỉ thêm session schema; không plan nào trước SL-013 tạo room/member tables. SL-013 nay phụ thuộc SL-003, sở hữu migration versioned cho `rooms` và `room_members`, và có fresh-install/upgrade tests xác nhận migration chạy trước projection writes, dữ liệu profile/session được giữ. SL-014/016 dùng lại schema này; không tạo database bootstrap thứ hai.
 
+## PR24-4256751986
+
+- **Status:** RESOLVED
+- **Severity:** High
+- **Category:** Invitation producer ownership
+- **Location:** SL-013 mục 3/5/6/7; SL-015 contract và acceptance; index US-06/07.
+- **Problem:** Coverage ghi invitation ở SL-013 nhưng không có owner encode/render QR, nên two-device scan của SL-015 thiếu producer.
+- **Recommendation:** Giao SL-013 encoder/render/dependency và SL-015 reuse canonical contract.
+- **Created At:** 2026-10-13, review trên commit 8e75dd4.
+- **Updated By:** Codex, theo yêu cầu tiếp tục sửa findings.
+- **Updated At:** 2026-10-13, Asia/Saigon.
+- **Response:** SL-013 nay sở hữu shared invitation contract, encoder, RoomInvitationQr, GroupLobby integration và manifest/hai lockfiles khi cần dependency. SL-015 dùng lại contract và nghiệm thu scan từ QR Host thật. D13 chặn scheme/payload chưa thống nhất. Tuân [AGENTS.md dòng 14–18](../../../AGENTS.md#L14-L18); [finding](https://github.com/coder-fishing/DontLift-Mobile/pull/24#discussion_r4256751986). Chỉ resolved ownership ở plan level.
+
+## PR24-4256751999
+
+- **Status:** RESOLVED
+- **Severity:** Medium
+- **Category:** Monthly quota decision gate
+- **Location:** SL-013 trạng thái/blocker/tasks/acceptance; index D12.
+- **Problem:** Timezone chỉ là risk dù quyết định này xác định usage bucket và thời điểm reset quota.
+- **Recommendation:** Ghi explicit blocker trước execution, thêm rollover/server-clock/replay cases.
+- **Created At:** 2026-10-13, review trên commit 8e75dd4.
+- **Updated By:** Codex, theo yêu cầu tiếp tục sửa findings.
+- **Updated At:** 2026-10-13, Asia/Saigon.
+- **Response:** D12 xuất hiện trong trạng thái SL-013, blocker table/index row và task gate. Tests yêu cầu boundary theo timezone được duyệt, device timezone không đổi bucket, replay không double-count. Không chọn timezone thay human; [finding](https://github.com/coder-fishing/DontLift-Mobile/pull/24#discussion_r4256751999).
+
 ## Self-review
 
 - Finding chỉ resolved ở mức ownership của plan; chưa khẳng định migration hoặc test đã được implement.

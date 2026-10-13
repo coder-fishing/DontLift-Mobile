@@ -17,9 +17,9 @@
 - **Updated By:** Codex, theo yêu cầu tiếp tục sửa review findings.
 - **Updated At:** 2026-10-13, Asia/Saigon.
 - **Review reference:** [P2 finding](https://github.com/coder-fishing/DontLift-Mobile/pull/24#discussion_r4256559445).
-- **Response:** Header và changelog hiện cùng ở v0.7; trạng thái DRAFT và cảnh báo chưa được phê duyệt vẫn giữ nguyên. Backlog P6.0 không thay đổi.
+- **Response:** Header và changelog hiện cùng ở v0.8; trạng thái DRAFT và cảnh báo chưa được phê duyệt vẫn giữ nguyên. Backlog P6.0 không thay đổi.
 
 ## Self-review
 
-- Header, changelog và review-batch index cùng phản ánh v0.7.
+- Header và changelog cùng phản ánh v0.8; các batch cũ giữ lịch sử revision riêng.
 - Không tuyên bố approval cho backlog, kế hoạch hoặc implementation.

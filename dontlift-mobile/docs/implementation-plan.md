@@ -1,6 +1,6 @@
 # P6.1 — Mục lục kế hoạch DontLift
 
-> **DRAFT v0.7 — backlog và implementation plans chưa được phê duyệt.** Đây là bộ kế hoạch được user yêu cầu soạn và lưu để review cho 37 slice, không phải backlog P6.0 đã duyệt và không phải quyền chạy P6.2.
+> **DRAFT v0.8 — backlog và implementation plans chưa được phê duyệt.** Đây là bộ kế hoạch được user yêu cầu soạn và lưu để review cho 37 slice, không phải backlog P6.0 đã duyệt và không phải quyền chạy P6.2.
 
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Baseline:** `docs/p6.0-implementation-slices`, commit `57ca1eb28a2952c66d01f89b9b89bf755ab4812a`.
@@ -45,9 +45,9 @@ P0 là nền tảng/critical journey trước; P1 là cần hoàn tất MVP; P2 
 | SL-010 | [iOS background và restart recovery](./superpowers/plans/2026-10-13-sl-010-ios-recovery.md) | P0 | SL-007, SL-009 | E1 |
 | SL-011 | [Đồng bộ Solo sau reconnect](./superpowers/plans/2026-10-13-sl-011-solo-sync.md) | P0 | SL-002, SL-008 | D3 |
 | SL-012 | [Xem Solo history](./superpowers/plans/2026-10-13-sl-012-solo-history.md) | P1 | SL-011 | Không xác nhận riêng |
-| SL-013 | [Host tạo room](./superpowers/plans/2026-10-13-sl-013-room-create.md) | P0 | SL-003, SL-004 | Không xác nhận riêng |
+| SL-013 | [Host tạo room](./superpowers/plans/2026-10-13-sl-013-room-create.md) | P0 | SL-003, SL-004 | D12, D13 |
 | SL-014 | [Member join bằng PIN](./superpowers/plans/2026-10-13-sl-014-room-join-pin.md) | P0 | SL-013 | Không xác nhận riêng |
-| SL-015 | [Member join bằng QR](./superpowers/plans/2026-10-13-sl-015-room-join-qr.md) | P1 | SL-014 | E1 |
+| SL-015 | [Member join bằng QR](./superpowers/plans/2026-10-13-sl-015-room-join-qr.md) | P1 | SL-014 | D13, E1 |
 | SL-016 | [Lobby realtime và Host bắt đầu](./superpowers/plans/2026-10-13-sl-016-room-lobby-start.md) | P0 | SL-014 | D3 |
 | SL-017 | [Group active, capture và leaderboard](./superpowers/plans/2026-10-13-sl-017-group-active.md) | P0 | SL-016, SL-007, SL-009, SL-010, SL-011 | D3 |
 | SL-018 | [Early exit có Host quyết định](./superpowers/plans/2026-10-13-sl-018-early-exit.md) | P1 | SL-017 | D3 |
@@ -88,11 +88,13 @@ SL-037 phụ thuộc bắt buộc SL-001–SL-036 vì phạm vi đã chọn gồ
 | D9 | Giải quyết wording non-zero base share khi bill nhỏ/nhiều Members đối nghịch integer/non-negative/exact-sum. Giữ invariant ADR-005; không tự tạo minimum bill per member. |
 | D10 | Chốt max retry/retention horizon và receipt TTL; xác định bảo vệ unsynced data trước purge, failed-event retention và expired-read policy. |
 | D11 | Chốt default sound state, bundled violation alert asset và user scope của local preferences trước khi SL-030 tạo asset/defaults. |
+| D12 | Duyệt calendar timezone cho quota tạo room hàng tháng và usage bucket yyyyMM; SL-013 dùng server timestamp, có tests trước/sau month boundary và replay. |
+| D13 | Duyệt canonical room invitation scheme/payload giữa Feature Spec và app config; SL-013 encode/render, SL-015 parse cùng một contract. |
 | E1 | Cần Development Build, Android/iOS physical devices, toolchains và Emulator Suite để có native/integration evidence. |
 | E2 | Cloud release cần projects/config/billing/scheduled jobs được human cho phép; P6.1 authoring không deploy. |
 | E3 | Cần VietQR provider/format và năm banking apps trong cohort để kiểm chứng QR thật. |
 
-D1–D7 và E1/E2 đến từ backlog đề xuất; E3 ghi rõ test cohort đã nêu trong SL-026/037. D8–D11 là các gap phát hiện khi viết chi tiết, **đề xuất để human quyết định**, chưa phải thay đổi accepted product/architecture. Giải quyết chúng bằng evidence/approved decision trước execution, không lấp bằng implementation giả.
+D1–D7 và E1/E2 đến từ backlog đề xuất; E3 ghi rõ test cohort đã nêu trong SL-026/037. D8–D13 là các gap phát hiện khi viết chi tiết, **đề xuất để human quyết định**, chưa phải thay đổi accepted product/architecture. Giải quyết chúng bằng evidence/approved decision trước execution, không lấp bằng implementation giả.
 
 D3 chỉ chặn command/event semantics chưa có wire rõ; không blanket-block contract create/join/bill đã có. Mỗi plan nêu phần áp dụng. D6 gồm hai quyết định độc lập về theme catalog và advanced behavior, không gộp approval tùy tiện.
 
@@ -105,8 +107,8 @@ D3 chỉ chặn command/event semantics chưa có wire rõ; không blanket-block
 | US-03 | 006: Countdown/Stopwatch, validate duration, durable start |
 | US-04 | 005: sensor gate; 007: orientation/grace/violation/haptic; 009/010: platform recovery |
 | US-05 | 008: local completion/summary; 011: cloud delivery |
-| US-06 | 013: room/PIN/invitation/quota; 032: verified server rights |
-| US-07 | 014: PIN/state/capacity/idempotency; 015: QR; 032: verified capacity |
+| US-06 | 013: room/PIN, canonical invitation encoder/QR renderer/dependency và quota theo D12; 032: verified server rights |
+| US-07 | 014: PIN/state/capacity/idempotency; 015: scan/parse cùng contract D13 của 013 và two-device round-trip; 032: verified capacity |
 | US-08 | 016: roster/Host Start/Member wait/reconnect |
 | US-09 | 017: local group capture/authoritative realtime leaderboard; reuse 007/009/010/011 |
 | US-10 | 018: request/decision/frozen cutoff và retained participation |
@@ -183,6 +185,7 @@ Website mua Premium/code generation/email delivery là external operational prer
 - v0.5: Sửa review mới trên PR #24: owner-read `users/{uid}` chuyển tới SL-003 trước login và SL-004 kiểm chứng flow; SL-014 sở hữu PIN navigation; SL-020 route qua reconciliation summary; SL-025 đăng ký callable entrypoint; SL-033 phụ thuộc SL-023; SL-035 phụ thuộc các screen producers. Giữ default deny, edit allowlist ở SL-029, 37 IDs và draft status P6.0.
 - v0.6: Sửa review mới trên PR #24: SL-012 sở hữu History route/entry/navigation test; SL-019, SL-021 và SL-033 đăng ký Functions exports cùng discovery coverage; SL-023 nối GroupSummary tới Host settlement form rồi bill allocation; cập nhật draft revision header. Không tự chọn schedule D3/D10/E2, không sửa P6.0 backlog hoặc đổi product behavior.
 - v0.7: Sửa review mới trên PR #24: SL-036 không thể tự gỡ hard release gate của SL-037 khi defer; SL-024 phụ thuộc SL-018 vì dùng frozen score; SL-032 phụ thuộc SL-013/014 vì nghiệm thu room quota/capacity. Đồng bộ blocker và dependency index; giữ nguyên accepted ADR-007 scope, D3/D5/D6/D9 và draft status.
+- v0.8: SL-013 sở hữu invitation encoder/QR renderer, dependency/lockfiles và canonical contract dùng lại bởi SL-015. Ghi D12 timezone quota và D13 scheme/payload thành blockers, thêm rollover/replay/leading-zero/render-failure/producer-parser scan coverage. Không quyết định timezone/scheme hoặc sửa backlog P6.0.
 
 **Trạng thái corrections:** [SL-003 review](./superpowers/reviews/2026-10-13-sl-003-registration-profile-review-plan.md), [SL-005 review](./superpowers/reviews/2026-10-13-sl-005-sensor-availability-review-plan.md), [SL-007 review](./superpowers/reviews/2026-10-13-sl-007-foreground-detection-review-plan.md), [SL-009 review](./superpowers/reviews/2026-10-13-sl-009-android-recovery-review-plan.md), [SL-010 review](./superpowers/reviews/2026-10-13-sl-010-ios-recovery-review-plan.md), [SL-013 review](./superpowers/reviews/2026-10-13-sl-013-room-create-review-plan.md), [SL-016 review](./superpowers/reviews/2026-10-13-sl-016-room-lobby-start-review-plan.md), [SL-028 review](./superpowers/reviews/2026-10-13-sl-028-group-history-review-plan.md), [SL-029 review](./superpowers/reviews/2026-10-13-sl-029-profile-edit-review-plan.md), [SL-030 review](./superpowers/reviews/2026-10-13-sl-030-feedback-settings-review-plan.md), [SL-031 review](./superpowers/reviews/2026-10-13-sl-031-local-premium-review-plan.md), [SL-034 review](./superpowers/reviews/2026-10-13-sl-034-premium-themes-review-plan.md), [SL-037 review](./superpowers/reviews/2026-10-13-sl-037-mvp-release-review-plan.md).
 
@@ -191,3 +194,5 @@ Review batch v0.5: [SL-014](./superpowers/reviews/2026-10-13-sl-014-room-join-pi
 Review batch v0.6: [SL-012](./superpowers/reviews/2026-10-13-sl-012-solo-history-review-plan.md), [SL-019](./superpowers/reviews/2026-10-13-sl-019-termination-vote-review-plan.md), [SL-021](./superpowers/reviews/2026-10-13-sl-021-host-finalization-override-review-plan.md), [SL-023](./superpowers/reviews/2026-10-13-sl-023-settlement-details-review-plan.md), [SL-033](./superpowers/reviews/2026-10-13-sl-033-retention-review-plan.md), [Index](./superpowers/reviews/2026-10-13-implementation-plan-review-plan.md).
 
 Review batch v0.7: [SL-024](./superpowers/reviews/2026-10-13-sl-024-default-bill-review-plan.md), [SL-032](./superpowers/reviews/2026-10-13-sl-032-server-premium-review-plan.md), [SL-036](./superpowers/reviews/2026-10-13-sl-036-advanced-leaderboard-review-plan.md).
+
+Review batch v0.8: [SL-013](./superpowers/reviews/2026-10-13-sl-013-room-create-review-plan.md), [SL-015 synchronization](./superpowers/reviews/2026-10-13-sl-015-room-join-qr-review-plan.md).
