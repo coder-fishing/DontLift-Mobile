@@ -8,8 +8,8 @@
 
 **Slice:** SL-001. **Ưu tiên đề xuất:** P0. **Release:** MVP + activation/Premium; post-MVP deferred. SL-036 chỉ được tính release sau D6.
 
-**Trạng thái kế hoạch:** DRAFT — chưa được human duyệt.
-**Trạng thái implementation quan sát:** Thiếu test script và test được track. Chưa có evidence nghiệm thu slice.
+**Trạng thái kế hoạch:** APPROVED — human duyệt trong chat ngày 2026-10-13 với chỉ thị “duyệt SL-001, triển khai”.
+**Trạng thái implementation quan sát:** Hoàn tất SL-001 test harness; clean npm install, focused test, intentional failure exit và TypeScript đều đã được kiểm chứng. Evidence ở mục 9.
 **Baseline khảo sát:** docs/p6.0-implementation-slices tại 57ca1eb28a2952c66d01f89b9b89bf755ab4812a.
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Plan slug:** `2026-10-13-sl-001-test-foundation`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-001-test-foundation]`.
@@ -78,21 +78,21 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 **Nhận/trả:** Nhận Các phiên bản Expo/React Native thực tế và một smoke test được gắn nhãn; trả Lệnh test phát hiện test, trả exit status đúng; TypeScript kiểm tra được test. Với contract đang bị chặn, chưa có quyền thêm schema dù test outcome đã được nêu.
 
-- [ ] Đọc lại source/spec và xác nhận tất cả blocker cùng dependency cho task đã được giải quyết; nếu chưa, dừng execution và báo đúng blocker.
-- [ ] Viết focused failing cases sau đây; runner không tìm thấy hoặc thiếu dependency không được tính là red nghiệp vụ.
+- [x] Đọc lại source/spec và xác nhận tất cả blocker cùng dependency cho task đã được giải quyết; nếu chưa, dừng execution và báo đúng blocker.
+- [x] Viết focused failing cases sau đây; runner không tìm thấy hoặc thiếu dependency không được tính là red nghiệp vụ.
 
-- [ ] Test được phát hiện → runner chạy đúng một smoke test.
-- [ ] Assertion cố tình sai → command thất bại, không trả success.
+- [x] Test được phát hiện → runner chạy đúng một smoke test.
+- [x] Assertion cố tình sai → command thất bại, không trả success.
 
-- [ ] Chạy focused command trong mục 7; xác nhận failure đúng behavior đang thiếu, không từ toolchain lỗi.
-- [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
+- [x] Chạy focused command trong mục 7; xác nhận failure đúng behavior đang thiếu, không từ toolchain lỗi.
+- [x] Xây hành vi theo thứ tự sau, chỉ sau approval:
 
 1. Đối chiếu phiên bản SDK với preset test được hỗ trợ; không dùng phiên bản từ node_modules làm nguồn thay package.json.
 2. Cấu hình runner không watch và một smoke test chỉ xác nhận harness.
 3. Giữ hai lockfiles đồng bộ nếu dependency thay đổi; chỉ thêm Jest globals khi cần.
 
-- [ ] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
-- [ ] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-001-test-foundation]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-001-test-foundation.md` và `Task: 1`.
+- [x] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
+- [x] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-001-test-foundation]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-001-test-foundation.md` và `Task: 1`.
 
 ### Task 2 — Journey tích hợp và recovery
 
@@ -100,30 +100,30 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 **Nhận:** Output task 1 đã kiểm chứng. **Trả:** Journey/bằng chứng có thể nghiệm thu; error/offline không false-success.
 
-- [ ] Viết các failing cases về integration/recovery sau; không viết tests chỉ mirror implementation.
+- [x] Viết các failing cases về integration/recovery sau; không viết tests chỉ mirror implementation.
 
-- [ ] Khôi phục assertion → smoke test pass.
-- [ ] Test TypeScript dùng globals → type-check nhận đúng globals.
+- [x] Khôi phục assertion → smoke test pass.
+- [x] Test TypeScript dùng globals → type-check nhận đúng globals.
 
-- [ ] Chạy focused checks, xác nhận failure đúng behavior; giữ fixtures tách khỏi device evidence.
-- [ ] Tích hợp theo thứ tự:
+- [x] Chạy focused checks, xác nhận failure đúng behavior; giữ fixtures tách khỏi device evidence.
+- [x] Tích hợp theo thứ tự:
 
 1. Chạy smoke test và một failure có chủ đích để kiểm tra runner trả exit status khác không.
 2. Chạy TypeScript; chạy lint chỉ khi cấu hình ESLint thật sự tồn tại, ghi blocker nếu thiếu.
 3. Ghi lệnh, số test, exit status; không nhận smoke test là bằng chứng nghiệp vụ.
 
-- [ ] Thực hiện các kịch bản nghiệm thu trực tiếp trong mục 6; thu logs an toàn/device timestamps khi cần.
-- [ ] Review kết quả; một branch fail hoặc thiếu required device/emulator evidence thì slice chưa hoàn thành.
-- [ ] Commit task sau review nếu execution được phép. Subject dùng `[2026-10-13-sl-001-test-foundation]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-001-test-foundation.md` và `Task: 2`.
+- [x] Thực hiện các kịch bản nghiệm thu trực tiếp trong mục 6; thu logs an toàn/device timestamps khi cần.
+- [x] Review kết quả; một branch fail hoặc thiếu required device/emulator evidence thì slice chưa hoàn thành.
+- [x] Commit task sau review nếu execution được phép. Subject dùng `[2026-10-13-sl-001-test-foundation]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-001-test-foundation.md` và `Task: 2`.
 
 ## 6. Nghiệm thu và failure outcomes
 
-- [ ] Test được phát hiện → runner chạy đúng một smoke test.
-- [ ] Assertion cố tình sai → command thất bại, không trả success.
-- [ ] Khôi phục assertion → smoke test pass.
-- [ ] Test TypeScript dùng globals → type-check nhận đúng globals.
-- [ ] Engineer chạy command trên checkout sạch với dependencies đã cài → thu được cùng số test.
-- [ ] Thiếu ESLint → báo blocker, không tự cài lint ngoài scope.
+- [x] Test được phát hiện → runner chạy đúng một smoke test.
+- [x] Assertion cố tình sai → command thất bại, không trả success.
+- [x] Khôi phục assertion → smoke test pass.
+- [x] Test TypeScript dùng globals → type-check nhận đúng globals.
+- [x] Engineer chạy command trên checkout sạch với dependencies đã cài → thu được cùng số test.
+- [x] Thiếu ESLint → không có ESLint config trong repo; lint không áp dụng và không cài thêm dependency.
 
 Mỗi case phải có actual result. Unit cases dùng controlled fixtures để chứng minh domain; Firebase boundary cần Rules/Functions emulator tests cho allowed/denied/replay/concurrency khi áp dụng. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.
 
@@ -131,14 +131,27 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 
 ## 7. Verification và ghi nhận evidence
 
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/jest-smoke.test.ts`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+App focused tests sau khi SL-001 cấu hình runner: `npm test -- --runTestsByPath __tests__/jest-smoke.test.ts`. TypeScript: `npx tsc --noEmit`. Lint: `npm run lint` chỉ khi repository có ESLint setup thực tế. `pnpm install --lockfile-only --offline` đã cập nhật pnpm lockfile; test/type-check chạy qua npm vì pnpm CLI trong môi trường này yêu cầu thay thế `node_modules` trong non-interactive session.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 
-Ghi trong kết quả execution: baseline/commit mới, command, exit status, số cases, emulator/device/runtime version, date, actual outcomes và remaining gaps. Các checklist hiện đều chưa chạy.
+Ghi trong kết quả execution: baseline/commit mới, command, exit status, số cases, emulator/device/runtime version, date, actual outcomes và remaining gaps. Evidence SL-001 đã ghi ở mục 9.
 
 ## 8. Human review và bàn giao P6.2
 
 Human phải duyệt scope, non-goals, tasks, acceptance cases, dependencies và các quyết định còn mở của **SL-001** trước implementation. Duyệt một slice không duyệt tất cả 37; duyệt authoring batch không duyệt code.
 
 Sau approval, cập nhật trạng thái/date/decision evidence trong đúng plan; kế hoạch mới chỉ đủ execution-ready khi blocker đã được giải quyết và baseline được re-inspect. Dùng qskill-executing-plans khi user yêu cầu execute plan đã duyệt. Không tự bắt đầu P6.2 từ file draft hoặc từ prompt batch.
+
+## 9. Execution evidence
+
+- **Approval:** Human approved SL-001 in chat on 2026-10-13: “duyệt SL-001, triển khai”.
+- **Baseline:** `main` at `a85f40b`; execution branch `feature/sl-001-test-foundation`.
+- **Runtime:** Expo `57.0.20` declared; compatible installed preset `jest-expo` `57.0.5`, Jest `29.7.0`, and `@types/jest` `29.5.14`; matching exact versions are recorded in both lockfiles.
+- **Clean install:** `npm ci --ignore-scripts` — PASS, 953 packages added from `package-lock.json`.
+- **Smoke test:** `npm test -- --runTestsByPath __tests__/jest-smoke.test.ts` — PASS, 1 suite/1 test, exit 0 after clean install.
+- **Failure exit:** Temporarily changed the assertion to an incorrect expected value; the same command reported 1 failed test and exit 1. Restored the assertion and reran successfully.
+- **Types:** `npx tsc --noEmit` — PASS, exit 0 with Jest globals available to the test source.
+- **Lockfiles:** npm lock generated with `npm install --package-lock-only --ignore-scripts`; pnpm lock generated with `pnpm install --lockfile-only --offline`; direct Jest dependency versions match across manifests and locks.
+- **Lint:** No ESLint configuration exists; no lint command or dependency was added.
+- **Remaining gaps:** No product, native, emulator, or Firebase behavior is part of SL-001. `npm ci` reported 77 audit advisories across the dependency tree; remediation is outside this slice. The isolated `pnpm test` invocation was not used because pnpm attempted to replace the existing modules directory in the non-interactive runner; the clean npm install and npm test path passed.
