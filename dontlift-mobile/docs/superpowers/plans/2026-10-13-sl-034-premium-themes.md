@@ -15,7 +15,7 @@
 **Plan slug:** `2026-10-13-sl-034-premium-themes`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-034-premium-themes]`.
 **Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13, chưa được phê duyệt. User đã yêu cầu ghi draft P6.1 cho cả 37 slice; không suy thành approval thực thi.
 **Traceability:** PRD §8.3; ADR-007; UX §8.
-**Phụ thuộc bắt buộc:** [SL-031](./2026-10-13-sl-031-local-premium.md)
+**Phụ thuộc bắt buộc:** [SL-030](./2026-10-13-sl-030-feedback-settings.md), [SL-031](./2026-10-13-sl-031-local-premium.md)
 **Ưu tiên mềm:** Theo thứ tự đề xuất trong [mục lục](../../implementation-plan.md); thứ tự không tạo thêm hard dependency.
 
 ## 1. Nguồn và ranh giới
@@ -45,7 +45,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | File dự kiến | Trách nhiệm |
 |---|---|
 | `src/features/settings/theme-repository.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
-| `src/screens/SettingsScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
+| `src/screens/SettingsScreen.tsx` | Mở rộng SettingsScreen nền do SL-030 sở hữu bằng lựa chọn theme; không tạo screen hoặc navigation entry trùng. |
 | `src/constants/theme.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/hooks/use-theme.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `__tests__/premium-themes.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |

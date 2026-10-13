@@ -15,7 +15,7 @@
 **Plan slug:** `2026-10-13-sl-013-room-create`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-013-room-create]`.
 **Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13, chưa được phê duyệt. User đã yêu cầu ghi draft P6.1 cho cả 37 slice; không suy thành approval thực thi.
 **Traceability:** US-06; API §2; ADR-003/004; V05.
-**Phụ thuộc bắt buộc:** [SL-004](./2026-10-13-sl-004-login-session.md)
+**Phụ thuộc bắt buộc:** [SL-003](./2026-10-13-sl-003-registration-profile.md), [SL-004](./2026-10-13-sl-004-login-session.md)
 **Ưu tiên mềm:** Theo thứ tự đề xuất trong [mục lục](../../implementation-plan.md); thứ tự không tạo thêm hard dependency.
 
 ## 1. Nguồn và ranh giới
@@ -46,10 +46,12 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 |---|---|
 | `src/features/rooms/room-command-port.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/features/rooms/room-repository.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
+| `src/features/local/migrations.ts` | SL-013 mở rộng migration runner SL-003 bằng schema có version cho `rooms` và `room_members` theo architecture §6.3; không khởi tạo database thứ hai. |
 | `src/screens/GroupLobbyScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
 | `functions/src/create-room.cjs` | Backend boundary của slice; server identity/validation/transaction. |
 | `functions/index.js` | Backend boundary của slice; server identity/validation/transaction. |
 | `__tests__/room-create.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
+| `__tests__/room-migrations.test.ts` | Fresh-install và upgrade coverage cho room/member projections; chưa tạo test source trong P6.1. |
 | `functions/tests/room-create.test.cjs` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
 
 **Unit:** createRoom.
@@ -95,13 +97,16 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - [ ] Free quota còn → một room/membership/counter.
 - [ ] Quota đã 7 → resource-exhausted, không room/counter mới.
 - [ ] Hai create cùng request → một room.
+- [ ] Fresh install → migration tạo schema room/member trước khi repository ghi projection.
+- [ ] Upgrade từ database đã có profile/session migrations → room/member schema được thêm, dữ liệu cũ còn nguyên.
 
 - [ ] Chạy focused command trong mục 7; xác nhận failure đúng behavior đang thiếu, không từ toolchain lỗi.
 - [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
 
 1. Derive Host từ Auth, đọc verified server entitlement; local checksum không cấp quota.
-2. Reserve PIN, tạo room/membership/counter/receipt trong một transaction.
-3. Free Host tối đa 7 room tháng calendar; retry cùng payload không tiêu hao quota lần nữa.
+2. Database readiness áp dụng migration versioned do SL-003 khởi tạo; room/member tables theo schema architecture §6.3 tồn tại trước repository projection writes.
+3. Reserve PIN, tạo room/membership/counter/receipt trong một transaction.
+4. Free Host tối đa 7 room tháng calendar; retry cùng payload không tiêu hao quota lần nữa.
 
 - [ ] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
 - [ ] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-013-room-create]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-013-room-create.md` và `Task: 1`.
@@ -139,6 +144,7 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - [ ] Actor chưa login → unauthenticated.
 - [ ] Auth+Functions+Firestore emulators tạo room → inspect transaction outputs.
 - [ ] Ranh giới tháng theo timezone được duyệt → quota reset đúng; không tự chốt timezone.
+- [ ] Fresh install và upgrade từ profile/session schema → room/member migration chạy tuần tự, không mất dữ liệu cũ.
 
 Mỗi case phải có actual result. Unit cases dùng controlled fixtures để chứng minh domain; Firebase boundary cần Rules/Functions emulator tests cho allowed/denied/replay/concurrency khi áp dụng. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.
 
@@ -146,7 +152,7 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 
 ## 7. Verification và ghi nhận evidence
 
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/room-create.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/room-create.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/room-create.test.ts __tests__/room-migrations.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/room-create.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 

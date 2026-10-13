@@ -15,7 +15,7 @@
 **Plan slug:** `2026-10-13-sl-007-foreground-detection`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-007-foreground-detection]`.
 **Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13, chưa được phê duyệt. User đã yêu cầu ghi draft P6.1 cho cả 37 slice; không suy thành approval thực thi.
 **Traceability:** US-04; FR-01/02; ADR-002; V03.
-**Phụ thuộc bắt buộc:** [SL-006](./2026-10-13-sl-006-solo-start.md)
+**Phụ thuộc bắt buộc:** [SL-003](./2026-10-13-sl-003-registration-profile.md), [SL-006](./2026-10-13-sl-006-solo-start.md)
 **Ưu tiên mềm:** Theo thứ tự đề xuất trong [mục lục](../../implementation-plan.md); thứ tự không tạo thêm hard dependency.
 
 ## 1. Nguồn và ranh giới
@@ -48,8 +48,9 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | `src/features/solo/grace-period-engine.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/features/solo/violation-repository.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/features/sync/outbox-repository.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
+| `src/features/local/migrations.ts` | SL-007 mở rộng runner SL-003 bằng versioned `violation_logs` và `sync_outbox` schemas theo architecture §6.3. |
 | `src/screens/SoloTimerScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
-| `__tests__/foreground-detection.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
+| `__tests__/foreground-detection.test.ts` | Kiểm thử behavior, migration fresh-install/upgrade và atomic repository writes; chưa tạo test source trong P6.1. |
 
 **Unit:** phone-down engine và grace-period engine.
 **Nhận:** Orientation samples, active session và timestamp.
@@ -85,13 +86,16 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] LIFTED 2,9 giây rồi FACE_DOWN → không violation.
 - [ ] LIFTED đủ 3 giây → một violation.
 - [ ] Repeated sensor samples sau confirm → không tăng count trùng.
+- [ ] Fresh install → violation/outbox schemas tồn tại trước lần ghi event đầu tiên.
+- [ ] Upgrade từ profile/session schema → violation/outbox migration chạy, dữ liệu cũ được giữ.
 
 - [ ] Chạy focused command trong mục 7; xác nhận failure đúng behavior đang thiếu, không từ toolchain lỗi.
 - [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
 
 1. Phân biệt UNKNOWN, FACE_DOWN, INVALID, LIFTED; transition invalid/lifted mở grace 3 giây.
-2. Re-ground trước 3 giây hủy candidate; condition đủ 3 giây confirm một lần.
-3. Ghi violation và outbox atomically; re-ground đóng duration; raw samples không vào payload sync.
+2. Database readiness áp dụng versioned violation/outbox migrations sau profile/session schemas; transaction tables tồn tại trước repository writes.
+3. Re-ground trước 3 giây hủy candidate; condition đủ 3 giây confirm một lần.
+4. Ghi violation và outbox atomically; re-ground đóng duration; raw samples không vào payload sync.
 
 - [ ] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
 - [ ] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-007-foreground-detection]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-007-foreground-detection.md` và `Task: 1`.
@@ -107,6 +111,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Re-ground sau confirmed → duration kết thúc đúng.
 - [ ] Local transaction fail → không báo violation đã commit.
 - [ ] UNKNOWN khi chưa có dữ liệu → không tự tính clean hoặc violation.
+- [ ] Fresh install và upgrade từ profile/session schema → migration tạo violation/outbox tables mà không mất dữ liệu cũ.
 
 - [ ] Chạy focused checks, xác nhận failure đúng behavior; giữ fixtures tách khỏi device evidence.
 - [ ] Tích hợp theo thứ tự:

@@ -20,8 +20,22 @@
 - **Review reference:** [Latest P1 finding](https://github.com/coder-fishing/DontLift-Mobile/pull/24#discussion_r4255731329).
 - **Response:** Workspace check confirmed `expo-secure-store` is absent from `package.json`, `package-lock.json`, `pnpm-lock.yaml`, and `node_modules`. SL-031 now owns SDK-compatible dependency selection, both lockfile updates, conditional Expo config, restart persistence, and SecureStore read/write/remove failure tests. SL-032 covers delayed deletion until redemption and durable local entitlement update. No package was installed or configuration changed.
 
+## PR24-4256037251
+
+- **Status:** RESOLVED
+- **Severity:** High
+- **Category:** Entitlement SQLite migration ownership
+- **Location:** SL-031 mục 3/5/6/7 và hard dependencies trong `docs/implementation-plan.md`.
+- **Problem:** Local Premium repository ghi entitlement flag/code hash vào SQLite nhưng SL-031 không mở rộng migration runner, nên fresh install không có schema entitlement và activation không thể sống qua restart.
+- **Recommendation:** Giao SL-031 versioned entitlement migration cùng fresh-install/upgrade coverage; phụ thuộc migration runner SL-003.
+- **Created At:** 2026-10-13, theo PR review trên commit `d2fb0e1`.
+- **Updated By:** Codex, trong đợt xử lý findings tiếp theo của PR #24.
+- **Updated At:** 2026-10-13, Asia/Saigon.
+- **Review reference:** [P1 finding](https://github.com/coder-fishing/DontLift-Mobile/pull/24#discussion_r4256037251).
+- **Response:** Finding được xác nhận theo kiến trúc §6.3 và ownership hiện có: SL-003 tạo migration runner, SL-006 mở rộng cho sessions nhưng chưa có entitlement migration. SL-031 nay phụ thuộc SL-003, mở rộng runner với versioned entitlement schema, và kiểm tra fresh install/upgrade từ profile/session schema, bảo toàn dữ liệu. Local Premium và Server Premium vẫn tách theo ADR-007; không thêm package hoặc sửa source trong lượt này.
+
 ## Self-review
 
-- The finding is marked resolved at the planning omission level only; no package/native runtime evidence is claimed.
+- Both findings are marked resolved at the planning omission level only; no package/native runtime or SQLite execution evidence is claimed.
 - ADR-007's sensitive pending-code boundary is preserved; Firebase tokens remain in native Auth SDK storage.
 - D5 and the SL-031 execution gate remain in place.

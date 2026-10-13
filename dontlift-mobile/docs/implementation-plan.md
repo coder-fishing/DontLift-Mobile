@@ -37,15 +37,15 @@ P0 là nền tảng/critical journey trước; P1 là cần hoàn tất MVP; P2 
 | SL-002 | [Development runtime cho Firebase](./superpowers/plans/2026-10-13-sl-002-native-firebase-runtime.md) | P0 | SL-001 | D1, E1 |
 | SL-003 | [Đăng ký và hoàn tất profile](./superpowers/plans/2026-10-13-sl-003-registration-profile.md) | P0 | SL-002 | D2 |
 | SL-004 | [Login, khôi phục phiên và logout](./superpowers/plans/2026-10-13-sl-004-login-session.md) | P0 | SL-003 | Không xác nhận riêng |
-| SL-005 | [Kiểm tra sensor trước khi focus](./superpowers/plans/2026-10-13-sl-005-sensor-availability.md) | P0 | SL-001 | E1 |
+| SL-005 | [Kiểm tra sensor trước khi focus](./superpowers/plans/2026-10-13-sl-005-sensor-availability.md) | P0 | SL-001, SL-002 | E1 |
 | SL-006 | [Chọn mode và bắt đầu Solo session](./superpowers/plans/2026-10-13-sl-006-solo-start.md) | P0 | SL-004, SL-005 | Không xác nhận riêng |
-| SL-007 | [Detection và grace period foreground](./superpowers/plans/2026-10-13-sl-007-foreground-detection.md) | P0 | SL-006 | E1 |
+| SL-007 | [Detection và grace period foreground](./superpowers/plans/2026-10-13-sl-007-foreground-detection.md) | P0 | SL-003, SL-006 | E1 |
 | SL-008 | [Hoàn tất và xem Solo summary](./superpowers/plans/2026-10-13-sl-008-solo-completion.md) | P0 | SL-007 | Không xác nhận riêng |
-| SL-009 | [Android background và restart recovery](./superpowers/plans/2026-10-13-sl-009-android-recovery.md) | P0 | SL-007 | E1 |
-| SL-010 | [iOS background và restart recovery](./superpowers/plans/2026-10-13-sl-010-ios-recovery.md) | P0 | SL-007 | E1 |
+| SL-009 | [Android background và restart recovery](./superpowers/plans/2026-10-13-sl-009-android-recovery.md) | P0 | SL-003, SL-007 | E1 |
+| SL-010 | [iOS background và restart recovery](./superpowers/plans/2026-10-13-sl-010-ios-recovery.md) | P0 | SL-007, SL-009 | E1 |
 | SL-011 | [Đồng bộ Solo sau reconnect](./superpowers/plans/2026-10-13-sl-011-solo-sync.md) | P0 | SL-002, SL-008 | D3 |
 | SL-012 | [Xem Solo history](./superpowers/plans/2026-10-13-sl-012-solo-history.md) | P1 | SL-011 | Không xác nhận riêng |
-| SL-013 | [Host tạo room](./superpowers/plans/2026-10-13-sl-013-room-create.md) | P0 | SL-004 | Không xác nhận riêng |
+| SL-013 | [Host tạo room](./superpowers/plans/2026-10-13-sl-013-room-create.md) | P0 | SL-003, SL-004 | Không xác nhận riêng |
 | SL-014 | [Member join bằng PIN](./superpowers/plans/2026-10-13-sl-014-room-join-pin.md) | P0 | SL-013 | Không xác nhận riêng |
 | SL-015 | [Member join bằng QR](./superpowers/plans/2026-10-13-sl-015-room-join-qr.md) | P1 | SL-014 | E1 |
 | SL-016 | [Lobby realtime và Host bắt đầu](./superpowers/plans/2026-10-13-sl-016-room-lobby-start.md) | P0 | SL-014 | D3 |
@@ -62,11 +62,11 @@ P0 là nền tảng/critical journey trước; P1 là cần hoàn tất MVP; P2 
 | SL-027 | [Host đánh dấu đã thanh toán](./superpowers/plans/2026-10-13-sl-027-manual-payment-status.md) | P1 | SL-026 | Không xác nhận riêng |
 | SL-028 | [Group history và phục hồi dữ liệu](./superpowers/plans/2026-10-13-sl-028-group-history.md) | P1 | SL-020, SL-012, SL-018, SL-021 | D4 |
 | SL-029 | [Xem và sửa profile](./superpowers/plans/2026-10-13-sl-029-profile-edit.md) | P1 | SL-004 | Không xác nhận riêng |
-| SL-030 | [Settings cho haptic và sound](./superpowers/plans/2026-10-13-sl-030-feedback-settings.md) | P1 | SL-007 | Không xác nhận riêng |
-| SL-031 | [Activation offline và Local Premium](./superpowers/plans/2026-10-13-sl-031-local-premium.md) | P1 | SL-004 | D5 |
+| SL-030 | [Settings cho haptic và sound](./superpowers/plans/2026-10-13-sl-030-feedback-settings.md) | P1 | SL-003, SL-004, SL-007 | D11 |
+| SL-031 | [Activation offline và Local Premium](./superpowers/plans/2026-10-13-sl-031-local-premium.md) | P1 | SL-003, SL-004 | D5 |
 | SL-032 | [Redeem online và Server Premium](./superpowers/plans/2026-10-13-sl-032-server-premium.md) | P1 | SL-031 | D5 |
 | SL-033 | [Retention local và server](./superpowers/plans/2026-10-13-sl-033-retention.md) | P1 | SL-012, SL-028, SL-031, SL-032 | D10 |
-| SL-034 | [Chọn custom theme](./superpowers/plans/2026-10-13-sl-034-premium-themes.md) | P1 | SL-031 | D6 |
+| SL-034 | [Chọn custom theme](./superpowers/plans/2026-10-13-sl-034-premium-themes.md) | P1 | SL-030, SL-031 | D6 |
 | SL-035 | [Quảng cáo đúng tier và màn hình](./superpowers/plans/2026-10-13-sl-035-free-tier-ads.md) | P1 | SL-031, SL-030 | D7 |
 | SL-036 | [Advanced leaderboard theo Server Premium](./superpowers/plans/2026-10-13-sl-036-advanced-leaderboard.md) | P2 | SL-017, SL-032 | D6 |
 | SL-037 | [Nghiệm thu MVP và phát hành đúng environment](./superpowers/plans/2026-10-13-sl-037-mvp-release.md) | P1 | SL-001–SL-036 | D1, D6, E1, E2, E3 |
@@ -87,11 +87,12 @@ SL-037 phụ thuộc bắt buộc SL-001–SL-036 vì phạm vi đã chọn gồ
 | D8 | Duyệt recalculation/override sau publication hoặc MARKED_AS_PAID: rule khóa/version/concurrency và outcome UI. |
 | D9 | Giải quyết wording non-zero base share khi bill nhỏ/nhiều Members đối nghịch integer/non-negative/exact-sum. Giữ invariant ADR-005; không tự tạo minimum bill per member. |
 | D10 | Chốt max retry/retention horizon và receipt TTL; xác định bảo vệ unsynced data trước purge, failed-event retention và expired-read policy. |
+| D11 | Chốt default sound state, bundled violation alert asset và user scope của local preferences trước khi SL-030 tạo asset/defaults. |
 | E1 | Cần Development Build, Android/iOS physical devices, toolchains và Emulator Suite để có native/integration evidence. |
 | E2 | Cloud release cần projects/config/billing/scheduled jobs được human cho phép; P6.1 authoring không deploy. |
 | E3 | Cần VietQR provider/format và năm banking apps trong cohort để kiểm chứng QR thật. |
 
-D1–D7 và E1/E2 đến từ backlog đề xuất; E3 ghi rõ test cohort đã nêu trong SL-026/037. D8–D10 là các gap phát hiện khi viết chi tiết, **đề xuất để human quyết định**, chưa phải thay đổi accepted product/architecture. Giải quyết chúng bằng evidence/approved decision trước execution, không lấp bằng implementation giả.
+D1–D7 và E1/E2 đến từ backlog đề xuất; E3 ghi rõ test cohort đã nêu trong SL-026/037. D8–D11 là các gap phát hiện khi viết chi tiết, **đề xuất để human quyết định**, chưa phải thay đổi accepted product/architecture. Giải quyết chúng bằng evidence/approved decision trước execution, không lấp bằng implementation giả.
 
 D3 chỉ chặn command/event semantics chưa có wire rõ; không blanket-block contract create/join/bill đã có. Mỗi plan nêu phần áp dụng. D6 gồm hai quyết định độc lập về theme catalog và advanced behavior, không gộp approval tùy tiện.
 
@@ -161,7 +162,7 @@ Mỗi resource owner chạy allowed/denied Emulator Suite tests bằng client SD
 8. 031 → 032; tiếp 033/034/035; 036 sau decision.
 9. 037.
 
-Đây là ưu tiên mềm. 029 có thể plan/execute sau 004, 030 sau 007, 031 sau 004 khi checksum/approval đã rõ. Không tạo dependency giả chỉ để ép trình tự tuyến tính. Đồ thị phải được kiểm tra lại khi scope/IDs thay đổi.
+Đây là ưu tiên mềm. Hard dependencies ở bảng trên bao gồm native runtime, migration runner và producer screens khi cần; D5/D11 tiếp tục khóa các quyết định còn mở. Không tạo dependency giả chỉ để ép trình tự tuyến tính. Đồ thị phải được kiểm tra lại khi scope/IDs thay đổi.
 
 ## 7. Scope không triển khai và review gate
 
@@ -178,5 +179,6 @@ Website mua Premium/code generation/email delivery là external operational prer
 - v0.1: Tạo bộ draft cho 37 slice theo human request; thêm prompt dùng chung; nêu D8–D10 và không sửa source.
 - v0.2: Human duyệt package sửa năm findings PR #24 trong chat. Bổ sung foundation ownership 003, làm rõ 002/006 và downstream backend prerequisites, resource Rules owners/tests, 028 → 018/021 và deferred deployment owner 037. Giữ 37 IDs và approved product/ADR decisions. Approval chỉ cho corrections, không duyệt backlog, implementation plans, install hoặc deploy.
 - v0.3: Human duyệt xử lý findings mới PR #24. Mở rộng Rules ownership theo direct-read resource cho 017–028/036; giao SecureStore dependency/config/lockfiles và persistence failure cases cho 031; đặt 036 thành hard dependency của 037 theo ADR-007, giữ D6 blocker. Không sửa hay phê duyệt backlog P6.0.
+- v0.4: Gộp các P1 mới và audit cùng nhóm ownership: sensor dependency; violation/outbox, room/member, lifecycle-candidate, entitlement và app_settings migrations; Android/iOS lifecycle native bridge; Settings navigation cùng audio runtime/assets; SL-034 mở rộng SettingsScreen do SL-030 sở hữu. Cập nhật hard dependencies; thêm D11 cho sound default/asset/user scope. Draft P6.0 vẫn không được sửa hoặc xem là đã duyệt.
 
-**Trạng thái corrections:** [SL-003 review](./superpowers/reviews/2026-10-13-sl-003-registration-profile-review-plan.md), [SL-016 review](./superpowers/reviews/2026-10-13-sl-016-room-lobby-start-review-plan.md), [SL-028 review](./superpowers/reviews/2026-10-13-sl-028-group-history-review-plan.md), [SL-031 review](./superpowers/reviews/2026-10-13-sl-031-local-premium-review-plan.md), [SL-037 review](./superpowers/reviews/2026-10-13-sl-037-mvp-release-review-plan.md).
+**Trạng thái corrections:** [SL-003 review](./superpowers/reviews/2026-10-13-sl-003-registration-profile-review-plan.md), [SL-005 review](./superpowers/reviews/2026-10-13-sl-005-sensor-availability-review-plan.md), [SL-007 review](./superpowers/reviews/2026-10-13-sl-007-foreground-detection-review-plan.md), [SL-009 review](./superpowers/reviews/2026-10-13-sl-009-android-recovery-review-plan.md), [SL-010 review](./superpowers/reviews/2026-10-13-sl-010-ios-recovery-review-plan.md), [SL-013 review](./superpowers/reviews/2026-10-13-sl-013-room-create-review-plan.md), [SL-016 review](./superpowers/reviews/2026-10-13-sl-016-room-lobby-start-review-plan.md), [SL-028 review](./superpowers/reviews/2026-10-13-sl-028-group-history-review-plan.md), [SL-029 review](./superpowers/reviews/2026-10-13-sl-029-profile-edit-review-plan.md), [SL-030 review](./superpowers/reviews/2026-10-13-sl-030-feedback-settings-review-plan.md), [SL-031 review](./superpowers/reviews/2026-10-13-sl-031-local-premium-review-plan.md), [SL-034 review](./superpowers/reviews/2026-10-13-sl-034-premium-themes-review-plan.md), [SL-037 review](./superpowers/reviews/2026-10-13-sl-037-mvp-release-review-plan.md).

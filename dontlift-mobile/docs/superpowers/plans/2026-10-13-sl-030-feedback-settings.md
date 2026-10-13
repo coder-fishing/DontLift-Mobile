@@ -8,14 +8,14 @@
 
 **Slice:** SL-030. **Ưu tiên đề xuất:** P1. **Release:** MVP + activation/Premium; post-MVP deferred. SL-036 chỉ được tính release sau D6.
 
-**Trạng thái kế hoạch:** DRAFT — chưa được human duyệt.
+**Trạng thái kế hoạch:** DRAFT — chưa được human duyệt; bị chặn bởi D11.
 **Trạng thái implementation quan sát:** Không settings persistence/controller. Chưa có evidence nghiệm thu slice.
 **Baseline khảo sát:** docs/p6.0-implementation-slices tại 57ca1eb28a2952c66d01f89b9b89bf755ab4812a.
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Plan slug:** `2026-10-13-sl-030-feedback-settings`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-030-feedback-settings]`.
 **Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13, chưa được phê duyệt. User đã yêu cầu ghi draft P6.1 cho cả 37 slice; không suy thành approval thực thi.
 **Traceability:** US-18; ARCH §6.3; FS §4.1.
-**Phụ thuộc bắt buộc:** [SL-007](./2026-10-13-sl-007-foreground-detection.md)
+**Phụ thuộc bắt buộc:** [SL-003](./2026-10-13-sl-003-registration-profile.md), [SL-004](./2026-10-13-sl-004-login-session.md), [SL-007](./2026-10-13-sl-007-foreground-detection.md)
 **Ưu tiên mềm:** Theo thứ tự đề xuất trong [mục lục](../../implementation-plan.md); thứ tự không tạo thêm hard dependency.
 
 ## 1. Nguồn và ranh giới
@@ -32,7 +32,7 @@ V01–V10 chỉ các màn tương ứng tại `design/concepts/concept-final/scr
 
 ## 2. Blocker, risk và quyết định cần duyệt
 
-- Không có blocker riêng được xác nhận trong draft; dependency và quyền/runtime vẫn phải đạt gate trước thực thi.
+- **D11:** Duyệt default sound state, bundled alert asset và user scope của local preferences trước khi chốt giá trị mặc định hoặc tạo audio asset.
 
 **Rủi ro cụ thể:** Default sound behavior/asset và local user scope phải chốt khi duyệt.
 
@@ -46,7 +46,16 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 |---|---|
 | `src/features/settings/settings-repository.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/features/settings/feedback-service.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
-| `src/screens/SettingsScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
+| `src/screens/SettingsScreen.tsx` | SL-030 tạo màn hình Settings nền cho feedback preferences; các slice sau mở rộng màn hiện có, không tạo màn Settings thứ hai. |
+| `src/app/index.tsx` | Đăng ký Settings screen state, render màn hình, và chỉ cho app shell đã xác thực điều hướng vào Settings. |
+| `src/types.ts` | Bổ sung định danh Settings vào ScreenId dùng chung. |
+| `src/constants.ts` | Bổ sung tiêu đề Settings theo ScreenId. |
+| `src/components/Header.tsx` | Nối nút cài đặt của app shell đã xác thực tới SettingsScreen; không dùng prototype control deck làm đường sản phẩm. |
+| `src/features/local/migrations.ts` | SL-030 mở rộng migration runner SL-003 bằng versioned `app_settings` schema theo Feature Specification; không tạo database bootstrap thứ hai. |
+| `package.json` | SL-030 sở hữu chọn và khai báo audio package tương thích Expo SDK/native targets sau khi D11 được duyệt. |
+| `package-lock.json`, `pnpm-lock.yaml` | SL-030 sở hữu cập nhật đồng bộ hai lockfile nếu thêm audio package. |
+| `app.json` | SL-030 sở hữu native/plugin configuration nếu audio package được chọn yêu cầu; chỉ cấu hình sau khi xác minh tương thích. |
+| `assets/audio/violation-alert.wav` | Bundled violation cue do SL-030 sở hữu; nội dung/default chỉ được chốt sau D11. |
 | `src/features/solo/grace-period-engine.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `__tests__/feedback-settings.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
 
@@ -84,13 +93,19 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Haptic off → confirmed violation không vibrate.
 - [ ] Haptic on và supported → phát một feedback.
 - [ ] Sound off → không âm thanh.
+- [ ] Fresh install → app_settings schema được tạo trước khi lưu preferences.
+- [ ] Upgrade từ profile/session schema → app_settings schema được thêm, dữ liệu hiện có được giữ.
+- [ ] Authenticated app shell → nút cài đặt mở SettingsScreen; unauthenticated user không vào được Settings route.
+- [ ] Sound on, confirmed violation, supported device → bundled cue phát theo D11; unsupported audio không ngăn violation được lưu.
 
 - [ ] Chạy focused command trong mục 7; xác nhận failure đúng behavior đang thiếu, không từ toolchain lỗi.
 - [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
 
 1. Đọc settings local trước feedback; persist changes theo current-user/settings scope được duyệt.
-2. Confirmed event mới phát haptic khi enabled/capability; sound theo toggle và asset đã duyệt.
-3. Unsupported feedback không làm engine crash hoặc đổi score/grace.
+2. Khi database mở, chạy `app_settings` migration sau schema SL-003; settings repository không báo saved trước khi commit.
+3. Settings entry chỉ hiện trong authenticated app shell và mở SettingsScreen qua navigation state/entrypoint được sở hữu tại đây.
+4. Confirmed event mới phát haptic khi enabled/capability; sound theo toggle và asset đã duyệt.
+5. Unsupported feedback không làm engine crash hoặc đổi score/grace.
 
 - [ ] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
 - [ ] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-030-feedback-settings]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-030-feedback-settings.md` và `Task: 1`.
@@ -111,8 +126,9 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Tích hợp theo thứ tự:
 
 1. Expose enabled/disabled states bằng native semantics; restart giữ lựa chọn.
-2. SQLite write fail → error/retry, UI không công bố persisted nếu chưa commit.
-3. Settings không cần network; không render quảng cáo trong active-session route.
+2. Sound package/native setup và bundled cue chỉ được thêm sau D11; manifest và lockfiles được cập nhật đồng bộ.
+3. SQLite write fail → error/retry, UI không công bố persisted nếu chưa commit.
+4. Settings không cần network; không render quảng cáo trong active-session route.
 
 - [ ] Thực hiện các kịch bản nghiệm thu trực tiếp trong mục 6; thu logs an toàn/device timestamps khi cần.
 - [ ] Review kết quả; một branch fail hoặc thiếu required device/emulator evidence thì slice chưa hoàn thành.
@@ -126,7 +142,10 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Restart → giữ persisted flags.
 - [ ] Unsupported haptic → engine vẫn ghi violation.
 - [ ] Write fail → không false saved.
+- [ ] Fresh install và upgrade → migration app_settings chạy, preferences cũ được giữ.
+- [ ] Authenticated user mở Settings từ app shell; unauthenticated user không truy cập được screen.
 - [ ] Physical device toggles rồi lift thật → feedback theo lựa chọn.
+- [ ] Sound enabled trên Android/iOS → cue được phát khi confirmed violation; sound disabled/unsupported → không phát, violation vẫn được ghi.
 - [ ] Offline toggle/restart → settings còn.
 
 Mỗi case phải có actual result. Unit cases dùng controlled fixtures để chứng minh domain; Firebase boundary cần Rules/Functions emulator tests cho allowed/denied/replay/concurrency khi áp dụng. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.
@@ -135,7 +154,7 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 
 ## 7. Verification và ghi nhận evidence
 
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/feedback-settings.test.ts`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/feedback-settings.test.ts`. Migration cases chạy cùng test file trên fresh schema và upgrade fixture. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 

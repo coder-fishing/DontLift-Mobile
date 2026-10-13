@@ -47,8 +47,12 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | `src/features/lifecycle/android-lifecycle-adapter.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/features/lifecycle/lifecycle-repository.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/features/lifecycle/recovery-controller.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
+| `modules/lifecycle-recovery/` | SL-009 sở hữu scaffold của local Expo native module dùng chung; đăng ký và config plugin chỉ thêm khi runtime yêu cầu. |
+| `modules/lifecycle-recovery/android/` | SL-009 sở hữu Android lifecycle observer, WorkManager integration và native dependency/build configuration. |
+| `modules/lifecycle-recovery/ios/` | SL-009 tạo phần module/autolinking nền; SL-010 mở rộng bằng iOS background-task implementation. |
+| `src/features/local/migrations.ts` | SL-009 mở rộng runner SL-003 bằng versioned lifecycle-candidate schema theo ADR-008. |
 | `src/features/solo/session-controller.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
-| `__tests__/android-recovery.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
+| `__tests__/android-recovery.test.ts` | Kiểm thử behavior, lifecycle migration và recovery reconciliation; chưa tạo test source trong P6.1. |
 
 **Unit:** Android lifecycle/recovery controller.
 **Nhận:** Foreground/background transitions, persisted candidate và clock markers.
@@ -84,13 +88,16 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Background 2 giây → cancel.
 - [ ] Background đủ 3 giây → confirm.
 - [ ] Process kill trước grace hết rồi restart → reconcile đúng, một event.
+- [ ] Fresh install/upgrade → lifecycle candidate schema được migrate trước khi native callback persist candidate.
+- [ ] Android Development Build → native module được load và bridge phản ánh ON_STOP/WorkManager behavior.
 
 - [ ] Chạy focused command trong mục 7; xác nhận failure đúng behavior đang thiếu, không từ toolchain lỗi.
 - [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
 
-1. Ghi candidate durable trước khi callback kết thúc; reuse UUID cho repeated transition.
-2. Foreground trước 3 giây cancel; đủ 3 giây confirm event/outbox một lần.
-3. Startup/resume xử lý pending candidate bằng monotonic marker, fallback UTC có anomaly guard; không coi WorkManager là exact timer.
+1. Đăng ký local Expo native module và tạo lifecycle-candidate migration trước khi adapter ghi dữ liệu.
+2. Ghi candidate durable trước khi callback kết thúc; reuse UUID cho repeated transition.
+3. Foreground trước 3 giây cancel; đủ 3 giây confirm event/outbox một lần.
+4. Startup/resume xử lý pending candidate bằng monotonic marker, fallback UTC có anomaly guard; không coi WorkManager là exact timer.
 
 - [ ] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
 - [ ] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-009-android-recovery]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-009-android-recovery.md` và `Task: 1`.
@@ -127,6 +134,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] WorkManager chạy trễ → không tạo duplicate.
 - [ ] Clock marker không hợp lệ → không âm thầm tự chốt score.
 - [ ] Android thật với battery optimization/kill/relaunch → records tồn tại.
+- [ ] Android Development Build thật → ON_STOP, delayed WorkManager và startup resume đi qua native bridge, không dựa JavaScript timer.
 - [ ] Đổi clock/reboot theo test protocol → anomaly outcome có evidence.
 
 Mỗi case phải có actual result. Unit cases dùng controlled fixtures để chứng minh domain; Firebase boundary cần Rules/Functions emulator tests cho allowed/denied/replay/concurrency khi áp dụng. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.

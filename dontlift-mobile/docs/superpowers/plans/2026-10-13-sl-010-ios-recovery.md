@@ -15,7 +15,7 @@
 **Plan slug:** `2026-10-13-sl-010-ios-recovery`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-010-ios-recovery]`.
 **Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13, chưa được phê duyệt. User đã yêu cầu ghi draft P6.1 cho cả 37 slice; không suy thành approval thực thi.
 **Traceability:** US-04; ADR-008; ARCH §3.4; V03–V04.
-**Phụ thuộc bắt buộc:** [SL-007](./2026-10-13-sl-007-foreground-detection.md)
+**Phụ thuộc bắt buộc:** [SL-007](./2026-10-13-sl-007-foreground-detection.md), [SL-009](./2026-10-13-sl-009-android-recovery.md)
 **Ưu tiên mềm:** Theo thứ tự đề xuất trong [mục lục](../../implementation-plan.md); thứ tự không tạo thêm hard dependency.
 
 ## 1. Nguồn và ranh giới
@@ -47,6 +47,8 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | `src/features/lifecycle/ios-lifecycle-adapter.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/features/lifecycle/lifecycle-repository.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/features/lifecycle/recovery-controller.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
+| `modules/lifecycle-recovery/ios/` | SL-010 mở rộng Expo native module do SL-009 scaffold bằng iOS lifecycle adapter, background-task handling và CocoaPods/native config cần thiết. |
+| `app.json` | SL-010 sở hữu iOS plugin/native configuration nếu module yêu cầu; chỉ cập nhật theo cấu hình thật. |
 | `src/features/solo/session-controller.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `__tests__/ios-recovery.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
 
@@ -89,8 +91,9 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
 
 1. Persist candidate trước background-task request; inactive/background lặp reuse UUID.
-2. Cancel dưới 3 giây, confirm từ 3 giây; transaction event/outbox giữ idempotency.
-3. Monitor background time; expiration persist unresolved candidate rồi end task, không bắt buộc network xong.
+2. Mở rộng module lifecycle do SL-009 tạo để gọi native iOS background-task APIs; app config/native linking thuộc slice nếu cần.
+3. Cancel dưới 3 giây, confirm từ 3 giây; transaction event/outbox giữ idempotency.
+4. Monitor background time; expiration persist unresolved candidate rồi end task, không bắt buộc network xong.
 
 - [ ] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
 - [ ] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-010-ios-recovery]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-010-ios-recovery.md` và `Task: 1`.
@@ -127,6 +130,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Inactive và background callbacks liên tiếp → một candidate.
 - [ ] Background task kết thúc trên mọi terminal branch.
 - [ ] iOS thật background/suspend/relaunch → record/time đúng.
+- [ ] iOS Development Build thật → native module bắt đầu và kết thúc background task ở mọi terminal branch theo ADR-008.
 - [ ] Capture expiration evidence → task được end, sync không được giả định hoàn tất.
 
 Mỗi case phải có actual result. Unit cases dùng controlled fixtures để chứng minh domain; Firebase boundary cần Rules/Functions emulator tests cho allowed/denied/replay/concurrency khi áp dụng. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.

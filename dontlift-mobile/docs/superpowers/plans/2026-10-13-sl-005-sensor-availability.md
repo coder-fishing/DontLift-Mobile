@@ -15,7 +15,7 @@
 **Plan slug:** `2026-10-13-sl-005-sensor-availability`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-005-sensor-availability]`.
 **Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13, chưa được phê duyệt. User đã yêu cầu ghi draft P6.1 cho cả 37 slice; không suy thành approval thực thi.
 **Traceability:** US-04; UX §3; V10.
-**Phụ thuộc bắt buộc:** [SL-001](./2026-10-13-sl-001-test-foundation.md)
+**Phụ thuộc bắt buộc:** [SL-001](./2026-10-13-sl-001-test-foundation.md), [SL-002](./2026-10-13-sl-002-native-firebase-runtime.md)
 **Ưu tiên mềm:** Theo thứ tự đề xuất trong [mục lục](../../implementation-plan.md); thứ tự không tạo thêm hard dependency.
 
 ## 1. Nguồn và ranh giới
@@ -46,6 +46,9 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 |---|---|
 | `src/features/sensors/sensor-adapter.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/features/sensors/sensor-availability.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
+| `package.json` | SL-005 sở hữu chọn và khai báo Expo sensor package tương thích SDK/native targets sau khi xác minh API thực tế. |
+| `package-lock.json`, `pnpm-lock.yaml` | SL-005 cập nhật đồng bộ cả hai lockfile nếu thêm sensor dependency theo quy tắc repo. |
+| `app.json` | SL-005 cấu hình native/plugin/permission chỉ khi sensor package được chọn yêu cầu. |
 | `src/screens/HardwareDiagnosticsScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
 | `src/screens/SoloSelectScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
 | `__tests__/sensor-availability.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
@@ -89,8 +92,9 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
 
 1. Kiểm tra sensor thật; chỉ yêu cầu permission nơi platform/API thực tế cần.
-2. Không có accelerometer hoặc access bị từ chối → focus không được bắt đầu.
-3. Retry kiểm tra lại capability/access; không công bố calibration thành công theo timer giả.
+2. Xác minh package sensor tương thích SDK/native targets và thêm dependency cùng hai lockfile; cấu hình native theo yêu cầu thực tế của package.
+3. Không có accelerometer hoặc access bị từ chối → focus không được bắt đầu.
+4. Retry kiểm tra lại capability/access; không công bố calibration thành công theo timer giả.
 
 - [ ] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
 - [ ] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-005-sensor-availability]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-005-sensor-availability.md` và `Task: 1`.

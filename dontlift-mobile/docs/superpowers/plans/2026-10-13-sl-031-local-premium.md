@@ -15,7 +15,7 @@
 **Plan slug:** `2026-10-13-sl-031-local-premium`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-031-local-premium]`.
 **Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13, chưa được phê duyệt. User đã yêu cầu ghi draft P6.1 cho cả 37 slice; không suy thành approval thực thi.
 **Traceability:** US-19; ADR-007; V09.
-**Phụ thuộc bắt buộc:** [SL-004](./2026-10-13-sl-004-login-session.md)
+**Phụ thuộc bắt buộc:** [SL-003](./2026-10-13-sl-003-registration-profile.md), [SL-004](./2026-10-13-sl-004-login-session.md)
 **Ưu tiên mềm:** Theo thứ tự đề xuất trong [mục lục](../../implementation-plan.md); thứ tự không tạo thêm hard dependency.
 
 ## 1. Nguồn và ranh giới
@@ -48,6 +48,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | `package-lock.json` | SL-031 cập nhật cùng dependency graph bằng npm lockfile. |
 | `pnpm-lock.yaml` | SL-031 cập nhật đồng bộ với npm lockfile theo AGENTS.md. |
 | `app.json` | SL-031 sở hữu plugin/config nếu API/version SecureStore được chọn yêu cầu Expo config; xác nhận qua prebuild config, không thêm cấu hình không cần thiết. |
+| `src/features/local/migrations.ts` | SL-031 mở rộng migration runner SL-003 bằng versioned entitlement schema theo architecture §6.3; không lưu full pending code hoặc Firebase token trong SQLite. |
 | `src/features/premium/activation-validation.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/features/premium/entitlement-repository.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/features/premium/pending-code-store.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
@@ -97,6 +98,8 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Malformed format → field error, entitlement không đổi.
 - [ ] Checksum invalid → không Local Premium.
 - [ ] Checksum valid → local flag/hash persisted.
+- [ ] Fresh install → entitlement schema tồn tại sau migration trước repository write.
+- [ ] Upgrade từ profile/session schema → entitlement migration được áp dụng, dữ liệu hiện có giữ nguyên.
 - [ ] SecureStore save/read/remove thành công và pending code còn đọc được sau restart; plaintext không xuất hiện trong SQLite/logs.
 - [ ] SecureStore unavailable hoặc read/write/remove reject → đúng retry/recovery outcome đã duyệt, không success giả và không mất pending code trước durable entitlement update.
 
@@ -104,8 +107,9 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
 
 1. Chốt checksum algorithm và valid/invalid vectors; không suy từ Ed25519 mock copy.
-2. Format/checksum hợp lệ → Local Premium; không ghi Server Premium hoặc quota từ checksum.
-3. Persist local flag/hash; full pending code tạm SecureStore, không token hay plain code SQLite.
+2. Database readiness áp dụng entitlement migration versioned sau các schema profile/session; giữ tách Local Premium và Server Premium theo ADR-007/architecture.
+3. Format/checksum hợp lệ → Local Premium; không ghi Server Premium hoặc quota từ checksum.
+4. Persist local flag/hash; full pending code tạm SecureStore, không token hay plain code SQLite.
 
 - [ ] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
 - [ ] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-031-local-premium]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-031-local-premium.md` và `Task: 1`.
@@ -139,6 +143,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Malformed format → field error, entitlement không đổi.
 - [ ] Checksum invalid → không Local Premium.
 - [ ] Checksum valid → local flag/hash persisted.
+- [ ] Fresh install và upgrade từ profile/session schema → entitlement migration được áp dụng tuần tự mà không mất dữ liệu cũ.
 - [ ] Offline activation → server flag không đổi.
 - [ ] SQLite/SecureStore fail → không success giả, recovery state được duyệt.
 - [ ] Restart → local benefits giữ, code không lọt logs.
