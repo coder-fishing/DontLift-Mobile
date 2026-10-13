@@ -15,7 +15,7 @@
 **Plan slug:** `2026-10-13-sl-034-premium-themes`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-034-premium-themes]`.
 **Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13, chưa được phê duyệt. User đã yêu cầu ghi draft P6.1 cho cả 37 slice; không suy thành approval thực thi.
 **Traceability:** PRD §8.3; ADR-007; UX §8.
-**Phụ thuộc bắt buộc:** [SL-030](./2026-10-13-sl-030-feedback-settings.md), [SL-031](./2026-10-13-sl-031-local-premium.md)
+**Phụ thuộc bắt buộc:** [SL-005](./2026-10-13-sl-005-sensor-availability.md), [SL-008](./2026-10-13-sl-008-solo-completion.md), [SL-012](./2026-10-13-sl-012-solo-history.md), [SL-015](./2026-10-13-sl-015-room-join-qr.md), [SL-019](./2026-10-13-sl-019-termination-vote.md), [SL-020](./2026-10-13-sl-020-room-completion.md), [SL-024](./2026-10-13-sl-024-default-bill.md), [SL-026](./2026-10-13-sl-026-vietqr-payment.md), [SL-028](./2026-10-13-sl-028-group-history.md), [SL-029](./2026-10-13-sl-029-profile-edit.md), [SL-030](./2026-10-13-sl-030-feedback-settings.md), [SL-031](./2026-10-13-sl-031-local-premium.md)
 **Ưu tiên mềm:** Theo thứ tự đề xuất trong [mục lục](../../implementation-plan.md); thứ tự không tạo thêm hard dependency.
 
 ## 1. Nguồn và ranh giới
@@ -48,6 +48,17 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | `src/screens/SettingsScreen.tsx` | Mở rộng SettingsScreen nền do SL-030 sở hữu bằng lựa chọn theme; không tạo screen hoặc navigation entry trùng. |
 | `src/constants/theme.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/hooks/use-theme.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
+| `src/features/settings/theme-provider.tsx` | Một app-level theme state từ persisted selection/catalog D6; hook đọc state này, không chỉ đọc OS light/dark. |
+| `src/app/_layout.tsx`, `src/app/index.tsx` | Gắn provider tại root; shell background, navigation và StatusBar dùng cùng theme với nội dung. |
+| `src/components/GlassCard.tsx`, `src/components/GlassPill.tsx`, `src/components/PrimaryButton.tsx`, `src/components/Header.tsx`, `src/components/BottomNav.tsx`, `src/components/ControlDeckDrawer.tsx` | SL-034 migrate color literals/style states sang semantic tokens, giữ geometry và accepted design. |
+| `src/components/RoomInvitationQr.tsx`, `src/components/TerminationVoteDialog.tsx` | Migrate surrounding surfaces/modal states do SL-013/019 tạo; QR data/modules giữ machine readability. |
+| `src/screens/LoginScreen.tsx`, `src/screens/SoloSelectScreen.tsx`, `src/screens/SoloTimerScreen.tsx`, `src/screens/SoloSummaryScreen.tsx`, `src/screens/HardwareDiagnosticsScreen.tsx` | Migrate toàn bộ foreground/background/text/border/icon và interaction states của Auth/Solo/diagnostics. |
+| `src/screens/GroupLobbyScreen.tsx`, `src/screens/JoinRoomScreen.tsx`, `src/screens/GroupActiveScreen.tsx`, `src/screens/GroupSummaryScreen.tsx`, `src/screens/BillAllocationScreen.tsx`, `src/screens/SettlementDetailsScreen.tsx`, `src/screens/VietQRSettlementScreen.tsx` | Migrate Group/settlement consumers do prerequisites tạo; không thay domain math hoặc QR payload. |
+| `src/screens/HistoryScreen.tsx`, `src/screens/ProfileScreen.tsx`, `src/screens/ActivationScreen.tsx` | Migrate History/Profile/activation states; cùng SettingsScreen tiêu thụ provider. |
+| `__tests__/theme-consumers.test.tsx` | Render shell/shared components/screens dưới provider: selection change, restore, fallback và trạng thái tương tác thực sự đổi palette. |
+| `docs/verification/sl-034-theme-matrix.md` | Execution evidence: inventory consumer, screen/state/theme matrix, contrast readings và Android/iOS outcomes; chỉ ghi sau khi kiểm chứng thực tế. |
+
+Trước Task 2, lập inventory mọi mounted consumer trong `src/screens/` và `src/components/` trên execution baseline, gồm components bổ sung bởi prerequisites; SL-034 sở hữu việc migrate các consumer được phát hiện trong inventory này. Không coi directory scan hoặc sửa hook là bằng chứng mọi màn đã đổi theme. Producer sau SL-034 phải tiếp tục dùng semantic tokens; SL-037 kiểm lại toàn bộ release surfaces. Không thêm SL-032 làm prerequisite cho quyền lợi Local Premium.
 | `__tests__/premium-themes.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
 
 **Unit:** Premium theme controller.
@@ -108,11 +119,13 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Persist fail → không false saved.
 
 - [ ] Chạy focused checks, xác nhận failure đúng behavior; giữ fixtures tách khỏi device evidence.
+- [ ] Consumer render cases → đổi theme cập nhật shell/shared components/mounted screens; màn mở sau đó dùng cùng selection; restore/fallback không làm consumer dùng theme khác nhau.
 - [ ] Tích hợp theo thứ tự:
 
 1. Mọi surface/state đọc semantic tokens; safe area/font scaling và contrast verified.
 2. Restart offline giữ theme; upgrade/downgrade behavior cần human confirm.
-3. Không sửa unrelated screen styles để redesign approved Liquid Acrylic.
+3. Gắn một provider tại root, nối hook tới persisted selection và migrate từng shell/shared component/screen trong inventory sang semantic tokens; thay selection phải cập nhật cả màn đã mounted và màn được mở sau đó.
+4. Chỉ thay nguồn màu/state styling để áp dụng theme, giữ approved Liquid Acrylic layout/behavior. QR rendering giữ contrast máy đọc và payload, không recolor tùy ý theo decorative palette.
 
 - [ ] Thực hiện các kịch bản nghiệm thu trực tiếp trong mục 6; thu logs an toàn/device timestamps khi cần.
 - [ ] Review kết quả; một branch fail hoặc thiếu required device/emulator evidence thì slice chưa hoàn thành.
@@ -128,12 +141,17 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Persist fail → không false saved.
 - [ ] Small phone/largest text/light-dark theo catalog → đọc và thao tác được.
 - [ ] Contrast từng state đo trên composed glass background.
+- [ ] Selection change dưới provider → shell, navigation, StatusBar, shared components và tất cả screens trong inventory dùng palette mới; không cần restart để thấy thay đổi.
+- [ ] Restart offline hoặc fallback D6 → mọi consumer dùng cùng theme; loading/empty/error/disabled/pressed/focus states đọc được trên từng theme đã duyệt.
+- [ ] Rendered-state matrix theo screen/state/theme, Android/iOS, narrow screen/largest text → không còn color literal bỏ qua semantic theme; QR vẫn scan được sau migration.
 
 Mỗi case phải có actual result. Unit cases dùng controlled fixtures để chứng minh domain; Firebase boundary cần Rules/Functions emulator tests cho allowed/denied/replay/concurrency khi áp dụng. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.
 
 **Failure recovery bắt buộc:** không hiển thị successful save/transition khi commit/request chưa thành công; giữ dữ liệu/retry context theo hành vi cụ thể trong tasks. Không log email đầy đủ, token, activation code hoặc bank details. Case không áp dụng cho slice phải ghi lý do trong evidence, không bỏ im lặng.
 
 ## 7. Verification và ghi nhận evidence
+
+Consumer render tests sau SL-001: `pnpm test --runTestsByPath __tests__/theme-consumers.test.tsx`. Ghi inventory consumer và rendered-state matrix từng theme trong execution evidence; test repository persist selection không thay cho ảnh/đo contrast và device UI checks. SL-037 re-check consumers có thay đổi sau migration.
 
 App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/premium-themes.test.ts`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
 

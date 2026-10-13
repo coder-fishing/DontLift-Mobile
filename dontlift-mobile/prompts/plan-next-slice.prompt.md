@@ -47,6 +47,7 @@ Không đọc/in credentials hoặc dùng node_modules/ignored artifacts thay pa
 4. Cloud Functions/Admin SDK: đối chiếu current official Firebase docs và SDK/runtime thực tế; Auth/Firestore skills không thay toàn bộ Functions guide.
 5. Mobile: native lifecycle/sensor boundaries, SQLite atomicity, sync/reconciliation, SDK session ownership; không copy prototype mock into production.
 6. UI: accepted visual hierarchy, field validation, loading/empty/error/offline/syncing, recovery, labels/safe areas/touch targets. Không regenerate design system hoặc đưa unrelated web stack.
+7. Theme consumers: dùng semantic tokens; nếu app-level provider đã có thì reuse, không tạo state song song hoặc color literals bypass theme. Slice migrate theme phải sở hữu root integration và inventory screens/components cùng producer prerequisites, có rendered-state verification; producer sửa consumer sau migration vẫn giữ contract này.
 
 ### C. Viết tasks và acceptance
 
@@ -69,12 +70,16 @@ Trình bày kết quả: kế hoạch/paths, priorities, dependencies, readiness
 
 ## 5. CONSTRAINTS AND SOURCE PRECEDENCE
 
-1. Human priority và newer approved decisions.
-2. Accepted requirements/product design.
-3. Approved architecture, ADRs/API; apply human-approved exceptions của tài liệu cũ rõ ràng.
-4. Read-only prototype/concepts.
-5. Actual implementation/evidence.
-6. AI suggestions.
+1. Newer explicit human-approved decisions.
+2. Accepted ADRs trong `docs/decisions/`.
+3. `docs/software-architecture.md`.
+4. `docs/api-contracts.md` cho callable wire contracts.
+5. `docs/product-requirements.md` cho scope và acceptance.
+6. `docs/product-design.md` và accepted design decision packet cho UI.
+7. `docs/feature-specification.md`.
+8. `docs/project-context.md` và `docs/project-brief.md` là historical context.
+
+Human priority quyết định thứ tự làm việc, không tự override accepted ADR. Prototype/concepts là read-only references theo design đã duyệt; actual implementation/evidence xác định hiện trạng và độ hoàn thành, không override target contracts; AI suggestions đứng sau các nguồn trên.
 
 Respect repository precedence và report unresolved conflict; không dùng generic skill defaults thay Email/Password, Standard edition, React Native Firebase Development Build hoặc region accepted.
 

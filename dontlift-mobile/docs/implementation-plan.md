@@ -1,6 +1,6 @@
 # P6.1 — Mục lục kế hoạch DontLift
 
-> **DRAFT v0.8 — backlog và implementation plans chưa được phê duyệt.** Đây là bộ kế hoạch được user yêu cầu soạn và lưu để review cho 37 slice, không phải backlog P6.0 đã duyệt và không phải quyền chạy P6.2.
+> **DRAFT v0.9 — backlog và implementation plans chưa được phê duyệt.** Đây là bộ kế hoạch được user yêu cầu soạn và lưu để review cho 37 slice, không phải backlog P6.0 đã duyệt và không phải quyền chạy P6.2.
 
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Baseline:** `docs/p6.0-implementation-slices`, commit `57ca1eb28a2952c66d01f89b9b89bf755ab4812a`.
@@ -60,13 +60,13 @@ P0 là nền tảng/critical journey trước; P1 là cần hoàn tất MVP; P2 
 | SL-025 | [Host override bill shares](./superpowers/plans/2026-10-13-sl-025-bill-overrides.md) | P1 | SL-024 | D8 |
 | SL-026 | [Tạo VietQR cho share](./superpowers/plans/2026-10-13-sl-026-vietqr-payment.md) | P1 | SL-024 | E3 |
 | SL-027 | [Host đánh dấu đã thanh toán](./superpowers/plans/2026-10-13-sl-027-manual-payment-status.md) | P1 | SL-026 | Không xác nhận riêng |
-| SL-028 | [Group history và phục hồi dữ liệu](./superpowers/plans/2026-10-13-sl-028-group-history.md) | P1 | SL-020, SL-012, SL-018, SL-021 | D4 |
+| SL-028 | [Group history và phục hồi dữ liệu](./superpowers/plans/2026-10-13-sl-028-group-history.md) | P1 | SL-020, SL-012, SL-018, SL-021, SL-024 | D4 |
 | SL-029 | [Xem và sửa profile](./superpowers/plans/2026-10-13-sl-029-profile-edit.md) | P1 | SL-004 | Không xác nhận riêng |
 | SL-030 | [Settings cho haptic và sound](./superpowers/plans/2026-10-13-sl-030-feedback-settings.md) | P1 | SL-003, SL-004, SL-007 | D11 |
 | SL-031 | [Activation offline và Local Premium](./superpowers/plans/2026-10-13-sl-031-local-premium.md) | P1 | SL-003, SL-004 | D5 |
 | SL-032 | [Redeem online và Server Premium](./superpowers/plans/2026-10-13-sl-032-server-premium.md) | P1 | SL-013, SL-014, SL-031 | D5 |
 | SL-033 | [Retention local và server](./superpowers/plans/2026-10-13-sl-033-retention.md) | P1 | SL-012, SL-023, SL-028, SL-031, SL-032 | D10 |
-| SL-034 | [Chọn custom theme](./superpowers/plans/2026-10-13-sl-034-premium-themes.md) | P1 | SL-030, SL-031 | D6 |
+| SL-034 | [Chọn custom theme](./superpowers/plans/2026-10-13-sl-034-premium-themes.md) | P1 | SL-005, SL-008, SL-012, SL-015, SL-019, SL-020, SL-024, SL-026, SL-028, SL-029, SL-030, SL-031 | D6 |
 | SL-035 | [Quảng cáo đúng tier và màn hình](./superpowers/plans/2026-10-13-sl-035-free-tier-ads.md) | P1 | SL-012, SL-013, SL-016, SL-029, SL-030, SL-031 | D7 |
 | SL-036 | [Advanced leaderboard theo Server Premium](./superpowers/plans/2026-10-13-sl-036-advanced-leaderboard.md) | P2 | SL-017, SL-032 | D6 |
 | SL-037 | [Nghiệm thu MVP và phát hành đúng environment](./superpowers/plans/2026-10-13-sl-037-mvp-release.md) | P1 | SL-001–SL-036 | D1, D6, E1, E2, E3 |
@@ -186,6 +186,7 @@ Website mua Premium/code generation/email delivery là external operational prer
 - v0.6: Sửa review mới trên PR #24: SL-012 sở hữu History route/entry/navigation test; SL-019, SL-021 và SL-033 đăng ký Functions exports cùng discovery coverage; SL-023 nối GroupSummary tới Host settlement form rồi bill allocation; cập nhật draft revision header. Không tự chọn schedule D3/D10/E2, không sửa P6.0 backlog hoặc đổi product behavior.
 - v0.7: Sửa review mới trên PR #24: SL-036 không thể tự gỡ hard release gate của SL-037 khi defer; SL-024 phụ thuộc SL-018 vì dùng frozen score; SL-032 phụ thuộc SL-013/014 vì nghiệm thu room quota/capacity. Đồng bộ blocker và dependency index; giữ nguyên accepted ADR-007 scope, D3/D5/D6/D9 và draft status.
 - v0.8: SL-013 sở hữu invitation encoder/QR renderer, dependency/lockfiles và canonical contract dùng lại bởi SL-015. Ghi D12 timezone quota và D13 scheme/payload thành blockers, thêm rollover/replay/leading-zero/render-failure/producer-parser scan coverage. Không quyết định timezone/scheme hoặc sửa backlog P6.0.
+- v0.9: Sửa source precedence ở prompt P6.1 và prompt P6.0 theo AGENTS; SL-034 sở hữu app-level provider và migration toàn bộ theme consumers cùng producer prerequisites/rendered-state matrix; SL-028 phụ thuộc SL-024 trước share reads. D6 và D4 vẫn mở, quyền lợi theme Local Premium không phụ thuộc redemption Server Premium.
 
 **Trạng thái corrections:** [SL-003 review](./superpowers/reviews/2026-10-13-sl-003-registration-profile-review-plan.md), [SL-005 review](./superpowers/reviews/2026-10-13-sl-005-sensor-availability-review-plan.md), [SL-007 review](./superpowers/reviews/2026-10-13-sl-007-foreground-detection-review-plan.md), [SL-009 review](./superpowers/reviews/2026-10-13-sl-009-android-recovery-review-plan.md), [SL-010 review](./superpowers/reviews/2026-10-13-sl-010-ios-recovery-review-plan.md), [SL-013 review](./superpowers/reviews/2026-10-13-sl-013-room-create-review-plan.md), [SL-016 review](./superpowers/reviews/2026-10-13-sl-016-room-lobby-start-review-plan.md), [SL-028 review](./superpowers/reviews/2026-10-13-sl-028-group-history-review-plan.md), [SL-029 review](./superpowers/reviews/2026-10-13-sl-029-profile-edit-review-plan.md), [SL-030 review](./superpowers/reviews/2026-10-13-sl-030-feedback-settings-review-plan.md), [SL-031 review](./superpowers/reviews/2026-10-13-sl-031-local-premium-review-plan.md), [SL-034 review](./superpowers/reviews/2026-10-13-sl-034-premium-themes-review-plan.md), [SL-037 review](./superpowers/reviews/2026-10-13-sl-037-mvp-release-review-plan.md).
 
@@ -196,3 +197,5 @@ Review batch v0.6: [SL-012](./superpowers/reviews/2026-10-13-sl-012-solo-history
 Review batch v0.7: [SL-024](./superpowers/reviews/2026-10-13-sl-024-default-bill-review-plan.md), [SL-032](./superpowers/reviews/2026-10-13-sl-032-server-premium-review-plan.md), [SL-036](./superpowers/reviews/2026-10-13-sl-036-advanced-leaderboard-review-plan.md).
 
 Review batch v0.8: [SL-013](./superpowers/reviews/2026-10-13-sl-013-room-create-review-plan.md), [SL-015 synchronization](./superpowers/reviews/2026-10-13-sl-015-room-join-qr-review-plan.md).
+
+Review batch v0.9: [Prompt precedence](./superpowers/reviews/2026-10-13-implementation-plan-review-plan.md), [SL-034](./superpowers/reviews/2026-10-13-sl-034-premium-themes-review-plan.md), [SL-028](./superpowers/reviews/2026-10-13-sl-028-group-history-review-plan.md).

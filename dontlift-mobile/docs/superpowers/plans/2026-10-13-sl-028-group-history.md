@@ -15,7 +15,7 @@
 **Plan slug:** `2026-10-13-sl-028-group-history`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-028-group-history]`.
 **Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13, chưa được phê duyệt. User đã yêu cầu ghi draft P6.1 cho cả 37 slice; không suy thành approval thực thi.
 **Traceability:** US-16; API §4; ARCH §6–8.
-**Phụ thuộc bắt buộc:** [SL-020](./2026-10-13-sl-020-room-completion.md), [SL-012](./2026-10-13-sl-012-solo-history.md), [SL-018](./2026-10-13-sl-018-early-exit.md), [SL-021](./2026-10-13-sl-021-host-finalization-override.md)
+**Phụ thuộc bắt buộc:** [SL-020](./2026-10-13-sl-020-room-completion.md), [SL-012](./2026-10-13-sl-012-solo-history.md), [SL-018](./2026-10-13-sl-018-early-exit.md), [SL-021](./2026-10-13-sl-021-host-finalization-override.md), [SL-024](./2026-10-13-sl-024-default-bill.md)
 **Ưu tiên mềm:** Theo thứ tự đề xuất trong [mục lục](../../implementation-plan.md); thứ tự không tạo thêm hard dependency.
 
 ## 1. Nguồn và ranh giới
