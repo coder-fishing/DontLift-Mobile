@@ -1,0 +1,162 @@
+# Kế hoạch triển khai P6.1 — SL-022: Stale room chuyển ABORTED
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use the qskill-executing-plans skill to implement this plan task-by-task. Steps use checkbox tracking.
+> Kế hoạch chỉ mô tả file, unit, hành vi, quy tắc, đầu ra và test cases; không có implementation code hoặc signatures. Đọc source thật trước mỗi task.
+> **Gate:** Không execute kế hoạch khi trạng thái còn DRAFT hoặc khi blocker/dependency chưa giải quyết. Việc tạo file này không phê duyệt backlog hay P6.2.
+
+**Mục tiêu:** Stale room chuyển ABORTED: Room ABORTED khi Host stale quá 15 phút; local stats còn.
+
+**Slice:** SL-022. **Ưu tiên đề xuất:** P1. **Release:** MVP + activation/Premium; post-MVP deferred. SL-036 chỉ được tính release sau D6.
+
+**Trạng thái kế hoạch:** DRAFT — chưa được human duyệt; bị chặn bởi D3.
+**Trạng thái implementation quan sát:** Không có heartbeat/scheduled abort. Chưa có evidence nghiệm thu slice.
+**Baseline khảo sát:** docs/p6.0-implementation-slices tại 57ca1eb28a2952c66d01f89b9b89bf755ab4812a.
+**Ngày soạn:** 2026-10-13, Asia/Saigon.
+**Plan slug:** `2026-10-13-sl-022-stale-room-abort`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-022-stale-room-abort]`.
+**Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13, chưa được phê duyệt. User đã yêu cầu ghi draft P6.1 cho cả 37 slice; không suy thành approval thực thi.
+**Traceability:** FS §3.1; ARCH §7/9; ADR-006.
+**Phụ thuộc bắt buộc:** [SL-017](./2026-10-13-sl-017-group-active.md)
+**Ưu tiên mềm:** Theo thứ tự đề xuất trong [mục lục](../../implementation-plan.md); thứ tự không tạo thêm hard dependency.
+
+## 1. Nguồn và ranh giới
+
+Đọc [PRD](../../product-requirements.md), [Feature Spec](../../feature-specification.md), [Product Design](../../product-design.md), [Design Brief](../../product-design-brief.md), [Architecture](../../software-architecture.md), [API contracts](../../api-contracts.md), ADR áp dụng trong [decisions](../../decisions), cùng AGENTS ở app root. Tham chiếu cụ thể của slice nằm trong Traceability phía trên.
+
+V01–V10 chỉ các màn tương ứng tại `design/concepts/concept-final/screens/`; prototype nằm tại `prototype/`. Chúng là read-only visual/interaction references, không chứng minh integration. Nếu journey không có design screen, trình bày gap với human trước quyết định UI mới.
+
+**Kiến trúc:** Host heartbeat và abortStaleRooms sở hữu hành vi của slice. Presentation đọc kết quả qua controller/repository; không tự trở thành nguồn authoritative. Units và đường dẫn mới bên dưới là đề xuất, chưa tồn tại trên baseline; nếu prerequisite đã tạo cùng trách nhiệm thì reuse, không thêm convention thứ hai.
+
+**Stack:** Expo SDK 57 / React Native / TypeScript. SQLite cho local-first khi slice có persistence; React Native Firebase Auth/Firestore Standard/Functions cho boundary có Firebase. Không bắt slice thuần local phải có network.
+
+**Không gồm:** Always-on background heartbeat, bill settlement từ aborted room.
+
+## 2. Blocker, risk và quyết định cần duyệt
+
+- **D3:** Chốt wire/schema/error/concurrency cho start/early-exit/vote/heartbeat nếu slice dùng chúng; chốt syncEvents cho violation đang kéo dài khi áp dụng. Không đoán payload từ responsibility table.
+
+**Rủi ro cụ thể:** D3 heartbeat/cutoff và E2 khi deploy; false-positive stale.
+
+Nếu một contract chỉ có responsibility mà chưa có schema, task đầu là trình bày missing decision với nguồn; không tự tạo endpoint/field mới. Các hành vi test bên dưới mô tả outcome cần đạt, không thay thế wire approval. Ngưỡng/range/default chưa được spec xác định phải có quyết định ghi lại trước khi implement.
+
+## 3. File và quyền sở hữu dự kiến
+
+Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại trạng thái file lúc execute để chọn Create/Modify; không ghi đè implementation của dependency.
+
+| File dự kiến | Trách nhiệm |
+|---|---|
+| `src/features/rooms/host-heartbeat.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
+| `src/features/rooms/group-session-controller.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
+| `functions/src/host-heartbeat.cjs` | Authenticated server boundary để Host cập nhật liveness; endpoint, wire contract và frequency chỉ chốt sau D3. |
+| `functions/src/abort-stale-rooms.cjs` | Backend boundary của slice; server identity/validation/transaction. |
+| `functions/index.js` | Backend boundary của slice; server identity/validation/transaction. |
+| `__tests__/stale-room-abort.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
+| `functions/tests/stale-room-abort.test.cjs` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
+| `functions/tests/host-heartbeat.test.cjs` | Auth, Host ownership, ACTIVE-state và heartbeat write-boundary tests. |
+| `functions/tests/host-heartbeat-discovery.test.cjs` | Kiểm tra heartbeat handler được export qua Functions entrypoint. |
+| `functions/tests/host-heartbeat-rules.emulator.test.cjs` | Client SDK bị từ chối khi tự ghi `hostHeartbeatAt` hoặc room authority fields. |
+
+**Unit:** Host heartbeat và abortStaleRooms.
+**Nhận:** Authenticated Host request qua server boundary, ACTIVE room và scheduler observation time.
+**Trả:** Room ABORTED khi Host stale quá 15 phút; local stats còn.
+**Đầu vào từ dependency:** capabilities/records/commands đã nghiệm thu theo các plan liên kết; chưa có dependency output thì không giả coi integration có thật.
+**Đầu ra cho slice sau:** outcome và invariants trong mục tiêu/nghiệm thu dưới đây; tên internal unit là đề xuất, wire names chỉ dùng theo API/ADR đã duyệt.
+
+## 4. Ràng buộc xuyên suốt
+
+- Giữ approved architecture; newer human decisions và accepted ADR exceptions thắng prose cũ.
+- Không sao chép Firebase token vào SQLite, AsyncStorage hoặc SecureStore; SDK quản lý session.
+- Event offline-capable dùng SQLite domain record và sync_outbox trong một transaction; syncEvents là ingestion authority.
+- Command lifecycle/vote/bill/payment không queue để replay muộn. Firestore cache không thay thế outbox.
+- Membership authority là rooms/{roomId}/members/{uid}. Functions derive actor từ Auth và tự authorization; Admin SDK bypass Rules.
+- Giữ 3-Second Grace Period ở cả foreground/background theo ADR-008.
+- Local Premium không cấp server quota/capacity; chỉ verified Server Premium cấp server benefits.
+- Bill dùng integer VND, deterministic residual và tổng exact theo ADR-005; VietQR non-custodial, không bank polling.
+- UI dùng semantic tokens và accepted Liquid Acrylic; loading/empty/error/offline/syncing, labels, safe areas và touch targets được kiểm chứng khi phù hợp.
+- Không thêm social login, analytics dashboards, kiosk, wallet, chat, AI coaching hoặc camera-based detection vào MVP.
+- Không install/provision/deploy/publish trong lượt authoring plan này; mọi check bên dưới là hướng dẫn execution sau approval.
+
+## 5. Các task thực hiện sau approval
+
+### Task 1 — Boundary và quy tắc của Stale room chuyển ABORTED
+
+**Files:** Dùng units/config/backend/repositories trong bảng mục 3; khi test source đã được chỉ định, đặt cases thuộc boundary vào đúng app/backend target. Không thay presentation chưa cần cho task này.
+
+**Nhận/trả:** Nhận Server-validated heartbeat, ACTIVE room và scheduler observation time; trả Room ABORTED khi Host stale quá 15 phút; local stats còn. Với contract đang bị chặn, chưa có quyền thêm schema dù test outcome đã được nêu.
+
+- [ ] Đọc lại source/spec và xác nhận tất cả blocker cùng dependency cho task đã được giải quyết; nếu chưa, dừng execution và báo đúng blocker.
+- [ ] Viết focused failing cases sau đây; runner không tìm thấy hoặc thiếu dependency không được tính là red nghiệp vụ.
+
+- [ ] ACTIVE heartbeat mới → không abort.
+- [ ] Chỉ authenticated Host của room ACTIVE được ghi nhận heartbeat; Member, outsider, unauthenticated user và Host của room không ACTIVE bị từ chối.
+- [ ] Client không thể tự ghi `hostHeartbeatAt` hoặc lifecycle fields qua Firestore; heartbeat chỉ đi qua server boundary.
+- [ ] Stale quá 15 phút → ABORTED một lần.
+- [ ] Room COMPLETED/CANCELLED → không đổi ABORTED.
+
+- [ ] Chạy focused command trong mục 7; xác nhận failure đúng behavior đang thiếu, không từ toolchain lỗi.
+- [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
+
+1. Sau khi D3 chốt endpoint/wire/error/frequency, ghi heartbeat qua authenticated Host-only server handler; derive UID từ Auth, dùng server time và không nhận lifecycle values từ client.
+2. Nối `host-heartbeat.ts` với handler theo cadence đã duyệt; lỗi request không được trình bày như heartbeat đã được server xác nhận.
+3. Export handler từ `functions/index.js`; thêm auth/ownership/state tests, client-denial Emulator Suite coverage và discovery test.
+4. Chỉ ACTIVE stale quá 15 phút đủ điều kiện; server time tránh device clock gian lận.
+5. Abort transaction idempotent; Host heartbeat mới trước commit phải được recheck.
+
+- [ ] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
+- [ ] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-022-stale-room-abort]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-022-stale-room-abort.md` và `Task: 1`.
+
+### Task 2 — Journey tích hợp và recovery
+
+**Files:** Presentation/adapter/evidence trong mục 3 cùng boundary task 1; không refactor screen không liên quan. Task này không tạo implementation thứ hai cho unit task 1.
+
+**Nhận:** Output task 1 đã kiểm chứng. **Trả:** Journey/bằng chứng có thể nghiệm thu; error/offline không false-success.
+
+- [ ] Viết các failing cases về integration/recovery sau; không viết tests chỉ mirror implementation.
+
+- [ ] Emulator Suite: active Host được heartbeat; non-Host, outsider, unauthenticated actor và room không ACTIVE bị deny.
+- [ ] Client SDK không thể ghi `hostHeartbeatAt` hoặc room lifecycle fields; Functions discovery export heartbeat handler.
+- [ ] Heartbeat cập nhật đồng thời scan → transaction recheck.
+- [ ] Scheduler lặp → no duplicate effect.
+- [ ] Reconnect aborted room → không tiếp tục capture ngoài window.
+
+- [ ] Chạy focused checks, xác nhận failure đúng behavior; giữ fixtures tách khỏi device evidence.
+- [ ] Tích hợp theo thứ tự:
+
+1. Reconnect đọc authoritative ABORTED và dừng active journey theo cutoff đã duyệt.
+2. Giữ local stats/outbox; late events chỉ xử lý theo authoritative window contract.
+3. Không hiển thị heartbeat chắc chắn khi OS suspend; scheduler delay không được coi timer exact.
+
+- [ ] Thực hiện các kịch bản nghiệm thu trực tiếp trong mục 6; thu logs an toàn/device timestamps khi cần.
+- [ ] Review kết quả; một branch fail hoặc thiếu required device/emulator evidence thì slice chưa hoàn thành.
+- [ ] Commit task sau review nếu execution được phép. Subject dùng `[2026-10-13-sl-022-stale-room-abort]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-022-stale-room-abort.md` và `Task: 2`.
+
+## 6. Nghiệm thu và failure outcomes
+
+- [ ] ACTIVE heartbeat mới → không abort.
+- [ ] Authenticated Host heartbeat refreshes liveness; unauthorized actors and client-side authoritative writes are denied.
+- [ ] Client adapter reports heartbeat confirmed only after successful server response; network failure cannot refresh server liveness.
+- [ ] Functions discovery exposes the approved heartbeat handler.
+- [ ] Stale quá 15 phút → ABORTED một lần.
+- [ ] Room COMPLETED/CANCELLED → không đổi ABORTED.
+- [ ] Heartbeat cập nhật đồng thời scan → transaction recheck.
+- [ ] Scheduler lặp → no duplicate effect.
+- [ ] Reconnect aborted room → không tiếp tục capture ngoài window.
+- [ ] Emulator clock/scheduler fixture và device offline protocol → abort/preserve đúng.
+- [ ] Cloud scheduling chưa authorized → chỉ evidence local; không claim deployed.
+
+Mỗi case phải có actual result. Unit cases dùng controlled fixtures để chứng minh domain; Firebase boundary cần Rules/Functions emulator tests cho allowed/denied/replay/concurrency khi áp dụng. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.
+
+**Failure recovery bắt buộc:** không hiển thị successful save/transition khi commit/request chưa thành công; giữ dữ liệu/retry context theo hành vi cụ thể trong tasks. Không log email đầy đủ, token, activation code hoặc bank details. Case không áp dụng cho slice phải ghi lý do trong evidence, không bỏ im lặng.
+
+## 7. Verification và ghi nhận evidence
+
+App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/stale-room-abort.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/host-heartbeat.test.cjs`, `node --test functions/tests/host-heartbeat-discovery.test.cjs`, `node --test functions/tests/host-heartbeat-rules.emulator.test.cjs` và `node --test functions/tests/stale-room-abort.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+
+Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
+
+Ghi trong kết quả execution: baseline/commit mới, command, exit status, số cases, emulator/device/runtime version, date, actual outcomes và remaining gaps. Các checklist hiện đều chưa chạy.
+
+## 8. Human review và bàn giao P6.2
+
+Human phải duyệt scope, non-goals, tasks, acceptance cases, dependencies và các quyết định còn mở của **SL-022** trước implementation. Duyệt một slice không duyệt tất cả 37; duyệt authoring batch không duyệt code.
+
+Sau approval, cập nhật trạng thái/date/decision evidence trong đúng plan; kế hoạch mới chỉ đủ execution-ready khi blocker đã được giải quyết và baseline được re-inspect. Dùng qskill-executing-plans khi user yêu cầu execute plan đã duyệt. Không tự bắt đầu P6.2 từ file draft hoặc từ prompt batch.
