@@ -142,6 +142,7 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - [ ] Bill request khi PENDING → bị chặn.
 - [ ] Hai devices, một có pending event → completion chưa finalized tới khi đủ flush/ACK.
 - [ ] Verify final scores và summary server/local; no client override.
+- [ ] Host/Member vẫn đọc room/member reconciliation projection theo Rules SL-016; anonymous/outsider/cross-room bị deny và client không ghi status/scores.
 
 Mỗi case phải có actual result. Unit cases dùng controlled fixtures để chứng minh domain; Firebase boundary cần Rules/Functions emulator tests cho allowed/denied/replay/concurrency khi áp dụng. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.
 

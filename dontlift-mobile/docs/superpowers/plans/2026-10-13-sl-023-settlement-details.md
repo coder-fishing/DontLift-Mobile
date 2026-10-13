@@ -44,6 +44,8 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 | File dự kiến | Trách nhiệm |
 |---|---|
+| `firestore.emulator.rules` | SL-023 mở membership-scoped read cho `rooms/{roomId}/settlementDetails/current`; chỉ callable/server được ghi. |
+| `functions/tests/settlement-details-rules.emulator.test.cjs` | Client-SDK Emulator Suite tests cho member allowed read, anonymous/outsider/cross-room denial và client write denial. |
 | `src/features/settlement/settlement-details-controller.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/screens/SettlementDetailsScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
 | `functions/src/set-settlement-details.cjs` | Backend boundary của slice; server identity/validation/transaction. |
@@ -87,6 +89,15 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 
 ## 5. Các task thực hiện sau approval
 
+### Task 0 — Rules cho settlement details trước client read
+
+**Files:** `firestore.emulator.rules`, `functions/tests/settlement-details-rules.emulator.test.cjs`. Reuse room membership Rules SL-016 và Rules harness/emulator SL-002/003.
+
+- [ ] Chỉ thành viên của room đọc được `settlementDetails/current`; kiểm tra cả Host/member, anonymous, outsider và user room khác bằng client SDK.
+- [ ] Chặn mọi direct client create/update/delete; `setSettlementDetails` callable tiếp tục là write authority.
+- [ ] Kiểm tra expiry/read path theo contract, không log hoặc trả bank details ngoài room; Admin SDK chỉ dùng seed fixture.
+- [ ] Chạy regression room/member Rules và ghi evidence; SL-037 sẽ re-test canonical policy.
+
 ### Task 1 — Boundary và quy tắc của Host nhập thông tin nhận tiền
 
 **Files:** Dùng units/config/backend/repositories trong bảng mục 3; khi test source đã được chỉ định, đặt cases thuộc boundary vào đúng app/backend target. Không thay presentation chưa cần cho task này.
@@ -121,6 +132,7 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - [ ] Replay cùng request → safe outcome.
 - [ ] Non-member read → deny.
 - [ ] Expiry → completedAt cộng 30 ngày, không từ device time.
+- [ ] Thành viên cùng room đọc details → allowed; anonymous/outsider/cross-room → denied; direct client writes → denied trên Emulator Suite.
 
 - [ ] Chạy focused checks, xác nhận failure đúng behavior; giữ fixtures tách khỏi device evidence.
 - [ ] Tích hợp theo thứ tự:
@@ -150,7 +162,7 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 
 ## 7. Verification và ghi nhận evidence
 
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/settlement-details.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/settlement-details.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/settlement-details.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/settlement-details.test.cjs`; Rules Suite: `node --test functions/tests/settlement-details-rules.emulator.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 

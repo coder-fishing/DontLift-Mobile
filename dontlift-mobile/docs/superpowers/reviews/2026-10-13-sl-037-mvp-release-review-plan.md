@@ -20,8 +20,22 @@
 - **Review reference:** [Original finding](https://github.com/coder-fishing/DontLift-Mobile/pull/24#discussion_r4255429701).
 - **Response:** Đã thêm Task 0, canonical config/Rules/index inventory/docs/config tests ownership. Exact IDs và D1/E2/authorization trước executable config; tested Rules canonical re-verify; query inventory thật; deploy permission riêng. Chưa tạo actual config/resources hoặc deploy.
 
+## PR24-4255731339
+
+- **Status:** RESOLVED
+- **Severity:** High
+- **Category:** Premium release dependency
+- **Location:** SL-037 dependency list, release gate, and `docs/implementation-plan.md` dependency table.
+- **Problem:** SL-037 could pass without SL-036 although accepted ADR-007 includes Advanced Penalty Leaderboard among Server Premium benefits.
+- **Recommendation:** Make SL-036 a hard release dependency and retain D6 while its behavior remains undefined.
+- **Created At:** 2026-10-13, theo PR review trên commit 1bc8e92.
+- **Updated By:** Codex, theo human-approved corrections.
+- **Updated At:** 2026-10-13, Asia/Saigon.
+- **Review reference:** [Latest P1 finding](https://github.com/coder-fishing/DontLift-Mobile/pull/24#discussion_r4255731339).
+- **Response:** SL-037 now depends on SL-001–036 and lists D6 as a blocker; its release gate cannot pass until SL-036 is complete. SL-036 still cannot finalize its behavior before D6. The edge adds no cycle because SL-036 depends on SL-017 and SL-032. No release-scope behavior beyond ADR-007 was invented.
+
 ## Self-review
 
-- Original comment identity giữ nguyên; Response đối chiếu owner/tasks/acceptance trong plan đã sửa.
+- Original comment identities giữ nguyên; Responses đối chiếu owner/tasks/acceptance trong plan và index đã sửa.
 - Product behavior, ADRs, stable IDs và blockers không bị đổi thành approval tự động.
 - Runtime/device/provisioning evidence vẫn unverified; không source hoặc resource mutation trong corrections.

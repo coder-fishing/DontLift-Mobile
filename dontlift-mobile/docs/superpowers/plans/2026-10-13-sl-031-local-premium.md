@@ -44,6 +44,10 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 | File dự kiến | Trách nhiệm |
 |---|---|
+| `package.json` | SL-031 thêm `expo-secure-store` tương thích Expo SDK 57 sau khi kiểm tra compatibility tại thời điểm execution. |
+| `package-lock.json` | SL-031 cập nhật cùng dependency graph bằng npm lockfile. |
+| `pnpm-lock.yaml` | SL-031 cập nhật đồng bộ với npm lockfile theo AGENTS.md. |
+| `app.json` | SL-031 sở hữu plugin/config nếu API/version SecureStore được chọn yêu cầu Expo config; xác nhận qua prebuild config, không thêm cấu hình không cần thiết. |
 | `src/features/premium/activation-validation.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/features/premium/entitlement-repository.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/features/premium/pending-code-store.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
@@ -72,6 +76,15 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 ## 5. Các task thực hiện sau approval
 
+### Task 0 — SecureStore dependency và native configuration
+
+**Files:** `package.json`, `package-lock.json`, `pnpm-lock.yaml`, và `app.json` nếu plugin/config được SDK yêu cầu.
+
+- [ ] Xác nhận Expo SDK 57 compatibility rồi chọn package version bằng quy trình Expo-supported; không cài package trong P6.1 authoring.
+- [ ] Giao SL-031 cập nhật package manifest cùng cả npm/pnpm lockfiles; kiểm tra lockfiles nhất quán và không đổi dependency ngoài phạm vi.
+- [ ] Nếu native config plugin cần thiết, thêm và kiểm chứng đúng entry trong `app.json`; nếu không cần thì ghi rõ lý do trong evidence.
+- [ ] Verify adapter trên iOS/Android Development Build; Expo Go/mock không chứng minh native SecureStore hoạt động.
+
 ### Task 1 — Boundary và quy tắc của Activation offline và Local Premium
 
 **Files:** Dùng units/config/backend/repositories trong bảng mục 3; khi test source đã được chỉ định, đặt cases thuộc boundary vào đúng app/backend target. Không thay presentation chưa cần cho task này.
@@ -84,6 +97,8 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Malformed format → field error, entitlement không đổi.
 - [ ] Checksum invalid → không Local Premium.
 - [ ] Checksum valid → local flag/hash persisted.
+- [ ] SecureStore save/read/remove thành công và pending code còn đọc được sau restart; plaintext không xuất hiện trong SQLite/logs.
+- [ ] SecureStore unavailable hoặc read/write/remove reject → đúng retry/recovery outcome đã duyệt, không success giả và không mất pending code trước durable entitlement update.
 
 - [ ] Chạy focused command trong mục 7; xác nhận failure đúng behavior đang thiếu, không từ toolchain lỗi.
 - [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
@@ -106,6 +121,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Offline activation → server flag không đổi.
 - [ ] SQLite/SecureStore fail → không success giả, recovery state được duyệt.
 - [ ] Restart → local benefits giữ, code không lọt logs.
+- [ ] SecureStore save/read/remove failure được test riêng; recovery giữ đúng state theo D5/ADR-007 và không log code.
 
 - [ ] Chạy focused checks, xác nhận failure đúng behavior; giữ fixtures tách khỏi device evidence.
 - [ ] Tích hợp theo thứ tự:

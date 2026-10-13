@@ -44,6 +44,8 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 | File dự kiến | Trách nhiệm |
 |---|---|
+| `firestore.emulator.rules` | SL-017 mở membership reads cho `rooms/{roomId}/violations/{eventId}`; leaderboard tiếp tục đọc room/member resources được SL-016 cấp quyền. Không thêm projection path nếu chưa có contract duyệt. |
+| `functions/tests/group-active-rules.emulator.test.cjs` | Emulator Suite client-SDK tests cho violation reads, outsider/cross-room denial, query/listener shape và direct-write denial; leaderboard room/member reads regression theo SL-016. |
 | `src/features/rooms/group-session-controller.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/features/rooms/group-projection-repository.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/screens/GroupActiveScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
@@ -73,6 +75,16 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 ## 5. Các task thực hiện sau approval
 
+### Task 0 — Rules cho violations và leaderboard trước client listener
+
+**Files:** `firestore.emulator.rules`, `functions/tests/group-active-rules.emulator.test.cjs`. Reuse deny-by-default config SL-002, harness SL-003 và room/member policy đã kiểm thử ở SL-016.
+
+- [ ] Chỉ mở read cho Host/Member có membership cùng room trên violation documents; leaderboard tiếp tục dùng room/member documents đã có.
+- [ ] Dùng client SDK để kiểm tra allowed member reads/listener, anonymous/outsider/cross-room denied, và query thực tế không trả dữ liệu ngoài room.
+- [ ] Deny client create/update/delete violations, penalty scores và leaderboard aggregates; mọi authoritative write tiếp tục qua `syncEvents`/server. Nếu contract cần projection mới thì dừng và xin duyệt schema/path.
+- [ ] Chạy lại room/member Rules regression; nếu D3 chưa chốt schema/path thì giữ blocker và không đoán collection hay query.
+- [ ] Không tạo policy canonical/deploy ở slice này; SL-037 nhận policy đã test và chạy lại suite.
+
 ### Task 1 — Boundary và quy tắc của Group active, capture và leaderboard
 
 **Files:** Dùng units/config/backend/repositories trong bảng mục 3; khi test source đã được chỉ định, đặt cases thuộc boundary vào đúng app/backend target. Không thay presentation chưa cần cho task này.
@@ -85,6 +97,8 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] User offline ACTIVE → local violation/outbox vẫn commit.
 - [ ] Duplicate delivery → server score cộng một lần.
 - [ ] Member gửi event user khác → permission-denied.
+- [ ] Thành viên đọc violations/leaderboard trong room → allowed; outsider/cross-room → denied bằng Emulator Suite client SDK.
+- [ ] Client ghi authoritative violation/score/leaderboard → denied; server ingestion vẫn là đường ghi duy nhất.
 
 - [ ] Chạy focused command trong mục 7; xác nhận failure đúng behavior đang thiếu, không từ toolchain lỗi.
 - [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
@@ -136,7 +150,7 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 
 ## 7. Verification và ghi nhận evidence
 
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/group-active.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/group-active.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/group-active.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/group-active.test.cjs`; Rules Suite: `node --test functions/tests/group-active-rules.emulator.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 

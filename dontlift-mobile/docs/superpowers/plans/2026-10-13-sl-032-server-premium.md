@@ -119,6 +119,7 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 
 - [ ] Used by another user → already-exists.
 - [ ] Network lost response → safe retry, không mất pending code sớm.
+- [ ] SecureStore deletion chỉ sau server redemption và local entitlement update đã durable; deletion error có recovery đã duyệt và không tạo false success hoặc làm mất code trước thời điểm đó.
 - [ ] Invalid code → server flag không granted; local flag theo checksum policy.
 
 - [ ] Chạy focused checks, xác nhận failure đúng behavior; giữ fixtures tách khỏi device evidence.
@@ -139,6 +140,7 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - [ ] Replay same request → prior success.
 - [ ] Used by another user → already-exists.
 - [ ] Network lost response → safe retry, không mất pending code sớm.
+- [ ] SecureStore deletion chỉ sau server redemption và local entitlement update đã durable; deletion failure theo recovery đã duyệt, không false success hoặc mất pending code sớm.
 - [ ] Invalid code → server flag không granted; local flag theo checksum policy.
 - [ ] Emulators redeem fixture stock → rights read từ server.
 - [ ] Unlimited room/capacity verification reuse SL-013/014; no local bypass.

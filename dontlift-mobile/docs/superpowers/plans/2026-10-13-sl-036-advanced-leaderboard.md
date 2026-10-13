@@ -44,6 +44,8 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 | File dự kiến | Trách nhiệm |
 |---|---|
+| `firestore.emulator.rules` | SL-036 chỉ mở rộng nếu decision D6 duyệt resource/query mới; nếu dùng leaderboard projection SL-017 thì reuse policy, không tạo quyền trùng. |
+| `functions/tests/advanced-leaderboard-rules.emulator.test.cjs` | Client-SDK Emulator Suite tests cho audience/Server Premium access theo D6; outsider và client writes luôn bị deny. |
 | `src/features/rooms/leaderboard-controller.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/screens/GroupActiveScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
 
@@ -68,6 +70,15 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - Không install/provision/deploy/publish trong lượt authoring plan này; mọi check bên dưới là hướng dẫn execution sau approval.
 
 ## 5. Các task thực hiện sau approval
+
+### Task 0 — Rules cho advanced leaderboard theo contract D6
+
+**Files:** Chỉ khi D6 xác nhận read model/resource mới: `firestore.emulator.rules`, `functions/tests/advanced-leaderboard-rules.emulator.test.cjs`. Nếu SL-036 đọc projection đã có, kế thừa Rules/tests SL-017.
+
+- [ ] Không chọn collection, query, entitlement check hay audience trước khi D6 chốt behavior và contract.
+- [ ] Với resource mới được duyệt, client-SDK Emulator Suite kiểm tra đúng Server Premium/member audience, Free/Local-only denial theo decision, outsider/cross-room denial và query constraints.
+- [ ] Deny client create/update/delete leaderboard aggregate; chỉ backend được ghi authoritative projection.
+- [ ] Nếu không có resource mới, ghi evidence reuse SL-017 policy/tests; SL-037 re-test policy canonical.
 
 ### Task 1 — Xác nhận đầu vào và gate nghiệp vụ
 
@@ -102,6 +113,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 - [ ] Basic leaderboard → vẫn hoạt động khi feature blocked.
 - [ ] Field/query/schema mới → phải có contract approval trước implementation.
+- [ ] Advanced leaderboard read theo D6 audience → allowed; Free/unauthorized/outsider/cross-room → denied theo decision; client aggregate writes → denied.
 
 - [ ] Chỉ chạy check được authorized và có runtime; nếu chưa có, ghi missing evidence.
 - [ ] Tích hợp theo thứ tự:

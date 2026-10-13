@@ -44,6 +44,8 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 | File dự kiến | Trách nhiệm |
 |---|---|
+| `firestore.emulator.rules` | SL-019 thêm membership-scoped reads cho vote resource đúng path/schema được D3 duyệt; không mở client writes cho ballot/expiry/finalization mặc định. |
+| `functions/tests/termination-vote-rules.emulator.test.cjs` | Emulator Suite client-SDK tests cho active-member reads, outsider/cross-room denial và server-owned vote mutations. |
 | `src/features/rooms/termination-vote-controller.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/components/TerminationVoteDialog.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
 | `src/screens/GroupActiveScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
@@ -73,6 +75,16 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - Không install/provision/deploy/publish trong lượt authoring plan này; mọi check bên dưới là hướng dẫn execution sau approval.
 
 ## 5. Các task thực hiện sau approval
+
+### Task 0 — Rules cho vote resource trước listener
+
+**Files:** `firestore.emulator.rules`, `functions/tests/termination-vote-rules.emulator.test.cjs`. Reuse room membership Rules SL-016 và test harness/emulator SL-002/003.
+
+- [ ] Chỉ sau khi D3 duyệt wire/schema, xác định vote path và eligible reader; không suy đoán collection hay quyền từ UI.
+- [ ] Client-SDK Emulator Suite: active room members đọc vote state; anonymous, inactive/outside members và cross-room users bị deny theo approved policy.
+- [ ] Deny direct client create/update/delete ballot/count/expiry/room transition nếu commands là callable/server-owned; chỉ mở write cụ thể theo contract đã duyệt.
+- [ ] Kiểm tra expiry/finalization/cleanup vẫn server-owned và chạy lại room/member Rules regression.
+- [ ] Giữ D3 blocker nếu path/schema chưa chốt; SL-037 nhận policy sau khi tests pass.
 
 ### Task 1 — Boundary và quy tắc của Vote kết thúc sớm
 
@@ -130,6 +142,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Scheduler chạy trễ → logical expiry vẫn đúng 30 giây.
 - [ ] Nhiều users vote yes/timeout → đúng terminal room state.
 - [ ] Member offline trở lại không replay vote cũ; no settlement sau cancel.
+- [ ] Active member reads trong room → allowed; anonymous/outsider/cross-room reads và client authoritative writes → denied trên Emulator Suite.
 
 Mỗi case phải có actual result. Unit cases dùng controlled fixtures để chứng minh domain; Firebase boundary cần Rules/Functions emulator tests cho allowed/denied/replay/concurrency khi áp dụng. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.
 
@@ -137,7 +150,7 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 
 ## 7. Verification và ghi nhận evidence
 
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/termination-vote.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/termination-vote.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/termination-vote.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/termination-vote.test.cjs`; Rules Suite sau khi D3 chốt resource: `node --test functions/tests/termination-vote-rules.emulator.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 

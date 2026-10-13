@@ -140,6 +140,7 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - [ ] Offline command → không enqueue, local status chưa đổi canonical.
 - [ ] Host mark trên device A → Member B thấy realtime.
 - [ ] Logs/network không chứa bank-verification call; no reverse toggle.
+- [ ] Member cùng room thấy payment status qua bill-share read policy SL-024; outsider/cross-room bị deny; client không thể tự ghi `MARKED_AS_PAID`.
 
 Mỗi case phải có actual result. Unit cases dùng controlled fixtures để chứng minh domain; Firebase boundary cần Rules/Functions emulator tests cho allowed/denied/replay/concurrency khi áp dụng. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.
 

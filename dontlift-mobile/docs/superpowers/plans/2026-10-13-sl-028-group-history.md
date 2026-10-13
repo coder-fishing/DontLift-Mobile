@@ -44,6 +44,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 | File dự kiến | Trách nhiệm |
 |---|---|
+| `functions/tests/group-history-read-rules.emulator.test.cjs` | SL-028 xác minh group-history client query/read với client SDK trên Emulator Suite sau khi D4 duyệt destination/projection/query; resource write Rules vẫn thuộc producer slices. |
 | `src/features/history/group-history-repository.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/features/history/history-controller.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/screens/HistoryScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
@@ -131,6 +132,9 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Cloud pages overlap → dedupe stable order.
 - [ ] Complete group với early exit rồi device offline sync → history chính xác.
 - [ ] Login trên thiết bị thứ hai → recover theo D4; không invent cross-room query.
+- [ ] Member chỉ đọc được completed room/member/violation/share resources mà các producer Rules cho phép; outsider/cross-room bị deny bằng client-SDK Emulator Suite tests.
+- [ ] D4 phải chốt destination/projection/query trước khi thêm group-history path hoặc Rules; không cấp quyền rộng để làm query pass.
+- [ ] Sau khi D4 chốt, chạy `group-history-read-rules.emulator.test.cjs` với member/outsider/cross-room fixtures; không thay bằng Admin SDK reads.
 
 Mỗi case phải có actual result. Unit cases dùng controlled fixtures để chứng minh domain; Firebase boundary cần Rules/Functions emulator tests cho allowed/denied/replay/concurrency khi áp dụng. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.
 

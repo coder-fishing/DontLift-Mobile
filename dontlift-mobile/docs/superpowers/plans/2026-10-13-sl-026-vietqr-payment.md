@@ -127,6 +127,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Current user không Member → không nhận bank details.
 - [ ] Năm banking apps scan QR → inspect amount/payee/memo, không cần thực hiện chuyển tiền để test payload.
 - [ ] Offline cached result → nhãn cache rõ, không claim đã trả tiền.
+- [ ] Current room member đọc được `settlementDetails/current` (SL-023) và own/room share (SL-024); anonymous/outsider/cross-room không lấy được bank details hoặc shares.
 
 Mỗi case phải có actual result. Unit cases dùng controlled fixtures để chứng minh domain; Firebase boundary cần Rules/Functions emulator tests cho allowed/denied/replay/concurrency khi áp dụng. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.
 

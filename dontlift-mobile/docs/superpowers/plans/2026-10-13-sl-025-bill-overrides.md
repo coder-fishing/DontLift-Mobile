@@ -142,6 +142,7 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - [ ] Same request replay → cùng outcome; khác payload → collision.
 - [ ] Host override VND rồi percent theo policy → Member read-only breakdown.
 - [ ] Bill có paid Member → xử lý theo D8 đã duyệt, không silent overwrite.
+- [ ] Host/Member đọc được shares trong room sau override theo SL-024 Rules; outsider/cross-room bị deny và direct share writes vẫn bị từ chối.
 
 Mỗi case phải có actual result. Unit cases dùng controlled fixtures để chứng minh domain; Firebase boundary cần Rules/Functions emulator tests cho allowed/denied/replay/concurrency khi áp dụng. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.
 

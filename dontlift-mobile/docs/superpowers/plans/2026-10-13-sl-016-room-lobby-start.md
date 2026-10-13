@@ -44,8 +44,8 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 | File dự kiến | Trách nhiệm |
 |---|---|
-| `firestore.emulator.rules` | SL-016 mở rộng local Rules bằng membership-authorized room/member reads; giữ deny direct authoritative writes và server-only collection access. |
-| `functions/tests/room-rules.emulator.test.cjs` | Rules integration cases theo resource, dùng harness/dependencies backend SL-003 và Emulator Suite; no runtime install trong P6.1. |
+| `firestore.emulator.rules` | SL-016 mở rộng local Rules chỉ cho đọc `rooms/{roomId}` và `rooms/{roomId}/members/{uid}` theo membership; không cấp quyền ngầm cho subcollection khác. |
+| `functions/tests/room-rules.emulator.test.cjs` | Client-SDK Rules cases cho room/member read allowlist, outsider/cross-room denial và mọi room/member authoritative writes bị từ chối; các resource khác do producer slice sở hữu riêng. |
 | `src/features/rooms/room-listener.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/features/rooms/room-repository.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/screens/GroupLobbyScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
@@ -81,7 +81,8 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 **Files:** firestore.emulator.rules, functions/tests/room-rules.emulator.test.cjs. **Dependency output:** local deny-by-default config từ SL-002; Rules test dependencies/harness từ backend bootstrap SL-003, đã thuộc chuỗi hard prerequisites 016 → 014 → 013 → 004 → 003.
 
 - [ ] Đọc ADR-004 và query shape room/members thực tế; không dùng participantIds hoặc role từ request làm authority.
-- [ ] Viết Rules cases: Host/Member có membership được đọc room/member list; anonymous và authenticated outsider bị deny; user room A không đọc room B.
+- [ ] Viết Rules cases bằng client SDK: Host/Member có membership được đọc `rooms/{roomId}` và member list; anonymous, outsider và user room A đọc room B bị deny.
+- [ ] Deny mọi client create/update/delete authoritative trên room/member docs (state, role, score, count); quyền đọc room/member không tự mở quyền ở subcollection khác.
 - [ ] Viết mutation cases: client không tạo/sửa/xóa membership/role, room lifecycle, score/counters; PIN/usage/activation/receipt collections không cho client đọc/ghi.
 - [ ] Mở đúng allowlisted room/member read paths; giữ existing owner-history/profile Rules từ các slice trước và default deny ở paths còn lại.
 - [ ] Kiểm chứng query/listener thật và deny cases bằng Firebase client SDK trên Emulator Suite. Admin seeding chỉ dựng fixtures, không dùng Admin SDK để chứng minh Rules đã pass.

@@ -69,9 +69,9 @@ P0 là nền tảng/critical journey trước; P1 là cần hoàn tất MVP; P2 
 | SL-034 | [Chọn custom theme](./superpowers/plans/2026-10-13-sl-034-premium-themes.md) | P1 | SL-031 | D6 |
 | SL-035 | [Quảng cáo đúng tier và màn hình](./superpowers/plans/2026-10-13-sl-035-free-tier-ads.md) | P1 | SL-031, SL-030 | D7 |
 | SL-036 | [Advanced leaderboard theo Server Premium](./superpowers/plans/2026-10-13-sl-036-advanced-leaderboard.md) | P2 | SL-017, SL-032 | D6 |
-| SL-037 | [Nghiệm thu MVP và phát hành đúng environment](./superpowers/plans/2026-10-13-sl-037-mvp-release.md) | P1 | SL-001, SL-002, SL-003, SL-004, SL-005, SL-006, SL-007, SL-008, SL-009, SL-010, SL-011, SL-012, SL-013, SL-014, SL-015, SL-016, SL-017, SL-018, SL-019, SL-020, SL-021, SL-022, SL-023, SL-024, SL-025, SL-026, SL-027, SL-028, SL-029, SL-030, SL-031, SL-032, SL-033, SL-034, SL-035 | D1, E1, E2, E3 |
+| SL-037 | [Nghiệm thu MVP và phát hành đúng environment](./superpowers/plans/2026-10-13-sl-037-mvp-release.md) | P1 | SL-001–SL-036 | D1, D6, E1, E2, E3 |
 
-SL-037 phụ thuộc 001–035; thêm 036 nếu D6 xác nhận advanced leaderboard thuộc MVP. Chưa giải quyết D6 thì không được coi release-scope hoàn chỉnh. Completed dependencies không tự làm downstream slice completed.
+SL-037 phụ thuộc bắt buộc SL-001–SL-036 vì phạm vi đã chọn gồm activation/Premium và ADR-007 xác định advanced Penalty Leaderboard là quyền lợi Server Premium. D6 vẫn chặn việc chốt hành vi SL-036; khi D6 chưa được giải quyết thì SL-036 và SL-037 chưa thể nghiệm thu. Completed dependencies không tự làm downstream slice completed.
 
 ## 4. Blockers và quyết định cần review
 
@@ -82,7 +82,7 @@ SL-037 phụ thuộc 001–035; thêm 036 nếu D6 xác nhận advanced leaderbo
 | D3 | Chốt wire/schema/error/concurrency cho start/early-exit/vote/heartbeat nếu slice dùng chúng; chốt syncEvents cho violation đang kéo dài khi áp dụng. Không đoán payload từ responsibility table. |
 | D4 | Duyệt destination/projection/query/retention cho history nhóm và GROUP_SESSION_LOCAL_SUMMARY. |
 | D5 | Duyệt checksum cụ thể, test vectors, nguồn code hợp lệ và operational contract cấp code. Website/email mua Premium là external prerequisite, không tự implement. |
-| D6 | Duyệt theme catalog/default/downgrade và behavior advanced leaderboard; analytics nâng cao vẫn deferred. |
+| D6 | Duyệt theme catalog/default/downgrade và behavior advanced leaderboard; analytics nâng cao vẫn deferred. D6 tiếp tục chặn nghiệm thu SL-034/036 và downstream SL-037 cho tới khi các hành vi liên quan được chốt. |
 | D7 | Duyệt provider ads, test credentials, placements và consent requirements áp dụng. |
 | D8 | Duyệt recalculation/override sau publication hoặc MARKED_AS_PAID: rule khóa/version/concurrency và outcome UI. |
 | D9 | Giải quyết wording non-zero base share khi bill nhỏ/nhiều Members đối nghịch integer/non-negative/exact-sum. Giữ invariant ADR-005; không tự tạo minimum bill per member. |
@@ -131,7 +131,23 @@ D3 chỉ chặn command/event semantics chưa có wire rõ; không blanket-block
 | NFR/SC-5 | 037: group completion rate trên 85% bằng cohort evidence |
 | Token/platform/latency | 002/004/009/010/017/037: native SDK security, Android/iOS, leaderboard không quá 2 giây sau confirmed và synced |
 
-Shared ownership: 001 sở hữu test harness/root lockfile changes; 002 native runtime/local emulator config/default-deny Rules và root lockfiles. 003 sở hữu SQLite dependency/database/migration foundation, backend Functions/Admin package/runtime/lockfiles, Rules test harness và callable emulator handshake; 006 chỉ mở rộng sessions migration/persistence. 007 sở hữu capture/outbox boundary; 011 mở rộng worker/server ingestion; 017 reuse cho group. 012 mở rộng Solo-history Rules, 016 room/member Rules, 029 profile read/edit Rules; giữ default-deny/regression. 037 sở hữu canonical .firebaserc/firebase.json/firestore.rules/firestore.indexes.json, tiếp nhận tested policies/query inventory và permission/deploy/smoke gates. 024 sở hữu allocation engine, 025 reuse cùng rounding. 031 sở hữu local entitlement storage, 032 server redemption. Không coi shared file là quyền refactor unrelated units.
+Shared ownership: 001 sở hữu test harness/root lockfile changes; 002 native runtime/local emulator config/default-deny Rules và root lockfiles. 003 sở hữu SQLite dependency/database/migration foundation, backend Functions/Admin package/runtime/lockfiles, Rules test harness và callable emulator handshake; 006 chỉ mở rộng sessions migration/persistence. 007 sở hữu capture/outbox boundary; 011 mở rộng worker/server ingestion; 017 reuse cho group. Rules và direct-read ownership được phân theo resource ở bảng dưới; 037 chỉ hợp nhất policy đã được resource tests xác nhận vào canonical firestore.rules và chạy lại cùng tests. 031 sở hữu local entitlement storage cùng SecureStore dependency/config/lockfiles, 032 server redemption. Không coi shared file là quyền refactor unrelated units.
+
+| Resource/path | Slice sở hữu Rules và Emulator Suite | Quyền client dự kiến / giới hạn |
+|---|---|---|
+| `users/{uid}` | 029 profile Rules; 003/004 tiêu thụ owner read theo profile flow | Chỉ owner đọc; chỉ field profile allowlist được phép sửa theo plan 029; entitlement/server fields server-only. |
+| `users/{uid}/sessions/{sessionId}` | 012 Solo-history Rules | Owner đọc; client không ghi summary authoritative. |
+| `rooms/{roomId}` và `rooms/{roomId}/members/{uid}` | 016 room/member Rules | Thành viên cùng room đọc; outsider/anonymous/cross-room bị từ chối; client không ghi lifecycle, score hay counters authoritative. |
+| `rooms/{roomId}/violations/{eventId}` | 017 Group-active Rules | Thành viên cùng room đọc; leaderboard hiện dùng room/member resources đã được SL-016 cấp read. Không thêm projection path nếu chưa có contract duyệt. |
+| Early-exit request resource (path theo contract được duyệt) | 018; sau khi D3 chốt path/schema | Host và requester/member theo policy đã duyệt đọc; client writes chỉ được mở nếu contract/ADR cho phép, mặc định giữ server boundary. |
+| Termination-vote resource (path theo contract được duyệt) | 019; sau khi D3 chốt path/schema | Active members đọc trong room; mở client writes chỉ theo contract được duyệt; expiry/finalization server-owned. |
+| `rooms/{roomId}/settlementDetails/current` | 023 settlement-details Rules | Thành viên cùng room đọc; chỉ callable/server ghi; không đọc bởi outsider. |
+| `rooms/{roomId}/billShares/{uid}` | 024 bill-share Rules; 025–027 reuse và kiểm tra consumer reads | Members đọc breakdown/status; chỉ calculation/payment callables ghi. |
+| Group-history queries trên room/member/violation/share resources hiện có | 028 kiểm chứng consumer query sau khi D4 chốt destination/projection | Không tạo path hoặc quyền mới trước D4; reuse Rules của producer cho mọi document được đọc. |
+| Advanced leaderboard read model nếu behavior D6 yêu cầu resource mới | 036 sau D6; nếu dùng projection hiện có thì reuse 017 | Chỉ audience/entitlement đã duyệt đọc; mọi projection writes server-only. |
+| PIN reservations, usage, command/sync receipts, activation codes, reconciliation audits | 013/014/017/020/021/032 tạo qua backend; Rules mặc định deny | Server-only; không cấp client read/write trực tiếp nếu contract không nêu rõ. |
+
+Mỗi resource owner chạy allowed/denied Emulator Suite tests bằng client SDK: member/owner được phép đọc, anonymous/outsider/cross-room bị deny, và client không thể tạo/sửa/xóa dữ liệu authoritative. Admin SDK chỉ seed fixture, không làm bằng chứng cho quyền client. Các schema/path đang chờ D3/D4/D6 vẫn là blocker; không đoán để làm test pass.
 
 ## 6. Thứ tự đề xuất và prerequisite
 
@@ -161,5 +177,6 @@ Website mua Premium/code generation/email delivery là external operational prer
 
 - v0.1: Tạo bộ draft cho 37 slice theo human request; thêm prompt dùng chung; nêu D8–D10 và không sửa source.
 - v0.2: Human duyệt package sửa năm findings PR #24 trong chat. Bổ sung foundation ownership 003, làm rõ 002/006 và downstream backend prerequisites, resource Rules owners/tests, 028 → 018/021 và deferred deployment owner 037. Giữ 37 IDs và approved product/ADR decisions. Approval chỉ cho corrections, không duyệt backlog, implementation plans, install hoặc deploy.
+- v0.3: Human duyệt xử lý findings mới PR #24. Mở rộng Rules ownership theo direct-read resource cho 017–028/036; giao SecureStore dependency/config/lockfiles và persistence failure cases cho 031; đặt 036 thành hard dependency của 037 theo ADR-007, giữ D6 blocker. Không sửa hay phê duyệt backlog P6.0.
 
-**Trạng thái corrections:** [SL-003 review](./superpowers/reviews/2026-10-13-sl-003-registration-profile-review-plan.md), [SL-016 review](./superpowers/reviews/2026-10-13-sl-016-room-lobby-start-review-plan.md), [SL-028 review](./superpowers/reviews/2026-10-13-sl-028-group-history-review-plan.md), [SL-037 review](./superpowers/reviews/2026-10-13-sl-037-mvp-release-review-plan.md).
+**Trạng thái corrections:** [SL-003 review](./superpowers/reviews/2026-10-13-sl-003-registration-profile-review-plan.md), [SL-016 review](./superpowers/reviews/2026-10-13-sl-016-room-lobby-start-review-plan.md), [SL-028 review](./superpowers/reviews/2026-10-13-sl-028-group-history-review-plan.md), [SL-031 review](./superpowers/reviews/2026-10-13-sl-031-local-premium-review-plan.md), [SL-037 review](./superpowers/reviews/2026-10-13-sl-037-mvp-release-review-plan.md).

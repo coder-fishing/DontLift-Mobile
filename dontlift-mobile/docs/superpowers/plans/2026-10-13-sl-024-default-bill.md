@@ -44,6 +44,8 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 | File dự kiến | Trách nhiệm |
 |---|---|
+| `firestore.emulator.rules` | SL-024 mở membership-scoped read cho `rooms/{roomId}/billShares/{uid}`; chỉ bill calculation callable/server được ghi shares. |
+| `functions/tests/bill-shares-rules.emulator.test.cjs` | Client-SDK Emulator Suite tests cho member breakdown reads, outsider/cross-room denial và direct share/payment write denial. SL-025–027 reuse suite/policy. |
 | `src/features/settlement/bill-controller.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/screens/BillAllocationScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
 | `functions/src/bill-allocation.cjs` | Backend boundary của slice; server identity/validation/transaction. |
@@ -87,6 +89,15 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 
 ## 5. Các task thực hiện sau approval
 
+### Task 0 — Rules cho bill shares trước client read
+
+**Files:** `firestore.emulator.rules`, `functions/tests/bill-shares-rules.emulator.test.cjs`. Reuse room membership Rules SL-016 và Emulator Suite harness SL-002/003.
+
+- [ ] Members cùng room được đọc share breakdown/status theo đúng query/listener; anonymous, outsider và cross-room members bị deny bằng client SDK.
+- [ ] Deny direct client create/update/delete bill shares, calculation version, override metadata và payment status; authoritative writes chỉ qua approved callables.
+- [ ] Kiểm chứng query thực tế cho whole-room breakdown không vượt room membership; giữ `billShares/{uid}` làm path từ Feature Spec.
+- [ ] Chạy lại root room/member Rules regression; SL-025–027 tái dùng policy/tests, không tạo quyền song song; SL-037 re-test canonical policy.
+
 ### Task 1 — Boundary và quy tắc của Nhập bill và tính shares mặc định
 
 **Files:** Dùng units/config/backend/repositories trong bảng mục 3; khi test source đã được chỉ định, đặt cases thuộc boundary vào đúng app/backend target. Không thay presentation chưa cần cho task này.
@@ -121,6 +132,7 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - [ ] Early-exit Member → dùng frozen score.
 - [ ] Repeated calculation request → stable same shares.
 - [ ] Nhiều random valid inputs → shares integer/non-negative/exact-sum/tie deterministic.
+- [ ] Member reads bill shares trong room → allowed; outsider/cross-room → denied; mọi direct client share/payment write → denied trên Emulator Suite.
 
 - [ ] Chạy focused checks, xác nhận failure đúng behavior; giữ fixtures tách khỏi device evidence.
 - [ ] Tích hợp theo thứ tự:
@@ -150,7 +162,7 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 
 ## 7. Verification và ghi nhận evidence
 
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/default-bill.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/default-bill.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/default-bill.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/default-bill.test.cjs`; Rules Suite: `node --test functions/tests/bill-shares-rules.emulator.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 

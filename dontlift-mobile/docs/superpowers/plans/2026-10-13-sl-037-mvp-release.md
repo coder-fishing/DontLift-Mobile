@@ -8,14 +8,14 @@
 
 **Slice:** SL-037. **Ưu tiên đề xuất:** P1. **Release:** MVP + activation/Premium; post-MVP deferred. SL-036 chỉ được tính release sau D6.
 
-**Trạng thái kế hoạch:** DRAFT — chưa được human duyệt; bị chặn bởi D1, E1, E2, E3.
+**Trạng thái kế hoạch:** DRAFT — chưa được human duyệt; bị chặn bởi D1, D6, E1, E2, E3.
 **Trạng thái implementation quan sát:** Chưa có device/emulator/release evidence. Chưa có evidence nghiệm thu slice.
 **Baseline khảo sát:** docs/p6.0-implementation-slices tại 57ca1eb28a2952c66d01f89b9b89bf755ab4812a.
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Plan slug:** `2026-10-13-sl-037-mvp-release`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-037-mvp-release]`.
 **Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13, chưa được phê duyệt. User đã yêu cầu ghi draft P6.1 cho cả 37 slice; không suy thành approval thực thi.
 **Traceability:** NFR; SC-1–SC-5; ARCH §11/15; ADR-006.
-**Phụ thuộc bắt buộc:** [SL-001](./2026-10-13-sl-001-test-foundation.md), [SL-002](./2026-10-13-sl-002-native-firebase-runtime.md), [SL-003](./2026-10-13-sl-003-registration-profile.md), [SL-004](./2026-10-13-sl-004-login-session.md), [SL-005](./2026-10-13-sl-005-sensor-availability.md), [SL-006](./2026-10-13-sl-006-solo-start.md), [SL-007](./2026-10-13-sl-007-foreground-detection.md), [SL-008](./2026-10-13-sl-008-solo-completion.md), [SL-009](./2026-10-13-sl-009-android-recovery.md), [SL-010](./2026-10-13-sl-010-ios-recovery.md), [SL-011](./2026-10-13-sl-011-solo-sync.md), [SL-012](./2026-10-13-sl-012-solo-history.md), [SL-013](./2026-10-13-sl-013-room-create.md), [SL-014](./2026-10-13-sl-014-room-join-pin.md), [SL-015](./2026-10-13-sl-015-room-join-qr.md), [SL-016](./2026-10-13-sl-016-room-lobby-start.md), [SL-017](./2026-10-13-sl-017-group-active.md), [SL-018](./2026-10-13-sl-018-early-exit.md), [SL-019](./2026-10-13-sl-019-termination-vote.md), [SL-020](./2026-10-13-sl-020-room-completion.md), [SL-021](./2026-10-13-sl-021-host-finalization-override.md), [SL-022](./2026-10-13-sl-022-stale-room-abort.md), [SL-023](./2026-10-13-sl-023-settlement-details.md), [SL-024](./2026-10-13-sl-024-default-bill.md), [SL-025](./2026-10-13-sl-025-bill-overrides.md), [SL-026](./2026-10-13-sl-026-vietqr-payment.md), [SL-027](./2026-10-13-sl-027-manual-payment-status.md), [SL-028](./2026-10-13-sl-028-group-history.md), [SL-029](./2026-10-13-sl-029-profile-edit.md), [SL-030](./2026-10-13-sl-030-feedback-settings.md), [SL-031](./2026-10-13-sl-031-local-premium.md), [SL-032](./2026-10-13-sl-032-server-premium.md), [SL-033](./2026-10-13-sl-033-retention.md), [SL-034](./2026-10-13-sl-034-premium-themes.md), [SL-035](./2026-10-13-sl-035-free-tier-ads.md)
+**Phụ thuộc bắt buộc:** [SL-001](./2026-10-13-sl-001-test-foundation.md), [SL-002](./2026-10-13-sl-002-native-firebase-runtime.md), [SL-003](./2026-10-13-sl-003-registration-profile.md), [SL-004](./2026-10-13-sl-004-login-session.md), [SL-005](./2026-10-13-sl-005-sensor-availability.md), [SL-006](./2026-10-13-sl-006-solo-start.md), [SL-007](./2026-10-13-sl-007-foreground-detection.md), [SL-008](./2026-10-13-sl-008-solo-completion.md), [SL-009](./2026-10-13-sl-009-android-recovery.md), [SL-010](./2026-10-13-sl-010-ios-recovery.md), [SL-011](./2026-10-13-sl-011-solo-sync.md), [SL-012](./2026-10-13-sl-012-solo-history.md), [SL-013](./2026-10-13-sl-013-room-create.md), [SL-014](./2026-10-13-sl-014-room-join-pin.md), [SL-015](./2026-10-13-sl-015-room-join-qr.md), [SL-016](./2026-10-13-sl-016-room-lobby-start.md), [SL-017](./2026-10-13-sl-017-group-active.md), [SL-018](./2026-10-13-sl-018-early-exit.md), [SL-019](./2026-10-13-sl-019-termination-vote.md), [SL-020](./2026-10-13-sl-020-room-completion.md), [SL-021](./2026-10-13-sl-021-host-finalization-override.md), [SL-022](./2026-10-13-sl-022-stale-room-abort.md), [SL-023](./2026-10-13-sl-023-settlement-details.md), [SL-024](./2026-10-13-sl-024-default-bill.md), [SL-025](./2026-10-13-sl-025-bill-overrides.md), [SL-026](./2026-10-13-sl-026-vietqr-payment.md), [SL-027](./2026-10-13-sl-027-manual-payment-status.md), [SL-028](./2026-10-13-sl-028-group-history.md), [SL-029](./2026-10-13-sl-029-profile-edit.md), [SL-030](./2026-10-13-sl-030-feedback-settings.md), [SL-031](./2026-10-13-sl-031-local-premium.md), [SL-032](./2026-10-13-sl-032-server-premium.md), [SL-033](./2026-10-13-sl-033-retention.md), [SL-034](./2026-10-13-sl-034-premium-themes.md), [SL-035](./2026-10-13-sl-035-free-tier-ads.md), [SL-036](./2026-10-13-sl-036-advanced-leaderboard.md)
 **Ưu tiên mềm:** Theo thứ tự đề xuất trong [mục lục](../../implementation-plan.md); thứ tự không tạo thêm hard dependency.
 
 ## 1. Nguồn và ranh giới
@@ -90,7 +90,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Xác nhận hai exact project IDs/aliases và authorized environment/billing/jobs trước tạo executable deferred config; không ghi placeholder hoặc tạo resources để lấp prerequisite.
 - [ ] Tạo .firebaserc aliases development/production khác project; chọn environment rõ cho mọi command. Không default production hoặc secret/config material trong Git.
 - [ ] Tạo firebase.json với canonical Rules/index paths và Functions source/runtime đã có từ SL-003; xác nhận region theo adapter/backend, không invent runtime.
-- [ ] Tiếp nhận firestore.emulator.rules vào firestore.rules có traceability theo owner SL-012/016/029; re-run resource Rules tests với chính canonical policy, không giữ hai policies lệch nhau.
+- [ ] Tiếp nhận firestore.emulator.rules vào firestore.rules có traceability theo owner SL-012/016/017/018/019/023/024/029/036; re-run mọi resource Rules suite với chính canonical policy, không giữ hai policies lệch nhau. D3/D6 resource nào chưa được duyệt thì giữ blocker, không thêm policy đoán.
 - [ ] Thu query inventory từ history/room/member/bill/settlement listeners; tạo index manifest chỉ cho query thật và validate trên approved development database khi có quyền.
 - [ ] Chạy config tests: missing IDs → blocker; same dev/prod project → reject; missing source/rules/index path hoặc unsupported runtime → reject; deployment target production khi chưa authorized → reject.
 - [ ] Emulator validation/config review xong vẫn chưa deploy. Chỉ sau quyền deploy cụ thể mới thực hiện Rules → indexes → Functions → scheduled jobs/TTL → backend smoke → binary theo ADR-006.
@@ -113,7 +113,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Đối chiếu từng case với approval/evidence, ghi gap trước khi tiến hành.
 - [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
 
-1. Kiểm tất cả slice MVP đã nghiệm thu; SL-036 chỉ mandatory nếu D6 chốt thuộc MVP.
+1. Kiểm tất cả slice MVP đã nghiệm thu, gồm hard dependency SL-036; D6 chưa chốt thì release gate BLOCKED.
 2. Xác nhận dev/prod projects riêng, native file variables và region; không expose secrets.
 3. Backend Rules/indexes/Functions/jobs/smoke phải đạt gate trước binary theo deployment contract.
 
@@ -149,6 +149,8 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Dev/prod aliases khác project và mọi deployment command có explicit target.
 - [ ] Canonical config trỏ Rules/indexes/Functions source/runtime tồn tại, đã validate.
 - [ ] Rules canonical tương đương policy đã test; owner/member/outsider/direct-write cases được chạy lại.
+- [ ] Các room subcollection direct reads có owner slice/test tương ứng; server-only paths vẫn deny client read/write.
+- [ ] Thiếu nghiệm thu SL-036 hoặc unresolved D6 → release gate BLOCKED.
 - [ ] Index inventory trace tới query thật; emulator pass không được dùng để claim production indexes đã deploy.
 - [ ] Deploy order và smoke gates đúng ADR-006; missing billing/jobs/permission là BLOCKED, không tự xử lý bằng mutation.
 
