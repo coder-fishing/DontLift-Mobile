@@ -15,7 +15,7 @@
 **Plan slug:** `2026-10-13-sl-028-group-history`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-028-group-history]`.
 **Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13, chưa được phê duyệt. User đã yêu cầu ghi draft P6.1 cho cả 37 slice; không suy thành approval thực thi.
 **Traceability:** US-16; API §4; ARCH §6–8.
-**Phụ thuộc bắt buộc:** [SL-020](./2026-10-13-sl-020-room-completion.md), [SL-012](./2026-10-13-sl-012-solo-history.md)
+**Phụ thuộc bắt buộc:** [SL-020](./2026-10-13-sl-020-room-completion.md), [SL-012](./2026-10-13-sl-012-solo-history.md), [SL-018](./2026-10-13-sl-018-early-exit.md), [SL-021](./2026-10-13-sl-021-host-finalization-override.md)
 **Ưu tiên mềm:** Theo thứ tự đề xuất trong [mục lục](../../implementation-plan.md); thứ tự không tạo thêm hard dependency.
 
 ## 1. Nguồn và ranh giới
@@ -70,6 +70,8 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - UI dùng semantic tokens và accepted Liquid Acrylic; loading/empty/error/offline/syncing, labels, safe areas và touch targets được kiểm chứng khi phù hợp.
 - Không thêm social login, analytics dashboards, kiosk, wallet, chat, AI coaching hoặc camera-based detection vào MVP.
 - Không install/provision/deploy/publish trong lượt authoring plan này; mọi check bên dưới là hướng dẫn execution sau approval.
+
+**Producer prerequisites:** SL-018 tạo early-exit participant/frozen cutoff được nghiệm thu; SL-021 tạo HOST_OVERRIDE audit và late-event exclusion. History integration chỉ claim pass sau hai producer có thật. Unit fixtures vẫn được dùng kiểm tra merge/display nhưng không thay end-to-end acceptance. D4 về history destination/query chưa được giải quyết bởi việc bổ sung dependencies.
 
 ## 5. Các task thực hiện sau approval
 
@@ -136,7 +138,7 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 
 ## 7. Verification và ghi nhận evidence
 
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/group-history.test.ts`. Backend focused tests sau runtime SL-002: `node --test functions/tests/group-history.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/group-history.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/group-history.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 

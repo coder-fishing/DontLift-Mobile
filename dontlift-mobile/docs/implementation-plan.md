@@ -1,6 +1,6 @@
 # P6.1 — Mục lục kế hoạch DontLift
 
-> **DRAFT v0.1 — chưa được phê duyệt.** Đây là bộ kế hoạch được user yêu cầu soạn và lưu để review cho 37 slice, không phải backlog P6.0 đã duyệt và không phải quyền chạy P6.2.
+> **DRAFT v0.2 — backlog và implementation plans chưa được phê duyệt.** Đây là bộ kế hoạch được user yêu cầu soạn và lưu để review cho 37 slice, không phải backlog P6.0 đã duyệt và không phải quyền chạy P6.2.
 
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Baseline:** `docs/p6.0-implementation-slices`, commit `57ca1eb28a2952c66d01f89b9b89bf755ab4812a`.
@@ -60,7 +60,7 @@ P0 là nền tảng/critical journey trước; P1 là cần hoàn tất MVP; P2 
 | SL-025 | [Host override bill shares](./superpowers/plans/2026-10-13-sl-025-bill-overrides.md) | P1 | SL-024 | D8 |
 | SL-026 | [Tạo VietQR cho share](./superpowers/plans/2026-10-13-sl-026-vietqr-payment.md) | P1 | SL-024 | E3 |
 | SL-027 | [Host đánh dấu đã thanh toán](./superpowers/plans/2026-10-13-sl-027-manual-payment-status.md) | P1 | SL-026 | Không xác nhận riêng |
-| SL-028 | [Group history và phục hồi dữ liệu](./superpowers/plans/2026-10-13-sl-028-group-history.md) | P1 | SL-020, SL-012 | D4 |
+| SL-028 | [Group history và phục hồi dữ liệu](./superpowers/plans/2026-10-13-sl-028-group-history.md) | P1 | SL-020, SL-012, SL-018, SL-021 | D4 |
 | SL-029 | [Xem và sửa profile](./superpowers/plans/2026-10-13-sl-029-profile-edit.md) | P1 | SL-004 | Không xác nhận riêng |
 | SL-030 | [Settings cho haptic và sound](./superpowers/plans/2026-10-13-sl-030-feedback-settings.md) | P1 | SL-007 | Không xác nhận riêng |
 | SL-031 | [Activation offline và Local Premium](./superpowers/plans/2026-10-13-sl-031-local-premium.md) | P1 | SL-004 | D5 |
@@ -131,7 +131,7 @@ D3 chỉ chặn command/event semantics chưa có wire rõ; không blanket-block
 | NFR/SC-5 | 037: group completion rate trên 85% bằng cohort evidence |
 | Token/platform/latency | 002/004/009/010/017/037: native SDK security, Android/iOS, leaderboard không quá 2 giây sau confirmed và synced |
 
-Shared ownership: 006 tạo local database/session persistence; 007 tạo capture/outbox local boundary; 011 mở rộng worker và server ingestion; 017 reuse chúng cho group. 024 sở hữu allocation engine, 025 reuse cùng rounding. 031 sở hữu local entitlement storage, 032 thêm verified server redemption. Không coi file shared là permission để refactor unrelated units.
+Shared ownership: 001 sở hữu test harness/root lockfile changes; 002 native runtime/local emulator config/default-deny Rules và root lockfiles. 003 sở hữu SQLite dependency/database/migration foundation, backend Functions/Admin package/runtime/lockfiles, Rules test harness và callable emulator handshake; 006 chỉ mở rộng sessions migration/persistence. 007 sở hữu capture/outbox boundary; 011 mở rộng worker/server ingestion; 017 reuse cho group. 012 mở rộng Solo-history Rules, 016 room/member Rules, 029 profile read/edit Rules; giữ default-deny/regression. 037 sở hữu canonical .firebaserc/firebase.json/firestore.rules/firestore.indexes.json, tiếp nhận tested policies/query inventory và permission/deploy/smoke gates. 024 sở hữu allocation engine, 025 reuse cùng rounding. 031 sở hữu local entitlement storage, 032 server redemption. Không coi shared file là quyền refactor unrelated units.
 
 ## 6. Thứ tự đề xuất và prerequisite
 
@@ -157,4 +157,9 @@ Website mua Premium/code generation/email delivery là external operational prer
 
 **Approval ledger:** Chưa có backlog/plan approved trong bộ này. Khi human duyệt, ghi plan ID, version/date, scope/acceptance/decision đã duyệt và remaining blockers. Không replace approved decisions cũ khi cập nhật index. Draft batch không đồng nghĩa P6.0 đã approved.
 
-**Changelog 2026-10-13:** Tạo bộ draft cho 37 slice theo human request; thêm prompt dùng chung; nêu D8–D10 và không sửa source.
+**Changelog 2026-10-13:**
+
+- v0.1: Tạo bộ draft cho 37 slice theo human request; thêm prompt dùng chung; nêu D8–D10 và không sửa source.
+- v0.2: Human duyệt package sửa năm findings PR #24 trong chat. Bổ sung foundation ownership 003, làm rõ 002/006 và downstream backend prerequisites, resource Rules owners/tests, 028 → 018/021 và deferred deployment owner 037. Giữ 37 IDs và approved product/ADR decisions. Approval chỉ cho corrections, không duyệt backlog, implementation plans, install hoặc deploy.
+
+**Trạng thái corrections:** [SL-003 review](./superpowers/reviews/2026-10-13-sl-003-registration-profile-review-plan.md), [SL-016 review](./superpowers/reviews/2026-10-13-sl-016-room-lobby-start-review-plan.md), [SL-028 review](./superpowers/reviews/2026-10-13-sl-028-group-history-review-plan.md), [SL-037 review](./superpowers/reviews/2026-10-13-sl-037-mvp-release-review-plan.md).

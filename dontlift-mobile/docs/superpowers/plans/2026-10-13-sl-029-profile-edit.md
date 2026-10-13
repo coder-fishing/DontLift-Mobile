@@ -44,10 +44,11 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 | File dự kiến | Trách nhiệm |
 |---|---|
+| `functions/tests/profile-rules.emulator.test.cjs` | Owner profile reads/allowlisted edits, cross-user deny và entitlement immutability bằng client SDK trên emulator. |
 | `src/features/profile/profile-repository.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/features/profile/profile-controller.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/screens/ProfileScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
-| `firestore.rules` | Configuration theo quyền và version thực tế; đọc trước chỉnh. |
+| `firestore.emulator.rules` | SL-029 mở rộng profile read/edit allowlist trên Rules đã có; canonical firestore.rules được SL-037 tiếp nhận sau D1/E2. |
 | `src/features/auth/auth-session.tsx` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `__tests__/profile-edit.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
 | `functions/tests/profile-edit.test.cjs` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
@@ -73,6 +74,15 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - Không install/provision/deploy/publish trong lượt authoring plan này; mọi check bên dưới là hướng dẫn execution sau approval.
 
 ## 5. Các task thực hiện sau approval
+
+### Ownership Rules profile
+
+SL-029 không là nền tảng Rules cho lobby. Dùng local Rules/config từ SL-002, harness SL-003 và các resource Rules đã có trên baseline lúc execution; chỉ thêm profile owner read/displayName allowlisted edit. Giữ room/member và history Rules, không replace file bằng policy chỉ cho profile.
+
+- [ ] Owner đọc profile/sửa displayName được; user khác/anonymous bị deny.
+- [ ] Create/update parity và field allowlist chặn client tự sửa isPremium/email/server timestamps.
+- [ ] Chạy profile Rules client tests cùng resource regression trong Emulator Suite; Admin fixtures không thay client assertions.
+- [ ] Canonical firestore.rules chưa provisioned vẫn deferred, được SL-037 tiếp nhận đúng nội dung đã test.
 
 ### Task 1 — Boundary và quy tắc của Xem và sửa profile
 
@@ -137,7 +147,9 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 
 ## 7. Verification và ghi nhận evidence
 
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/profile-edit.test.ts`. Backend focused tests sau runtime SL-002: `node --test functions/tests/profile-edit.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+Rules focused command: `node --test functions/tests/profile-rules.emulator.test.cjs` trong local Emulator Suite đã cấu hình. Không claim policy an toàn chỉ từ controller mocks hoặc Admin SDK checks.
+
+App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/profile-edit.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/profile-edit.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 

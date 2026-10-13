@@ -44,6 +44,8 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 | File dự kiến | Trách nhiệm |
 |---|---|
+| `package-lock.json` | Ownership cùng package.json: giữ đồng bộ npm dependency resolution khi manifest thay đổi, theo AGENTS. |
+| `pnpm-lock.yaml` | Ownership cùng package.json: giữ đồng bộ pnpm dependency resolution; không commit một lockfile lệch manifest. |
 | `package.json` | Configuration theo quyền và version thực tế; đọc trước chỉnh. |
 | `tsconfig.json` | Configuration theo quyền và version thực tế; đọc trước chỉnh. |
 | `__tests__/jest-smoke.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |

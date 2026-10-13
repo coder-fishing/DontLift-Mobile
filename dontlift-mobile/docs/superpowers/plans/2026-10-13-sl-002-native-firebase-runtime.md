@@ -4,7 +4,7 @@
 > Kế hoạch chỉ mô tả file, unit, hành vi, quy tắc, đầu ra và test cases; không có implementation code hoặc signatures. Đọc source thật trước mỗi task.
 > **Gate:** Không execute kế hoạch khi trạng thái còn DRAFT hoặc khi blocker/dependency chưa giải quyết. Việc tạo file này không phê duyệt backlog hay P6.2.
 
-**Mục tiêu:** Development runtime cho Firebase: Native Auth/Functions/Firestore trên đúng môi trường hoặc configuration error rõ ràng.
+**Mục tiêu:** Development runtime cho Firebase: native Auth/Firestore client kết nối đúng emulator, Functions client được khởi tạo đúng host/region; callable handshake chỉ nghiệm thu sau backend bootstrap SL-003.
 
 **Slice:** SL-002. **Ưu tiên đề xuất:** P0. **Release:** MVP + activation/Premium; post-MVP deferred. SL-036 chỉ được tính release sau D6.
 
@@ -45,6 +45,10 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 | File dự kiến | Trách nhiệm |
 |---|---|
+| `firestore.emulator.rules` | SL-002 tạo local deny-by-default Rules cho Emulator Suite; slice đọc resource sở hữu phần allowlist mở rộng. |
+| `functions/tests/helpers/rules-emulator.cjs` | Đường dẫn helper dùng về sau, được backend bootstrap SL-003 tạo; SL-002 không phụ thuộc backend chưa có. |
+| `package-lock.json` | Ownership cùng package.json: giữ đồng bộ npm dependency resolution khi manifest thay đổi, theo AGENTS. |
+| `pnpm-lock.yaml` | Ownership cùng package.json: giữ đồng bộ pnpm dependency resolution; không commit một lockfile lệch manifest. |
 | `app.json` | Configuration theo quyền và version thực tế; đọc trước chỉnh. |
 | `package.json` | Configuration theo quyền và version thực tế; đọc trước chỉnh. |
 | `src/features/auth/firebase-adapters.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
@@ -54,7 +58,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 **Unit:** Firebase runtime adapter.
 **Nhận:** Development project/config được human xác nhận, platform và emulator host.
-**Trả:** Native Auth/Functions/Firestore trên đúng môi trường hoặc configuration error rõ ràng.
+**Trả:** Native Auth/Firestore client và Functions client initialization trên đúng môi trường hoặc configuration error rõ ràng.
 **Đầu vào từ dependency:** capabilities/records/commands đã nghiệm thu theo các plan liên kết; chưa có dependency output thì không giả coi integration có thật.
 **Đầu ra cho slice sau:** outcome và invariants trong mục tiêu/nghiệm thu dưới đây; tên internal unit là đề xuất, wire names chỉ dùng theo API/ADR đã duyệt.
 
@@ -72,13 +76,24 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - Không thêm social login, analytics dashboards, kiosk, wallet, chat, AI coaching hoặc camera-based detection vào MVP.
 - Không install/provision/deploy/publish trong lượt authoring plan này; mọi check bên dưới là hướng dẫn execution sau approval.
 
+### Ownership môi trường local
+
+SL-002 sở hữu native Firebase dependencies/config, root manifest và hai lockfiles, Auth/Firestore emulator routing cùng `firestore.emulator.rules` deny-by-default. `firebase.emulator.json` ở giai đoạn này chỉ trỏ tài nguyên local đã tồn tại; không bắt Functions emulator discovery khi `functions/package.json` chưa được SL-003 tạo.
+
+Không tạo backend manifest hoặc deploy canonical config tại đây. SL-003 thêm backend source/runtime vào emulator config rồi thu callable handshake. Canonical `.firebaserc`, `firebase.json`, `firestore.rules`, `firestore.indexes.json` tiếp tục deferred tới SL-037 và các điều kiện D1/E2.
+
+- [ ] Local Rules mặc định deny mọi client read/write; không thêm allow-all để chứng minh kết nối.
+- [ ] Manifest native thay đổi → cả package-lock.json và pnpm-lock.yaml cùng được cập nhật và kiểm tra.
+- [ ] Chưa có Functions package → native initialization vẫn kiểm chứng được; không claim callable chạy thành công.
+- [ ] Helper/dependencies cho Rules tests được SL-003 cấp trước khi slice resource thực hiện emulator verification.
+
 ## 5. Các task thực hiện sau approval
 
 ### Task 1 — Boundary và quy tắc của Development runtime cho Firebase
 
 **Files:** Dùng units/config/backend/repositories trong bảng mục 3; khi test source đã được chỉ định, đặt cases thuộc boundary vào đúng app/backend target. Không thay presentation chưa cần cho task này.
 
-**Nhận/trả:** Nhận Development project/config được human xác nhận, platform và emulator host; trả Native Auth/Functions/Firestore trên đúng môi trường hoặc configuration error rõ ràng. Với contract đang bị chặn, chưa có quyền thêm schema dù test outcome đã được nêu.
+**Nhận/trả:** Nhận Development project/config được human xác nhận, platform và emulator host; trả Native Auth/Firestore client và Functions client initialization trên đúng môi trường hoặc configuration error rõ ràng. Với contract đang bị chặn, chưa có quyền thêm schema dù test outcome đã được nêu.
 
 - [ ] Đọc lại source/spec và xác nhận tất cả blocker cùng dependency cho task đã được giải quyết; nếu chưa, dừng execution và báo đúng blocker.
 - [ ] Viết focused failing cases sau đây; runner không tìm thấy hoặc thiếu dependency không được tính là red nghiệp vụ.
@@ -124,7 +139,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Sai hoặc thiếu native config → không truy cập production.
 - [ ] Release chưa cấu hình backend → báo lỗi an toàn, không tự dùng emulator.
 - [ ] Host emulator trên thiết bị thật → kết nối được theo LAN/USB setup đã duyệt.
-- [ ] Chạy native Development Build kết nối local services → Auth/Functions handshake có evidence.
+- [ ] Chạy native Development Build kết nối Auth/Firestore emulators → có evidence client/environment; Functions callable handshake được nghiệm thu ở SL-003.
 - [ ] Đọc project/region từ diagnostics an toàn → đúng environment; không in token/config bí mật.
 
 Mỗi case phải có actual result. Unit cases dùng controlled fixtures để chứng minh domain; Firebase boundary cần Rules/Functions emulator tests cho allowed/denied/replay/concurrency khi áp dụng. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.

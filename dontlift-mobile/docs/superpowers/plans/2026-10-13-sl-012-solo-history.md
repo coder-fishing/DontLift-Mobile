@@ -44,6 +44,8 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 | File dự kiến | Trách nhiệm |
 |---|---|
+| `firestore.emulator.rules` | SL-012 mở rộng local Rules bằng owner-scoped Solo history reads, giữ deny client authoritative writes. |
+| `functions/tests/solo-history-rules.emulator.test.cjs` | Rules integration cases theo resource, dùng harness/dependencies backend SL-003 và Emulator Suite; no runtime install trong P6.1. |
 | `src/features/history/solo-history-repository.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/features/history/history-controller.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/screens/HistoryScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
@@ -72,6 +74,16 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - Không install/provision/deploy/publish trong lượt authoring plan này; mọi check bên dưới là hướng dẫn execution sau approval.
 
 ## 5. Các task thực hiện sau approval
+
+### Task 0 — Solo history Rules coverage trước cloud read
+
+SL-012 sở hữu mở rộng firestore.emulator.rules cho owner path users/{uid}/sessions, và functions/tests/solo-history-rules.emulator.test.cjs. Reuse local config SL-002 cùng Rules harness SL-003 từ dependency chain; chưa có thì dừng cloud integration.
+
+- [ ] Owner đọc list/detail/page của chính mình được; anonymous hoặc user khác bị deny.
+- [ ] Client direct-write Solo summaries bị deny, gồm create/update/delete; syncEvents vẫn là write authority.
+- [ ] Retention/query constraints khớp approved server entitlement và query shape, không dùng Rules làm bộ lọc.
+- [ ] Seed bằng Admin chỉ tạo fixtures; assertions dùng client SDK trên emulator, không live project.
+- [ ] Regression default-deny và resource Rules cũ phải pass; SL-037 tiếp nhận canonical deployment file sau authorization, không tự tạo ở slice này.
 
 ### Task 1 — Boundary và quy tắc của Xem Solo history
 
@@ -136,7 +148,9 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 
 ## 7. Verification và ghi nhận evidence
 
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/solo-history.test.ts`. Backend focused tests sau runtime SL-002: `node --test functions/tests/solo-history.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+Rules integration trước cloud history: `node --test functions/tests/solo-history-rules.emulator.test.cjs` bên trong Emulator Suite đã được SL-002/003 chuẩn bị; thiếu environment là blocker/failure, không skipped PASS.
+
+App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/solo-history.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/solo-history.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 

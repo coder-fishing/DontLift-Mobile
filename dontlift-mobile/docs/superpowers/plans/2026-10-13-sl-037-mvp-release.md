@@ -47,6 +47,14 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 | File dự kiến | Trách nhiệm |
 |---|---|
+| `.firebaserc` | SL-037 tạo aliases development/production từ exact project IDs đã được human xác nhận, không placeholder hoặc cùng project. |
+| `firebase.json` | SL-037 tạo canonical deployment wiring cho Rules/indexes/Functions source/runtime; không lấy emulator config làm production config ngầm. |
+| `firestore.rules` | SL-037 tiếp nhận policy đã kiểm chứng từ firestore.emulator.rules và re-test đúng canonical file; không tự redesign quyền. |
+| `firestore.indexes.json` | SL-037 sở hữu index manifest từ query inventory các slice đã nghiệm thu; validate queries trên approved dev environment. |
+| `functions/package.json` | Reuse bootstrap SL-003; kiểm tra engine/region/source compatibility, không bootstrap backend thứ hai. |
+| `docs/firebase-deployment.md` | Hướng dẫn explicit aliases, config validation/deploy order/smoke và stop conditions; không credentials. |
+| `docs/query-index-inventory.md` | Ghi query owner, filters/order/cursor, index requirements và verification evidence từ từng slice; không đoán indexes. |
+| `functions/tests/deployment-config.test.cjs` | Config validation/alias separation và missing-prerequisite failures, không deploy trong test. |
 | `docs/release-verification.md` | Evidence hoặc hướng dẫn thực thi sau approval; không được ghi claimed pass thiếu bằng chứng. |
 | `docs/software-architecture.md` | Evidence hoặc hướng dẫn thực thi sau approval; không được ghi claimed pass thiếu bằng chứng. |
 | `eas.json` | Configuration theo quyền và version thực tế; đọc trước chỉnh. |
@@ -72,6 +80,22 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - Không install/provision/deploy/publish trong lượt authoring plan này; mọi check bên dưới là hướng dẫn execution sau approval.
 
 ## 5. Các task thực hiện sau approval
+
+### Task 0 — Ownership config deferred và permission gates
+
+**Files:** .firebaserc, firebase.json, firestore.rules, firestore.indexes.json, docs/firebase-deployment.md, docs/query-index-inventory.md và functions/tests/deployment-config.test.cjs.
+
+**Nhận:** exact dev/prod projects được xác nhận, D1/E2 đã giải quyết, tested Rules/backend và query inventory. **Trả:** deployment config có thể review/validate; riêng việc chuẩn bị config không cho phép deploy.
+
+- [ ] Xác nhận hai exact project IDs/aliases và authorized environment/billing/jobs trước tạo executable deferred config; không ghi placeholder hoặc tạo resources để lấp prerequisite.
+- [ ] Tạo .firebaserc aliases development/production khác project; chọn environment rõ cho mọi command. Không default production hoặc secret/config material trong Git.
+- [ ] Tạo firebase.json với canonical Rules/index paths và Functions source/runtime đã có từ SL-003; xác nhận region theo adapter/backend, không invent runtime.
+- [ ] Tiếp nhận firestore.emulator.rules vào firestore.rules có traceability theo owner SL-012/016/029; re-run resource Rules tests với chính canonical policy, không giữ hai policies lệch nhau.
+- [ ] Thu query inventory từ history/room/member/bill/settlement listeners; tạo index manifest chỉ cho query thật và validate trên approved development database khi có quyền.
+- [ ] Chạy config tests: missing IDs → blocker; same dev/prod project → reject; missing source/rules/index path hoặc unsupported runtime → reject; deployment target production khi chưa authorized → reject.
+- [ ] Emulator validation/config review xong vẫn chưa deploy. Chỉ sau quyền deploy cụ thể mới thực hiện Rules → indexes → Functions → scheduled jobs/TTL → backend smoke → binary theo ADR-006.
+- [ ] Development smoke pass và production authorization là gate riêng trước production deployment/build. Lưu exact environment/config/revision/results, không fake PASS.
+- [ ] Không sửa approved architecture decision; docs/software-architecture.md chỉ cập nhật evidence provisioning đã xảy ra khi được phép, không dùng plan correction để bỏ deferred gates.
 
 ### Task 1 — Xác nhận đầu vào và gate nghiệp vụ
 
@@ -119,6 +143,15 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Review kết quả; một branch fail hoặc thiếu required device/emulator evidence thì slice chưa hoàn thành.
 - [ ] Commit task sau review nếu execution được phép. Subject dùng `[2026-10-13-sl-037-mvp-release]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-037-mvp-release.md` và `Task: 2`.
 
+### Acceptance deployment configuration
+
+- [ ] Exact IDs chưa xác nhận hoặc thiếu quyền → stop trước executable config/provision/deploy.
+- [ ] Dev/prod aliases khác project và mọi deployment command có explicit target.
+- [ ] Canonical config trỏ Rules/indexes/Functions source/runtime tồn tại, đã validate.
+- [ ] Rules canonical tương đương policy đã test; owner/member/outsider/direct-write cases được chạy lại.
+- [ ] Index inventory trace tới query thật; emulator pass không được dùng để claim production indexes đã deploy.
+- [ ] Deploy order và smoke gates đúng ADR-006; missing billing/jobs/permission là BLOCKED, không tự xử lý bằng mutation.
+
 ## 6. Nghiệm thu và failure outcomes
 
 - [ ] Thiếu slice evidence → release gate fail rõ.
@@ -135,6 +168,8 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 **Failure recovery bắt buộc:** không hiển thị successful save/transition khi commit/request chưa thành công; giữ dữ liệu/retry context theo hành vi cụ thể trong tasks. Không log email đầy đủ, token, activation code hoặc bank details. Case không áp dụng cho slice phải ghi lý do trong evidence, không bỏ im lặng.
 
 ## 7. Verification và ghi nhận evidence
+
+Sau backend bootstrap SL-003, config-only focused check: `node --test functions/tests/deployment-config.test.cjs`. Emulator/deploy/smoke commands phải được ghi từ actual reviewed firebase.json, exact IDs và explicit alias sau authorization; kiểm tra config không tự gọi deploy. Không invent execution result khi chỉ sửa plan.
 
 Chạy lại các focused tests và emulator/device protocols của slice đã duyệt; không viết test giả để biến checklist release thành PASS.
 

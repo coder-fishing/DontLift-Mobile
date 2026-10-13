@@ -44,6 +44,18 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 | File dự kiến | Trách nhiệm |
 |---|---|
+| `package.json` | SL-003 thêm expo-sqlite tương thích SDK thực tế và sở hữu thay đổi root manifest. |
+| `package-lock.json` | Ownership cùng package.json: giữ đồng bộ npm dependency resolution khi manifest thay đổi, theo AGENTS. |
+| `pnpm-lock.yaml` | Ownership cùng package.json: giữ đồng bộ pnpm dependency resolution; không commit một lockfile lệch manifest. |
+| `src/features/local/database.ts` | SL-003 tạo database initialization dùng chung, lifecycle mở/đóng và readiness trước profile writes. |
+| `src/features/local/migrations.ts` | SL-003 tạo versioned migration runner và profile migration sau D2; các slice sau thêm migration, không bootstrap lại. |
+| `__tests__/local-database.test.ts` | Fresh open/reopen/migrate/rollback và preservation của dữ liệu profile. |
+| `functions/package.json` | SL-003 sở hữu backend package tách biệt, supported Node engine, Functions/Admin SDK và dependencies Rules emulator testing. |
+| `functions/package-lock.json` | Backend npm lockfile đồng bộ manifest; install chỉ ở execution được duyệt. |
+| `functions/pnpm-lock.yaml` | Backend pnpm lockfile đồng bộ cùng dependency versions; không tạo workspace policy ngầm. |
+| `functions/tests/runtime-bootstrap.test.cjs` | Backend module initialization/entrypoint test, không giả thay callable emulator evidence. |
+| `functions/tests/helpers/rules-emulator.cjs` | Harness Rules Emulator Suite dùng isolated project namespace/fixture; không chạy nhầm live Firebase. |
+| `firebase.emulator.json` | SL-003 thêm Functions source/runtime wiring sau khi backend package tồn tại; giữ host/region/config local của SL-002. |
 | `src/features/auth/auth-validation.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/features/auth/auth-controller.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/features/auth/local-profile-repository.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
@@ -74,6 +86,38 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - Không install/provision/deploy/publish trong lượt authoring plan này; mọi check bên dưới là hướng dẫn execution sau approval.
 
 ## 5. Các task thực hiện sau approval
+
+### Task 0A — SQLite foundation trước profile persistence
+
+**Files:** package.json, package-lock.json, pnpm-lock.yaml, src/features/local/database.ts, src/features/local/migrations.ts, __tests__/local-database.test.ts.
+
+**Unit:** local database initialization và migration runner. **Nhận:** database lifecycle, schema version và migrations thuộc slice đã duyệt. **Trả:** database ready cho profile repository hoặc lỗi không có partial profile write.
+
+- [ ] Xác nhận expo-sqlite version theo Expo SDK 57 thực tế; lập dependency change với cả hai root lockfiles, không dùng installed leftovers làm evidence.
+- [ ] Viết cases: fresh database tạo đúng schema; reopen giữ profile; migration đã áp dụng không chạy lại; migration lỗi rollback và không báo ready.
+- [ ] Chạy focused failing cases bằng harness SL-001; thiếu SQLite package không được tính là red nghiệp vụ.
+- [ ] Mở database qua một shared boundary; ghi migration version chỉ sau schema commit thành công.
+- [ ] Tạo profile schema theo ADR-009 chỉ sau D2 được giải quyết; không đưa token/password/entitlement vào profile table.
+- [ ] Profile upsert chỉ chạy sau readiness; init/migration/write lỗi giữ user ở retryable completion, không vào app giả.
+- [ ] Reopen trên Development Build, kiểm tra profile còn và rollback bảo toàn data. Đồng bộ/kiểm tra root manifest và hai lockfiles.
+- [ ] Review task trước commit theo dated plan slug; không tạo domain session/outbox schema thuộc SL-006/007 trước scope của chúng.
+
+### Task 0B — Backend Functions/Admin runtime trước callable
+
+**Files:** functions/package.json, functions/package-lock.json, functions/pnpm-lock.yaml, functions/index.js, functions/tests/runtime-bootstrap.test.cjs, functions/tests/helpers/rules-emulator.cjs, firebase.emulator.json.
+
+**Unit:** backend package bootstrap. **Nhận:** supported Functions runtime/SDK versions và local emulator configuration được duyệt. **Trả:** callable entrypoint load/discovery được và môi trường tests backend/Rules dùng được.
+
+- [ ] Chốt supported Node runtime, firebase-functions/firebase-admin versions và package-manager workflow khi duyệt execution. Không lấy runtime/config trên nhánh khác làm approval cho baseline.
+- [ ] Giữ backend package isolated và hai lockfiles đồng bộ; nếu đổi sang workspace cần decision riêng, không chỉnh root workspace ngầm.
+- [ ] Khởi tạo Admin app/database theo backend environment một lần; không copy service-account credentials vào repository hoặc hardcode project.
+- [ ] Kiểm thử module load/entrypoint discovery trong backend package; sau package bootstrap mới đăng ký completeRegistrationProfile.
+- [ ] Cấp Rules test dependencies/harness cho các slice đọc resource: fixtures authenticated/anonymous, isolated local namespace và host từ approved emulator config; không trỏ tới live project.
+- [ ] Cập nhật firebase.emulator.json trỏ Functions source/runtime thực tế. Chạy Auth/Firestore/Functions local integration sau prerequisites, gọi bootstrap với verified Auth context và thu evidence.
+- [ ] Thiếu package/runtime, thiếu emulator host hoặc emulator chưa chạy → test fail/setup blocker rõ; không skip silently hay ghi PASS.
+- [ ] Đồng bộ manifest/lockfiles backend và ghi exact commands/runtime/SDK trong evidence; code/dependency installation chỉ thuộc P6.2 đã duyệt.
+
+**Output prerequisite:** Task 1/2 registration và các backend tests ở slice sau dùng bootstrap này. Native client initialization là output SL-002; server runtime và callable handshake là output SL-003.
 
 ### Task 1 — Boundary và quy tắc của Đăng ký và hoàn tất profile
 
@@ -121,6 +165,16 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Review kết quả; một branch fail hoặc thiếu required device/emulator evidence thì slice chưa hoàn thành.
 - [ ] Commit task sau review nếu execution được phép. Subject dùng `[2026-10-13-sl-003-registration-profile]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-003-registration-profile.md` và `Task: 2`.
 
+### Acceptance bổ sung cho foundation
+
+- [ ] Fresh database → profile schema và migration version ready trước registration upsert.
+- [ ] Database reopen → profile cũ tồn tại; migration đã commit không chạy lần hai.
+- [ ] Migration failure → schema/data rollback, retryable error; không authenticated success.
+- [ ] Root package manifest thay đổi → package-lock.json và pnpm-lock.yaml đồng bộ.
+- [ ] Backend manifest/lockfiles cùng supported runtime → entrypoint load và callable được emulator discovery.
+- [ ] Auth/Functions/Firestore integration → verified UID, profile server/local và recovery được kiểm chứng; mock không thay evidence.
+- [ ] Rules harness → anonymous/authenticated fixture test được trên local emulator, không live project.
+
 ## 6. Nghiệm thu và failure outcomes
 
 - [ ] Confirmation không khớp → field error, không gọi network.
@@ -138,7 +192,7 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 
 ## 7. Verification và ghi nhận evidence
 
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/registration-profile.test.ts`. Backend focused tests sau runtime SL-002: `node --test functions/tests/registration-profile.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+Foundation focused tests sau Task 0A: `pnpm test --runTestsByPath __tests__/local-database.test.ts`. Backend bootstrap sau Task 0B: `node --test functions/tests/runtime-bootstrap.test.cjs`. App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/registration-profile.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/registration-profile.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 

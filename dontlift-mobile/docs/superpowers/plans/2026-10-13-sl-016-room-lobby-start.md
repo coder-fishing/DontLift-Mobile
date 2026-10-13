@@ -44,6 +44,8 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 | File dự kiến | Trách nhiệm |
 |---|---|
+| `firestore.emulator.rules` | SL-016 mở rộng local Rules bằng membership-authorized room/member reads; giữ deny direct authoritative writes và server-only collection access. |
+| `functions/tests/room-rules.emulator.test.cjs` | Rules integration cases theo resource, dùng harness/dependencies backend SL-003 và Emulator Suite; no runtime install trong P6.1. |
 | `src/features/rooms/room-listener.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/features/rooms/room-repository.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/screens/GroupLobbyScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
@@ -73,6 +75,19 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - Không install/provision/deploy/publish trong lượt authoring plan này; mọi check bên dưới là hướng dẫn execution sau approval.
 
 ## 5. Các task thực hiện sau approval
+
+### Task 0 — Rules room/member trước listener
+
+**Files:** firestore.emulator.rules, functions/tests/room-rules.emulator.test.cjs. **Dependency output:** local deny-by-default config từ SL-002; Rules test dependencies/harness từ backend bootstrap SL-003, đã thuộc chuỗi hard prerequisites 016 → 014 → 013 → 004 → 003.
+
+- [ ] Đọc ADR-004 và query shape room/members thực tế; không dùng participantIds hoặc role từ request làm authority.
+- [ ] Viết Rules cases: Host/Member có membership được đọc room/member list; anonymous và authenticated outsider bị deny; user room A không đọc room B.
+- [ ] Viết mutation cases: client không tạo/sửa/xóa membership/role, room lifecycle, score/counters; PIN/usage/activation/receipt collections không cho client đọc/ghi.
+- [ ] Mở đúng allowlisted room/member read paths; giữ existing owner-history/profile Rules từ các slice trước và default deny ở paths còn lại.
+- [ ] Kiểm chứng query/listener thật và deny cases bằng Firebase client SDK trên Emulator Suite. Admin seeding chỉ dựng fixtures, không dùng Admin SDK để chứng minh Rules đã pass.
+- [ ] Chạy regression resource Rules đã có; thiếu emulator host/process thì báo blocker/fail, không skip thành PASS.
+- [ ] Listener integration Task 1/2 chỉ nghiệm thu sau Rules cases pass. Không thêm dependency sang profile editing SL-029.
+- [ ] Không tạo/deploy canonical firestore.rules khi D1/E2 chưa đạt; SL-037 sở hữu việc tiếp nhận Rules đã kiểm thử vào deployment config và re-verify không divergence.
 
 ### Task 1 — Boundary và quy tắc của Lobby realtime và Host bắt đầu
 
@@ -120,6 +135,15 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Review kết quả; một branch fail hoặc thiếu required device/emulator evidence thì slice chưa hoàn thành.
 - [ ] Commit task sau review nếu execution được phép. Subject dùng `[2026-10-13-sl-016-room-lobby-start]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-016-room-lobby-start.md` và `Task: 2`.
 
+### Acceptance Rules bắt buộc
+
+- [ ] Host/Member với membership thật → đọc được own room và roster query đúng shape.
+- [ ] Anonymous/authenticated outsider/cross-room user → read/listener bị deny.
+- [ ] Client tạo/sửa/xóa membership, role, status, score hoặc counter → bị deny ở create/update/delete.
+- [ ] Client đọc/ghi PIN reservations, usage, activation và receipts → bị deny.
+- [ ] Emulator client tests cùng regression Rules pass trước claim lobby realtime ready.
+- [ ] Functions startRoom vẫn tự kiểm tra Auth/role/lifecycle; Rules pass không thay callable authorization.
+
 ## 6. Nghiệm thu và failure outcomes
 
 - [ ] Member join/leave → roster projection đúng.
@@ -137,7 +161,9 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 
 ## 7. Verification và ghi nhận evidence
 
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/room-lobby-start.test.ts`. Backend focused tests sau runtime SL-002: `node --test functions/tests/room-lobby-start.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+Rules focused command trong Emulator Suite do SL-002/003 cấu hình: `node --test functions/tests/room-rules.emulator.test.cjs`. Phải có local emulator host/config rõ, isolated fixtures và fail-fast khi environment thiếu; không dùng Admin SDK cho read/write assertions.
+
+App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/room-lobby-start.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/room-lobby-start.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 
