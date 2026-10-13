@@ -15,7 +15,7 @@
 **Plan slug:** `2026-10-13-sl-013-room-create`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-013-room-create]`.
 **Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13, chưa được phê duyệt. User đã yêu cầu ghi draft P6.1 cho cả 37 slice; không suy thành approval thực thi.
 **Traceability:** US-06; API §2; ADR-003/004; V05.
-**Phụ thuộc bắt buộc:** [SL-003](./2026-10-13-sl-003-registration-profile.md), [SL-004](./2026-10-13-sl-004-login-session.md)
+**Phụ thuộc bắt buộc:** [SL-003](./2026-10-13-sl-003-registration-profile.md), [SL-004](./2026-10-13-sl-004-login-session.md), [SL-006](./2026-10-13-sl-006-solo-start.md)
 **Ưu tiên mềm:** Theo thứ tự đề xuất trong [mục lục](../../implementation-plan.md); thứ tự không tạo thêm hard dependency.
 
 ## 1. Nguồn và ranh giới
@@ -53,7 +53,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | `package-lock.json`, `pnpm-lock.yaml` | SL-013 cập nhật đồng bộ khi thêm QR dependency; không install trong lượt sửa plan. |
 | `app.json` | SL-013 đồng bộ invitation scheme với D13 khi cần; SL-015 mở rộng cấu hình scanner/permission. |
 | `__tests__/room-invitation.test.ts` | Encoder/render payload, PIN giữ leading zero và failure states; SL-015 kiểm chứng producer/parser round-trip cùng scan thật. |
-| `src/features/local/migrations.ts` | SL-013 mở rộng migration runner SL-003 bằng schema có version cho `rooms` và `room_members` theo architecture §6.3; không khởi tạo database thứ hai. |
+| `src/features/local/migrations.ts` | SL-013 mở rộng migration runner SL-003 bằng schema có version cho `rooms` và `room_members` sau sessions migration SL-006, theo architecture §6.3; giữ các version đã có, không khởi tạo database thứ hai. |
 | `src/screens/GroupLobbyScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
 | `functions/src/create-room.cjs` | Backend boundary của slice; server identity/validation/transaction. |
 | `functions/index.js` | Backend boundary của slice; server identity/validation/transaction. |
@@ -114,7 +114,7 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
 
 1. Derive Host từ Auth, đọc verified server entitlement; local checksum không cấp quota.
-2. Database readiness áp dụng migration versioned do SL-003 khởi tạo; room/member tables theo schema architecture §6.3 tồn tại trước repository projection writes.
+2. Database readiness áp dụng migration runner do SL-003 khởi tạo và sessions migration đã nghiệm thu từ SL-006; thêm room/member migration ở version tiếp theo chưa sử dụng, giữ version và dữ liệu profile/session. Room/member tables theo schema architecture §6.3 tồn tại trước repository projection writes; upgrade fixture phải dùng database từ migrations thật của hai dependency.
 3. Reserve PIN, tạo room/membership/counter/receipt trong một transaction.
 4. Free Host tối đa 7 room tháng calendar; retry cùng payload không tiêu hao quota lần nữa.
 5. Chỉ sau D12, dùng server timestamp và timezone đã duyệt để xác định usage bucket; device timezone hoặc đổi giờ thiết bị không đổi quota. Kiểm tra ngay trước/sau ranh giới tháng và replay cùng request qua ranh giới theo receipt contract.

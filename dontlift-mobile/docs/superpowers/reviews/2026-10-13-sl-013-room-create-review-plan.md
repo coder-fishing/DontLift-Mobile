@@ -47,5 +47,21 @@
 
 ## Self-review
 
+- Đợt v0.11 đã kiểm tra dependency index và SL-013 cùng yêu cầu SL-006; upgrade fixture dùng output migration thật, giữ version/data cũ. Không thêm source hoặc test implementation.
+
 - Finding chỉ resolved ở mức ownership của plan; chưa khẳng định migration hoặc test đã được implement.
 - Schema chi tiết vẫn lấy từ Architecture §6.3; không sửa product behavior hoặc phê duyệt backlog P6.0.
+
+## PR24-4259164391
+
+- **Status:** RESOLVED
+- **Severity:** Medium
+- **Category:** Session migration prerequisite
+- **Location:** SL-013 dependency header, mục 3 và Task 1; `docs/implementation-plan.md` row SL-013 và shared ownership.
+- **Problem:** Upgrade acceptance cần database đã có profile/session migrations nhưng SL-013 chưa phụ thuộc owner sessions migration SL-006; hai slice có thể tranh version sau profile và fixture không kiểm chứng output prerequisite thật.
+- **Recommendation:** Thêm hard dependency SL-006, đồng bộ index, yêu cầu room migration theo sau sessions migration và upgrade fixture từ dependency thật.
+- **Created At:** 2026-10-13, review trên commit `973d4a9`.
+- **Updated By:** Codex.
+- **Updated At:** 2026-10-13, Asia/Saigon.
+- **Review reference:** [P2 finding](https://github.com/coder-fishing/DontLift-Mobile/pull/24#discussion_r4259164391).
+- **Response:** Đã xác nhận SL-006 là owner sessions migration, trong khi SL-013 trước sửa chỉ yêu cầu SL-003/004. Header và index nay thêm SL-006; migration ownership/Task 1 yêu cầu version tiếp theo chưa dùng sau sessions migration, giữ version/data profile/session và fixture được tạo từ migrations thật. Chỉ resolved ở plan level; runtime migrations chưa được implement hoặc chạy.

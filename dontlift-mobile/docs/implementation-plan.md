@@ -1,6 +1,6 @@
 # P6.1 — Mục lục kế hoạch DontLift
 
-> **DRAFT v0.10 — backlog và implementation plans chưa được phê duyệt.** Đây là bộ kế hoạch được user yêu cầu soạn và lưu để review cho 37 slice, không phải backlog P6.0 đã duyệt và không phải quyền chạy P6.2.
+> **DRAFT v0.11 — backlog và implementation plans chưa được phê duyệt.** Đây là bộ kế hoạch được user yêu cầu soạn và lưu để review cho 37 slice, không phải backlog P6.0 đã duyệt và không phải quyền chạy P6.2.
 
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Baseline:** `docs/p6.0-implementation-slices`, commit `57ca1eb28a2952c66d01f89b9b89bf755ab4812a`.
@@ -45,7 +45,7 @@ P0 là nền tảng/critical journey trước; P1 là cần hoàn tất MVP; P2 
 | SL-010 | [iOS background và restart recovery](./superpowers/plans/2026-10-13-sl-010-ios-recovery.md) | P0 | SL-007, SL-009 | E1 |
 | SL-011 | [Đồng bộ Solo sau reconnect](./superpowers/plans/2026-10-13-sl-011-solo-sync.md) | P0 | SL-002, SL-008 | D3 |
 | SL-012 | [Xem Solo history](./superpowers/plans/2026-10-13-sl-012-solo-history.md) | P1 | SL-011 | Không xác nhận riêng |
-| SL-013 | [Host tạo room](./superpowers/plans/2026-10-13-sl-013-room-create.md) | P0 | SL-003, SL-004 | D12, D13 |
+| SL-013 | [Host tạo room](./superpowers/plans/2026-10-13-sl-013-room-create.md) | P0 | SL-003, SL-004, SL-006 | D12, D13 |
 | SL-014 | [Member join bằng PIN](./superpowers/plans/2026-10-13-sl-014-room-join-pin.md) | P0 | SL-013 | Không xác nhận riêng |
 | SL-015 | [Member join bằng QR](./superpowers/plans/2026-10-13-sl-015-room-join-qr.md) | P1 | SL-014 | D13, E1 |
 | SL-016 | [Lobby realtime và Host bắt đầu](./superpowers/plans/2026-10-13-sl-016-room-lobby-start.md) | P0 | SL-014 | D3 |
@@ -134,7 +134,7 @@ D3 chỉ chặn command/event semantics chưa có wire rõ; không blanket-block
 | NFR/SC-5 | 037: group completion rate trên 85% bằng cohort evidence |
 | Token/platform/latency | 002/004/009/010/017/037: native SDK security, Android/iOS, leaderboard không quá 2 giây sau confirmed và synced |
 
-Shared ownership: 001 sở hữu test harness/root lockfile changes; 002 native runtime/local emulator config/default-deny Rules và root lockfiles. 003 sở hữu SQLite dependency/database/migration foundation, backend Functions/Admin package/runtime/lockfiles, Rules test harness và callable emulator handshake; 006 chỉ mở rộng sessions migration/persistence. 007 sở hữu capture/outbox boundary; 011 mở rộng worker/server ingestion; 017 reuse cho group. Rules và direct-read ownership được phân theo resource ở bảng dưới; 037 chỉ hợp nhất policy đã được resource tests xác nhận vào canonical firestore.rules và chạy lại cùng tests. 031 sở hữu local entitlement storage cùng SecureStore dependency/config/lockfiles, 032 server redemption. Không coi shared file là quyền refactor unrelated units.
+Shared ownership: 001 sở hữu test harness/root lockfile changes; 002 native runtime/local emulator config/default-deny Rules và root lockfiles. 003 sở hữu SQLite dependency/database/migration foundation, backend Functions/Admin package/runtime/lockfiles, Rules test harness và callable emulator handshake; 006 chỉ mở rộng sessions migration/persistence. 007 sở hữu capture/outbox boundary; 011 mở rộng worker/server ingestion; 017 reuse cho group; 018 mở rộng syncEvents cho cutoff riêng của Member và owns cutoff/concurrency tests. 013 thêm room/member migration sau sessions migration SL-006. Rules và direct-read ownership được phân theo resource ở bảng dưới; 037 chỉ hợp nhất policy đã được resource tests xác nhận vào canonical firestore.rules và chạy lại cùng tests. 031 sở hữu local entitlement storage cùng SecureStore dependency/config/lockfiles, 032 server redemption. Không coi shared file là quyền refactor unrelated units.
 
 | Resource/path | Slice sở hữu Rules và Emulator Suite | Quyền client dự kiến / giới hạn |
 |---|---|---|
@@ -202,3 +202,5 @@ Review batch v0.8: [SL-013](./superpowers/reviews/2026-10-13-sl-013-room-create-
 Review batch v0.9: [Prompt precedence](./superpowers/reviews/2026-10-13-implementation-plan-review-plan.md), [SL-034](./superpowers/reviews/2026-10-13-sl-034-premium-themes-review-plan.md), [SL-028](./superpowers/reviews/2026-10-13-sl-028-group-history-review-plan.md).
 
 Review batch v0.10: [SL-028](./superpowers/reviews/2026-10-13-sl-028-group-history-review-plan.md), [SL-031](./superpowers/reviews/2026-10-13-sl-031-local-premium-review-plan.md).
+
+Review batch v0.11: [SL-018](./superpowers/reviews/2026-10-13-sl-018-early-exit-review-plan.md) sở hữu mở rộng syncEvents cho per-member cutoff và boundary/concurrency tests; D3 vẫn chặn policy chưa duyệt. [SL-013](./superpowers/reviews/2026-10-13-sl-013-room-create-review-plan.md) thêm hard dependency SL-006 để room migration theo sau sessions migration thật, giữ version và dữ liệu cũ.
