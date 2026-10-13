@@ -1,10 +1,9 @@
 # Review kế hoạch — SL-035
 
 **Target:** [Plan](../plans/2026-10-13-sl-035-free-tier-ads.md).
-**Baseline:** Quy tắc dependency trong [AGENTS.md](../../../AGENTS.md#L59), UX §7.3 và D7 là blocker chọn ads provider.
-**Nguồn:** [PR #24](https://github.com/coder-fishing/DontLift-Mobile/pull/24).
-**Human authorization:** 2026-10-13, user trả lời "ok" cho việc cập nhật ba kế hoạch theo finding mới.
-**Execution scope:** Chỉ cập nhật plan và review report; không chọn provider, cài SDK, thay app config hoặc kiểm thử ad thật.
+**Baseline:** Non-session placement targets are produced by SL-012, SL-013/016 and SL-029; D7 still blocks provider choices.
+**Nguồn:** [PR #24](https://github.com/coder-fishing/DontLift-Mobile/pull/24), reviewed commit `4e681b6`.
+**Execution scope:** Chỉ sửa hard dependencies/index/report; không chọn provider hoặc cài SDK.
 
 ## PR24-4255952642
 
@@ -12,15 +11,29 @@
 - **Severity:** High
 - **Category:** Ads SDK dependency và native configuration ownership
 - **Location:** SL-035 mục 2/3, Task 1/2 và mục 6/7.
-- **Problem:** Sau khi D7 chọn provider, slice yêu cầu test-mode banner, placements và consent behavior nhưng danh sách file không giao manifest, native config hay hai lockfile; theo boundary hiện tại có thể chỉ làm eligibility logic mà không tích hợp được ad thật.
-- **Recommendation:** Giao provider SDK/adapter, `package.json`, `app.json`, cả hai lockfile và test-mode/consent verification cho SL-035, vẫn giữ D7 chặn mọi lựa chọn hoặc config trước approval.
+- **Problem:** Sau khi D7 chọn provider, slice yêu cầu test-mode banner, placements và consent behavior nhưng danh sách file không giao manifest, native config hay hai lockfile.
+- **Recommendation:** Giao provider SDK/adapter, `package.json`, `app.json`, hai lockfiles và test-mode verification cho SL-035; D7 tiếp tục chặn lựa chọn/config trước approval.
 - **Created At:** 2026-10-13, theo PR review trên commit `bb406e4`.
-- **Updated By:** Codex, theo human authorization "ok".
+- **Updated By:** Codex, theo human authorization cho các plan corrections trước đó.
 - **Updated At:** 2026-10-13, Asia/Saigon.
-- **Review reference:** [P1 finding](https://github.com/coder-fishing/DontLift-Mobile/pull/24#discussion_r4255952642).
-- **Response:** Finding được xác nhận: chưa có ads SDK trong manifest, và AGENTS.md yêu cầu cập nhật đồng bộ hai lockfile khi dependency thay đổi. SL-035 nay sở hữu provider adapter, lựa chọn SDK sau D7, `package.json`, `app.json` theo yêu cầu thực tế của SDK/consent policy, cả hai lockfile và xác nhận test mode trên Android/iOS. D7 vẫn là blocker; không có provider hay package nào được chọn hoặc cài trong lượt này.
+- **Review reference:** [P1 finding](https://github.com/coder-fishing/DontLift-Mobile/pull/24#discussion_r4255952642); repository rule: [AGENTS.md](../../../AGENTS.md#L59).
+- **Response:** SL-035 đã sở hữu provider adapter/dependency, manifest, synchronized lockfiles, conditional native config và Android/iOS test mode; D7 vẫn là blocker. Không package nào được chọn/cài ở lượt này.
+
+## PR24-4256183843
+
+- **Status:** RESOLVED
+- **Severity:** Medium
+- **Category:** Ad placement screen producer dependencies
+- **Location:** SL-035 required dependencies and implementation-plan row.
+- **Problem:** SL-035 targets History, GroupLobby and Profile screens but could run before their producer/finalizer slices, allowing missing placement targets or later integration overwrites.
+- **Recommendation:** Depend on the screen producers or move each placement into its producer. This correction keeps the centralized SL-035 owner and adds the relevant hard dependencies.
+- **Created At:** 2026-10-13, PR #24 review on commit `4e681b6`.
+- **Updated By:** Codex, after user requested continuing the corrections.
+- **Updated At:** 2026-10-13, Asia/Saigon.
+- **Review reference:** [P2 finding](https://github.com/coder-fishing/DontLift-Mobile/pull/24#discussion_r4256183843).
+- **Response:** SL-035 now depends on SL-012 (History), SL-013 and SL-016 (GroupLobby producer/finalizer), and SL-029 (Profile), alongside SL-030/031. D7 still blocks SDK/provider/placement/consent decisions.
 
 ## Self-review
 
-- Finding được đánh dấu resolved ở mức ownership trong kế hoạch; không khẳng định ads SDK/native configuration đã được tích hợp.
-- D7 tiếp tục chặn mọi lựa chọn provider, placement và consent policy còn chưa được duyệt.
+- Dependency graph remains acyclic; all referenced producers precede SL-035.
+- D7 and test-mode/native evidence requirements remain unchanged; no SDK is selected or installed.

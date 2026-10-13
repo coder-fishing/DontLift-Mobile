@@ -46,10 +46,15 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 |---|---|
 | `src/features/rooms/completion-controller.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/screens/GroupSummaryScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
+| `src/screens/GroupActiveScreen.tsx` | Thay End callback đang nhảy thẳng sang bill bằng completion request và chuyển vào GroupSummaryScreen. |
+| `src/app/index.tsx` | Đăng ký GroupSummary screen state/rendering và route transition từ GroupActive. |
+| `src/types.ts` | Bổ sung ScreenId cho GroupSummary. |
+| `src/constants.ts` | Bổ sung title cho GroupSummary theo ScreenId. |
 | `functions/src/complete-room.cjs` | Backend boundary của slice; server identity/validation/transaction. |
 | `functions/src/acknowledge-member-sync.cjs` | Backend boundary của slice; server identity/validation/transaction. |
 | `functions/index.js` | Backend boundary của slice; server identity/validation/transaction. |
 | `__tests__/room-completion.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
+| `__tests__/room-completion-navigation.test.ts` | Kiểm chứng End → GroupSummary, PENDING gate và ALL_SYNCED continuation; không dùng mock để claim Rules/Functions integration. |
 | `functions/tests/room-completion.test.cjs` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
 
 **Unit:** completeRoom và acknowledgeMemberSync.
@@ -127,6 +132,7 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 1. Tất cả participants thấy summary/reconciliation state; không navigate bill giả ngay End.
 2. Network/service failure giữ retry context; unsynced Member hiển thị riêng cho Host.
 3. Early-exit/cancel/abort ownership không được tự suy; eligibility cần khớp accepted contract.
+4. GroupActive End → gọi completeRoom rồi mở GroupSummaryScreen; PENDING không mở settlement/bill flow, FINALIZED/ALL_SYNCED mới cho phép tiếp tục. SL-021 mở rộng cùng route bằng Host-override state/warning, không tạo luồng summary thứ hai.
 
 - [ ] Thực hiện các kịch bản nghiệm thu trực tiếp trong mục 6; thu logs an toàn/device timestamps khi cần.
 - [ ] Review kết quả; một branch fail hoặc thiếu required device/emulator evidence thì slice chưa hoàn thành.
@@ -140,6 +146,9 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - [ ] Duplicate ACK → count giảm một lần.
 - [ ] ACK cuối cùng → ALL_SYNCED và FINALIZED.
 - [ ] Bill request khi PENDING → bị chặn.
+- [ ] End từ GroupActive → GroupSummaryScreen hiển thị PENDING và chặn bill/settlement navigation.
+- [ ] ALL_SYNCED/FINALIZED → GroupSummaryScreen cho phép continuation tới bước settlement kế tiếp.
+- [ ] Host override theo SL-021 → cùng summary route hiển thị trạng thái/warning thay vì bỏ qua summary.
 - [ ] Hai devices, một có pending event → completion chưa finalized tới khi đủ flush/ACK.
 - [ ] Verify final scores và summary server/local; no client override.
 - [ ] Host/Member vẫn đọc room/member reconciliation projection theo Rules SL-016; anonymous/outsider/cross-room bị deny và client không ghi status/scores.
@@ -150,7 +159,7 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 
 ## 7. Verification và ghi nhận evidence
 
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/room-completion.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/room-completion.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/room-completion.test.ts __tests__/room-completion-navigation.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/room-completion.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 

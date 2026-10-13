@@ -47,9 +47,14 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | `src/features/rooms/room-command-port.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/features/rooms/room-repository.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/screens/JoinRoomScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
+| `src/app/index.tsx` | Đăng ký JoinRoom screen state và render trong app flow hiện tại. |
+| `src/types.ts` | Thêm ScreenId cho hành trình join PIN. |
+| `src/constants.ts` | Thêm screen title theo ScreenId. |
+| `src/screens/GroupLobbyScreen.tsx` | Thêm user-facing “join with PIN” entry từ Group tab/lobby; không dựa vào prototype Control Deck. |
 | `functions/src/join-room-by-pin.cjs` | Backend boundary của slice; server identity/validation/transaction. |
 | `functions/index.js` | Backend boundary của slice; server identity/validation/transaction. |
 | `__tests__/room-join-pin.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
+| `__tests__/room-join-pin-navigation.test.ts` | Kiểm chứng Group entry mở JoinRoom state và quay lại được khi cancel/error. |
 | `functions/tests/room-join-pin.test.cjs` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
 
 **Unit:** joinRoomByPin.
@@ -125,6 +130,7 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 1. Invalid/expired trả safe error không room internals; full room hiển thị lý do.
 2. Local cache write failure sau join giữ recovery route, không gửi join với payload khác ngẫu nhiên.
 3. Offline join không queue; form giữ PIN khi retry service failure.
+4. Group tab/lobby exposes Join with PIN action; action opens JoinRoomScreen via registered app state, and Back/Cancel returns to Group without invoking join.
 
 - [ ] Thực hiện các kịch bản nghiệm thu trực tiếp trong mục 6; thu logs an toàn/device timestamps khi cần.
 - [ ] Review kết quả; một branch fail hoặc thiếu required device/emulator evidence thì slice chưa hoàn thành.
@@ -138,6 +144,7 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - [ ] Free room có 5 → join bị chặn.
 - [ ] Hai người tranh slot cuối → chỉ một join.
 - [ ] Scan/retry user đã Member → count không tăng.
+- [ ] Group tab/lobby có Join with PIN action → mở JoinRoomScreen; cancel/back quay lại Group, không gọi backend.
 - [ ] Hai user emulators join cùng room → memberships canonical.
 - [ ] Anonymous/cross-room writes thử trực tiếp → deny bằng Rules.
 
@@ -147,7 +154,7 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 
 ## 7. Verification và ghi nhận evidence
 
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/room-join-pin.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/room-join-pin.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/room-join-pin.test.ts __tests__/room-join-pin-navigation.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/room-join-pin.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 

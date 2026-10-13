@@ -56,6 +56,8 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | `functions/tests/runtime-bootstrap.test.cjs` | Backend module initialization/entrypoint test, không giả thay callable emulator evidence. |
 | `functions/tests/helpers/rules-emulator.cjs` | Harness Rules Emulator Suite dùng isolated project namespace/fixture; không chạy nhầm live Firebase. |
 | `firebase.emulator.json` | SL-003 thêm Functions source/runtime wiring sau khi backend package tồn tại; giữ host/region/config local của SL-002. |
+| `firestore.emulator.rules` | SL-003 mở owner-only read trên `users/{uid}` trước profile fetch; giữ default deny với write và resource khác. SL-029 chỉ mở allowlisted profile edits trên nền Rules này. |
+| `functions/tests/profile-owner-read.rules.emulator.test.cjs` | Client SDK Emulator Suite chứng minh owner read allowed, anonymous/cross-user read denied và entitlement/server-owned fields không thể bị client ghi. |
 | `src/features/auth/auth-validation.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/features/auth/auth-controller.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/features/auth/local-profile-repository.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
@@ -118,6 +120,15 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Đồng bộ manifest/lockfiles backend và ghi exact commands/runtime/SDK trong evidence; code/dependency installation chỉ thuộc P6.2 đã duyệt.
 
 **Output prerequisite:** Task 1/2 registration và các backend tests ở slice sau dùng bootstrap này. Native client initialization là output SL-002; server runtime và callable handshake là output SL-003.
+
+### Task 0C — Owner-read profile Rules trước registration/login
+
+**Files:** `firestore.emulator.rules`, `functions/tests/profile-owner-read.rules.emulator.test.cjs`, Rules harness từ Task 0B.
+
+- [ ] Mở chỉ authenticated owner read trên `users/{uid}` để SL-003/004 fetch canonical profile; không mở client create/update ngoài policy đã duyệt.
+- [ ] Dùng client SDK trên Emulator Suite: owner read allowed; anonymous/cross-user read denied; entitlement/server-owned fields không thể bị client sửa.
+- [ ] Chạy Rules cases trước registration/login integration; không dùng Admin SDK để chứng minh client authorization.
+- [ ] Giữ SL-029 là owner duy nhất của allowlisted profile edits và các update/immutable-field denial tests.
 
 ### Task 1 — Boundary và quy tắc của Đăng ký và hoàn tất profile
 
@@ -192,7 +203,7 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 
 ## 7. Verification và ghi nhận evidence
 
-Foundation focused tests sau Task 0A: `pnpm test --runTestsByPath __tests__/local-database.test.ts`. Backend bootstrap sau Task 0B: `node --test functions/tests/runtime-bootstrap.test.cjs`. App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/registration-profile.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/registration-profile.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+Foundation focused tests sau Task 0A: `pnpm test --runTestsByPath __tests__/local-database.test.ts`. Backend bootstrap sau Task 0B: `node --test functions/tests/runtime-bootstrap.test.cjs`. Owner-read Rules cần Firestore Emulator Suite đang chạy: `node --test functions/tests/profile-owner-read.rules.emulator.test.cjs`. App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/registration-profile.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/registration-profile.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 

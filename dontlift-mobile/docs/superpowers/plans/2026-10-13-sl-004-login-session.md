@@ -50,6 +50,8 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | `src/app/index.tsx` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/components/BottomNav.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
 | `src/components/ControlDeckDrawer.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
+| `firestore.emulator.rules` | SL-004 tiêu thụ owner-read `users/{uid}` Rule do SL-003 sở hữu; không thêm login-specific write permission. |
+| `functions/tests/login-profile-read.rules.emulator.test.cjs` | Client SDK Emulator Suite xác nhận signed-in owner fetch profile thành công, cross-user read bị deny, và sign-out không giữ quyền đọc. |
 | `__tests__/login-session.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
 
 **Unit:** AuthSessionProvider.
@@ -106,6 +108,8 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Viết các failing cases về integration/recovery sau; không viết tests chỉ mirror implementation.
 
 - [ ] User A logout, user B login → không đọc profile/session A.
+- [ ] Fresh install, cache rỗng, valid login → owner Rules cho phép fetch canonical profile; profile được lưu local trước authenticated state.
+- [ ] Login user A đọc `users/{uidB}` → Rules Emulator Suite deny, không lộ profile.
 - [ ] User cache hợp lệ và offline → khôi phục không bootstrap network.
 - [ ] Name/profile chưa có → tiếp tục completion, không tạo account.
 
@@ -137,7 +141,7 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 
 ## 7. Verification và ghi nhận evidence
 
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/login-session.test.ts`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/login-session.test.ts`. Owner-read integration cases cần Firestore Emulator Suite: `node --test functions/tests/login-profile-read.rules.emulator.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 

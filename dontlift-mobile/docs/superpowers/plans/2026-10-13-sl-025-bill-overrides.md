@@ -48,8 +48,10 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | `src/screens/BillAllocationScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
 | `functions/src/apply-bill-overrides.cjs` | Backend boundary của slice; server identity/validation/transaction. |
 | `functions/src/bill-allocation.cjs` | Backend boundary của slice; server identity/validation/transaction. |
+| `functions/index.js` | SL-025 đăng ký/export `applyBillOverrides` theo Functions runtime bootstrap do SL-003 sở hữu; không khởi tạo Admin/runtime lần hai. |
 | `__tests__/bill-overrides.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
 | `functions/tests/bill-overrides.test.cjs` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
+| `functions/tests/bill-overrides-discovery.test.cjs` | Xác nhận entrypoint export callable đúng tên và emulator discovery thấy callable trước khi chạy transaction cases. |
 
 **Unit:** applyBillOverrides.
 **Nhận:** Host overrides FIXED_VND hoặc PERCENT_BPS và full bill/member set.
@@ -105,6 +107,7 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 1. Chốt policy recalculation sau paid/share publication trước implementation.
 2. Reject duplicate UID, negative value, percentage trên 10.000 basis points hoặc vector không represent full bill.
 3. Default/override đều đi qua allocation owner SL-024; không tạo remainder-after-override branch thứ hai.
+4. Đăng ký `applyBillOverrides` từ `functions/index.js` bằng Admin/Functions runtime đã bootstrap; kiểm tra module export và Emulator Suite callable discovery trước transaction acceptance.
 
 - [ ] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
 - [ ] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-025-bill-overrides]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-025-bill-overrides.md` và `Task: 1`.
@@ -120,6 +123,7 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - [ ] Overrides không represent full bill → reject.
 - [ ] Default/override dùng cùng rounding → exact sum.
 - [ ] Same request replay → cùng outcome; khác payload → collision.
+- [ ] `functions/index.js` exports `applyBillOverrides`; Functions Emulator Suite discovery gọi được đúng callable.
 
 - [ ] Chạy focused checks, xác nhận failure đúng behavior; giữ fixtures tách khỏi device evidence.
 - [ ] Tích hợp theo thứ tự:
@@ -150,7 +154,7 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 
 ## 7. Verification và ghi nhận evidence
 
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/bill-overrides.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/bill-overrides.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/bill-overrides.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/bill-overrides.test.cjs functions/tests/bill-overrides-discovery.test.cjs`; discovery test confirms the callable export before transaction cases. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 

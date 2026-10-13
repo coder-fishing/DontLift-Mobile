@@ -15,7 +15,7 @@
 **Plan slug:** `2026-10-13-sl-035-free-tier-ads`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-035-free-tier-ads]`.
 **Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13, chưa được phê duyệt. User đã yêu cầu ghi draft P6.1 cho cả 37 slice; không suy thành approval thực thi.
 **Traceability:** US-18; FR-06; ADR-007; UX §7.3.
-**Phụ thuộc bắt buộc:** [SL-031](./2026-10-13-sl-031-local-premium.md), [SL-030](./2026-10-13-sl-030-feedback-settings.md)
+**Phụ thuộc bắt buộc:** [SL-012](./2026-10-13-sl-012-solo-history.md), [SL-013](./2026-10-13-sl-013-room-create.md), [SL-016](./2026-10-13-sl-016-room-lobby-start.md), [SL-029](./2026-10-13-sl-029-profile-edit.md), [SL-030](./2026-10-13-sl-030-feedback-settings.md), [SL-031](./2026-10-13-sl-031-local-premium.md)
 **Ưu tiên mềm:** Theo thứ tự đề xuất trong [mục lục](../../implementation-plan.md); thứ tự không tạo thêm hard dependency.
 
 ## 1. Nguồn và ranh giới

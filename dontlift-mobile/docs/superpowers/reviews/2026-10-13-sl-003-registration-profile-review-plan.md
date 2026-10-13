@@ -34,6 +34,20 @@
 - **Review reference:** [Original finding](https://github.com/coder-fishing/DontLift-Mobile/pull/24#discussion_r4255429685).
 - **Response:** Đã thêm Task 0B, backend manifest/hai lockfiles, supported runtime selection, Rules harness, entrypoint/discovery và emulator source wiring. Callable handshake chuyển sang 003; downstream test prerequisites đã sửa. Không install hay tạo actual backend config.
 
+## PR24-4256183768
+
+- **Status:** RESOLVED
+- **Severity:** High
+- **Category:** Owner-read Rules prerequisite for login
+- **Location:** SL-003 Task 0C/files; SL-004 login acceptance; resource ownership table in `docs/implementation-plan.md`.
+- **Problem:** SL-003/004 fetch canonical `users/{uid}` on fresh devices, but the prior ownership table assigned all access to SL-029, which depends on SL-004; default-deny would route a valid login to profile recovery.
+- **Recommendation:** SL-003 owns owner-only read Rules and client-SDK Emulator Suite cases; SL-004 verifies fresh login/restore consumes that read; SL-029 retains only edit allowlist Rules.
+- **Created At:** 2026-10-13, PR #24 review on commit `4e681b6`.
+- **Updated By:** Codex, after user requested continuing the corrections.
+- **Updated At:** 2026-10-13, Asia/Saigon.
+- **Review reference:** [P1 finding](https://github.com/coder-fishing/DontLift-Mobile/pull/24#discussion_r4256183768); repository rule: [AGENTS.md](../../../AGENTS.md#L32-L33).
+- **Response:** SL-003 now owns the owner-only read rule and client-SDK allow/deny tests before registration/login; SL-004 tests fresh-login profile fetch and cross-user denial; SL-029 remains the sole profile-edit allowlist owner. Default deny and server-owned entitlement fields remain protected.
+
 ## Self-review
 
 - Original comment identity giữ nguyên; Response đối chiếu owner/tasks/acceptance trong plan đã sửa.

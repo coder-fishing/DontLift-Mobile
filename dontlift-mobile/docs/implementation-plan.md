@@ -65,9 +65,9 @@ P0 là nền tảng/critical journey trước; P1 là cần hoàn tất MVP; P2 
 | SL-030 | [Settings cho haptic và sound](./superpowers/plans/2026-10-13-sl-030-feedback-settings.md) | P1 | SL-003, SL-004, SL-007 | D11 |
 | SL-031 | [Activation offline và Local Premium](./superpowers/plans/2026-10-13-sl-031-local-premium.md) | P1 | SL-003, SL-004 | D5 |
 | SL-032 | [Redeem online và Server Premium](./superpowers/plans/2026-10-13-sl-032-server-premium.md) | P1 | SL-031 | D5 |
-| SL-033 | [Retention local và server](./superpowers/plans/2026-10-13-sl-033-retention.md) | P1 | SL-012, SL-028, SL-031, SL-032 | D10 |
+| SL-033 | [Retention local và server](./superpowers/plans/2026-10-13-sl-033-retention.md) | P1 | SL-012, SL-023, SL-028, SL-031, SL-032 | D10 |
 | SL-034 | [Chọn custom theme](./superpowers/plans/2026-10-13-sl-034-premium-themes.md) | P1 | SL-030, SL-031 | D6 |
-| SL-035 | [Quảng cáo đúng tier và màn hình](./superpowers/plans/2026-10-13-sl-035-free-tier-ads.md) | P1 | SL-031, SL-030 | D7 |
+| SL-035 | [Quảng cáo đúng tier và màn hình](./superpowers/plans/2026-10-13-sl-035-free-tier-ads.md) | P1 | SL-012, SL-013, SL-016, SL-029, SL-030, SL-031 | D7 |
 | SL-036 | [Advanced leaderboard theo Server Premium](./superpowers/plans/2026-10-13-sl-036-advanced-leaderboard.md) | P2 | SL-017, SL-032 | D6 |
 | SL-037 | [Nghiệm thu MVP và phát hành đúng environment](./superpowers/plans/2026-10-13-sl-037-mvp-release.md) | P1 | SL-001–SL-036 | D1, D6, E1, E2, E3 |
 
@@ -136,7 +136,7 @@ Shared ownership: 001 sở hữu test harness/root lockfile changes; 002 native 
 
 | Resource/path | Slice sở hữu Rules và Emulator Suite | Quyền client dự kiến / giới hạn |
 |---|---|---|
-| `users/{uid}` | 029 profile Rules; 003/004 tiêu thụ owner read theo profile flow | Chỉ owner đọc; chỉ field profile allowlist được phép sửa theo plan 029; entitlement/server fields server-only. |
+| `users/{uid}` | 003 sở hữu owner-only read Rules + Emulator Suite trước profile fetch; 004 kiểm chứng login/restore client flow; 029 chỉ sở hữu allowlisted profile-edit Rules + Emulator Suite | Chỉ owner đọc; chỉ field profile allowlist được phép sửa theo plan 029; entitlement/server fields server-only. |
 | `users/{uid}/sessions/{sessionId}` | 012 Solo-history Rules | Owner đọc; client không ghi summary authoritative. |
 | `rooms/{roomId}` và `rooms/{roomId}/members/{uid}` | 016 room/member Rules | Thành viên cùng room đọc; outsider/anonymous/cross-room bị từ chối; client không ghi lifecycle, score hay counters authoritative. |
 | `rooms/{roomId}/violations/{eventId}` | 017 Group-active Rules | Thành viên cùng room đọc; leaderboard hiện dùng room/member resources đã được SL-016 cấp read. Không thêm projection path nếu chưa có contract duyệt. |
@@ -180,5 +180,8 @@ Website mua Premium/code generation/email delivery là external operational prer
 - v0.2: Human duyệt package sửa năm findings PR #24 trong chat. Bổ sung foundation ownership 003, làm rõ 002/006 và downstream backend prerequisites, resource Rules owners/tests, 028 → 018/021 và deferred deployment owner 037. Giữ 37 IDs và approved product/ADR decisions. Approval chỉ cho corrections, không duyệt backlog, implementation plans, install hoặc deploy.
 - v0.3: Human duyệt xử lý findings mới PR #24. Mở rộng Rules ownership theo direct-read resource cho 017–028/036; giao SecureStore dependency/config/lockfiles và persistence failure cases cho 031; đặt 036 thành hard dependency của 037 theo ADR-007, giữ D6 blocker. Không sửa hay phê duyệt backlog P6.0.
 - v0.4: Gộp các P1 mới và audit cùng nhóm ownership: sensor dependency; violation/outbox, room/member, lifecycle-candidate, entitlement và app_settings migrations; Android/iOS lifecycle native bridge; Settings navigation cùng audio runtime/assets; SL-034 mở rộng SettingsScreen do SL-030 sở hữu. Cập nhật hard dependencies; thêm D11 cho sound default/asset/user scope. Draft P6.0 vẫn không được sửa hoặc xem là đã duyệt.
+- v0.5: Sửa review mới trên PR #24: owner-read `users/{uid}` chuyển tới SL-003 trước login và SL-004 kiểm chứng flow; SL-014 sở hữu PIN navigation; SL-020 route qua reconciliation summary; SL-025 đăng ký callable entrypoint; SL-033 phụ thuộc SL-023; SL-035 phụ thuộc các screen producers. Giữ default deny, edit allowlist ở SL-029, 37 IDs và draft status P6.0.
 
 **Trạng thái corrections:** [SL-003 review](./superpowers/reviews/2026-10-13-sl-003-registration-profile-review-plan.md), [SL-005 review](./superpowers/reviews/2026-10-13-sl-005-sensor-availability-review-plan.md), [SL-007 review](./superpowers/reviews/2026-10-13-sl-007-foreground-detection-review-plan.md), [SL-009 review](./superpowers/reviews/2026-10-13-sl-009-android-recovery-review-plan.md), [SL-010 review](./superpowers/reviews/2026-10-13-sl-010-ios-recovery-review-plan.md), [SL-013 review](./superpowers/reviews/2026-10-13-sl-013-room-create-review-plan.md), [SL-016 review](./superpowers/reviews/2026-10-13-sl-016-room-lobby-start-review-plan.md), [SL-028 review](./superpowers/reviews/2026-10-13-sl-028-group-history-review-plan.md), [SL-029 review](./superpowers/reviews/2026-10-13-sl-029-profile-edit-review-plan.md), [SL-030 review](./superpowers/reviews/2026-10-13-sl-030-feedback-settings-review-plan.md), [SL-031 review](./superpowers/reviews/2026-10-13-sl-031-local-premium-review-plan.md), [SL-034 review](./superpowers/reviews/2026-10-13-sl-034-premium-themes-review-plan.md), [SL-037 review](./superpowers/reviews/2026-10-13-sl-037-mvp-release-review-plan.md).
+
+Review batch v0.5: [SL-014](./superpowers/reviews/2026-10-13-sl-014-room-join-pin-review-plan.md), [SL-020](./superpowers/reviews/2026-10-13-sl-020-room-completion-review-plan.md), [SL-025](./superpowers/reviews/2026-10-13-sl-025-bill-overrides-review-plan.md), [SL-033](./superpowers/reviews/2026-10-13-sl-033-retention-review-plan.md), [SL-035](./superpowers/reviews/2026-10-13-sl-035-free-tier-ads-review-plan.md); SL-003 profile owner-read is appended to its existing review report.
