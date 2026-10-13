@@ -119,7 +119,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Tích hợp theo thứ tự:
 
 1. Review states/accessibility cho behavior đã duyệt; ghi allowed/denied outcome rõ.
-2. Nếu advanced được defer, record decision và không đặt feature này thành release prerequisite.
+2. Nếu D6 chưa chốt behavior hoặc SL-036 chưa hoàn tất, giữ SL-036 là blocker release: SL-037 không được pass. Chỉ một quyết định sản phẩm được human duyệt và cập nhật ADR/index mới có thể thay đổi release scope; plan này không tự gỡ dependency.
 3. Không chấp nhận tên advanced là acceptance hoàn chỉnh.
 
 - [ ] Thực hiện các kịch bản nghiệm thu trực tiếp trong mục 6; thu logs an toàn/device timestamps khi cần.

@@ -15,7 +15,7 @@
 **Plan slug:** `2026-10-13-sl-032-server-premium`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-032-server-premium]`.
 **Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13, chưa được phê duyệt. User đã yêu cầu ghi draft P6.1 cho cả 37 slice; không suy thành approval thực thi.
 **Traceability:** US-19; API §7; ADR-007.
-**Phụ thuộc bắt buộc:** [SL-031](./2026-10-13-sl-031-local-premium.md)
+**Phụ thuộc bắt buộc:** [SL-013](./2026-10-13-sl-013-room-create.md), [SL-014](./2026-10-13-sl-014-room-join-pin.md), [SL-031](./2026-10-13-sl-031-local-premium.md)
 **Ưu tiên mềm:** Theo thứ tự đề xuất trong [mục lục](../../implementation-plan.md); thứ tự không tạo thêm hard dependency.
 
 ## 1. Nguồn và ranh giới

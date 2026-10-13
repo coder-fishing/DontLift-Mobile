@@ -8,14 +8,14 @@
 
 **Slice:** SL-024. **Ưu tiên đề xuất:** P0. **Release:** MVP + activation/Premium; post-MVP deferred. SL-036 chỉ được tính release sau D6.
 
-**Trạng thái kế hoạch:** DRAFT — chưa được human duyệt; bị chặn bởi D9.
+**Trạng thái kế hoạch:** DRAFT — chưa được human duyệt; bị chặn bởi D3 qua prerequisite SL-018 và bởi D9.
 **Trạng thái implementation quan sát:** Client math float, không exact-sum guarantee. Chưa có evidence nghiệm thu slice.
 **Baseline khảo sát:** docs/p6.0-implementation-slices tại 57ca1eb28a2952c66d01f89b9b89bf755ab4812a.
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Plan slug:** `2026-10-13-sl-024-default-bill`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-024-default-bill]`.
 **Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13, chưa được phê duyệt. User đã yêu cầu ghi draft P6.1 cho cả 37 slice; không suy thành approval thực thi.
 **Traceability:** US-13/14; FR-05; API §6.2; ADR-005; V07.
-**Phụ thuộc bắt buộc:** [SL-020](./2026-10-13-sl-020-room-completion.md), [SL-023](./2026-10-13-sl-023-settlement-details.md)
+**Phụ thuộc bắt buộc:** [SL-018](./2026-10-13-sl-018-early-exit.md), [SL-020](./2026-10-13-sl-020-room-completion.md), [SL-023](./2026-10-13-sl-023-settlement-details.md)
 **Ưu tiên mềm:** Theo thứ tự đề xuất trong [mục lục](../../implementation-plan.md); thứ tự không tạo thêm hard dependency.
 
 ## 1. Nguồn và ranh giới
@@ -33,6 +33,7 @@ V01–V10 chỉ các màn tương ứng tại `design/concepts/concept-final/scr
 ## 2. Blocker, risk và quyết định cần duyệt
 
 - **D9:** Giải quyết wording non-zero base share khi bill nhỏ/nhiều Members đối nghịch integer/non-negative/exact-sum. Giữ invariant ADR-005; không tự tạo minimum bill per member.
+- **D3 prerequisite:** SL-018 phải chốt và nghiệm thu contract early-exit/frozen score trước khi SL-024 dùng frozen score trong tính toán hoặc acceptance.
 
 **Rủi ro cụ thể:** PRD nonzero base share có edge case bill nhỏ/nhiều Members; human clarify trước chấp nhận contradictory invariant.
 

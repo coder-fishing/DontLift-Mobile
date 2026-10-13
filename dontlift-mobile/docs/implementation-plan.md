@@ -1,6 +1,6 @@
 # P6.1 — Mục lục kế hoạch DontLift
 
-> **DRAFT v0.6 — backlog và implementation plans chưa được phê duyệt.** Đây là bộ kế hoạch được user yêu cầu soạn và lưu để review cho 37 slice, không phải backlog P6.0 đã duyệt và không phải quyền chạy P6.2.
+> **DRAFT v0.7 — backlog và implementation plans chưa được phê duyệt.** Đây là bộ kế hoạch được user yêu cầu soạn và lưu để review cho 37 slice, không phải backlog P6.0 đã duyệt và không phải quyền chạy P6.2.
 
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Baseline:** `docs/p6.0-implementation-slices`, commit `57ca1eb28a2952c66d01f89b9b89bf755ab4812a`.
@@ -56,7 +56,7 @@ P0 là nền tảng/critical journey trước; P1 là cần hoàn tất MVP; P2 
 | SL-021 | [Host override khi còn Member chưa sync](./superpowers/plans/2026-10-13-sl-021-host-finalization-override.md) | P1 | SL-020 | Không xác nhận riêng |
 | SL-022 | [Stale room chuyển ABORTED](./superpowers/plans/2026-10-13-sl-022-stale-room-abort.md) | P1 | SL-017 | D3 |
 | SL-023 | [Host nhập thông tin nhận tiền](./superpowers/plans/2026-10-13-sl-023-settlement-details.md) | P1 | SL-020 | Không xác nhận riêng |
-| SL-024 | [Nhập bill và tính shares mặc định](./superpowers/plans/2026-10-13-sl-024-default-bill.md) | P0 | SL-020, SL-023 | D9 |
+| SL-024 | [Nhập bill và tính shares mặc định](./superpowers/plans/2026-10-13-sl-024-default-bill.md) | P0 | SL-018, SL-020, SL-023 | D3, D9 |
 | SL-025 | [Host override bill shares](./superpowers/plans/2026-10-13-sl-025-bill-overrides.md) | P1 | SL-024 | D8 |
 | SL-026 | [Tạo VietQR cho share](./superpowers/plans/2026-10-13-sl-026-vietqr-payment.md) | P1 | SL-024 | E3 |
 | SL-027 | [Host đánh dấu đã thanh toán](./superpowers/plans/2026-10-13-sl-027-manual-payment-status.md) | P1 | SL-026 | Không xác nhận riêng |
@@ -64,7 +64,7 @@ P0 là nền tảng/critical journey trước; P1 là cần hoàn tất MVP; P2 
 | SL-029 | [Xem và sửa profile](./superpowers/plans/2026-10-13-sl-029-profile-edit.md) | P1 | SL-004 | Không xác nhận riêng |
 | SL-030 | [Settings cho haptic và sound](./superpowers/plans/2026-10-13-sl-030-feedback-settings.md) | P1 | SL-003, SL-004, SL-007 | D11 |
 | SL-031 | [Activation offline và Local Premium](./superpowers/plans/2026-10-13-sl-031-local-premium.md) | P1 | SL-003, SL-004 | D5 |
-| SL-032 | [Redeem online và Server Premium](./superpowers/plans/2026-10-13-sl-032-server-premium.md) | P1 | SL-031 | D5 |
+| SL-032 | [Redeem online và Server Premium](./superpowers/plans/2026-10-13-sl-032-server-premium.md) | P1 | SL-013, SL-014, SL-031 | D5 |
 | SL-033 | [Retention local và server](./superpowers/plans/2026-10-13-sl-033-retention.md) | P1 | SL-012, SL-023, SL-028, SL-031, SL-032 | D10 |
 | SL-034 | [Chọn custom theme](./superpowers/plans/2026-10-13-sl-034-premium-themes.md) | P1 | SL-030, SL-031 | D6 |
 | SL-035 | [Quảng cáo đúng tier và màn hình](./superpowers/plans/2026-10-13-sl-035-free-tier-ads.md) | P1 | SL-012, SL-013, SL-016, SL-029, SL-030, SL-031 | D7 |
@@ -182,9 +182,12 @@ Website mua Premium/code generation/email delivery là external operational prer
 - v0.4: Gộp các P1 mới và audit cùng nhóm ownership: sensor dependency; violation/outbox, room/member, lifecycle-candidate, entitlement và app_settings migrations; Android/iOS lifecycle native bridge; Settings navigation cùng audio runtime/assets; SL-034 mở rộng SettingsScreen do SL-030 sở hữu. Cập nhật hard dependencies; thêm D11 cho sound default/asset/user scope. Draft P6.0 vẫn không được sửa hoặc xem là đã duyệt.
 - v0.5: Sửa review mới trên PR #24: owner-read `users/{uid}` chuyển tới SL-003 trước login và SL-004 kiểm chứng flow; SL-014 sở hữu PIN navigation; SL-020 route qua reconciliation summary; SL-025 đăng ký callable entrypoint; SL-033 phụ thuộc SL-023; SL-035 phụ thuộc các screen producers. Giữ default deny, edit allowlist ở SL-029, 37 IDs và draft status P6.0.
 - v0.6: Sửa review mới trên PR #24: SL-012 sở hữu History route/entry/navigation test; SL-019, SL-021 và SL-033 đăng ký Functions exports cùng discovery coverage; SL-023 nối GroupSummary tới Host settlement form rồi bill allocation; cập nhật draft revision header. Không tự chọn schedule D3/D10/E2, không sửa P6.0 backlog hoặc đổi product behavior.
+- v0.7: Sửa review mới trên PR #24: SL-036 không thể tự gỡ hard release gate của SL-037 khi defer; SL-024 phụ thuộc SL-018 vì dùng frozen score; SL-032 phụ thuộc SL-013/014 vì nghiệm thu room quota/capacity. Đồng bộ blocker và dependency index; giữ nguyên accepted ADR-007 scope, D3/D5/D6/D9 và draft status.
 
 **Trạng thái corrections:** [SL-003 review](./superpowers/reviews/2026-10-13-sl-003-registration-profile-review-plan.md), [SL-005 review](./superpowers/reviews/2026-10-13-sl-005-sensor-availability-review-plan.md), [SL-007 review](./superpowers/reviews/2026-10-13-sl-007-foreground-detection-review-plan.md), [SL-009 review](./superpowers/reviews/2026-10-13-sl-009-android-recovery-review-plan.md), [SL-010 review](./superpowers/reviews/2026-10-13-sl-010-ios-recovery-review-plan.md), [SL-013 review](./superpowers/reviews/2026-10-13-sl-013-room-create-review-plan.md), [SL-016 review](./superpowers/reviews/2026-10-13-sl-016-room-lobby-start-review-plan.md), [SL-028 review](./superpowers/reviews/2026-10-13-sl-028-group-history-review-plan.md), [SL-029 review](./superpowers/reviews/2026-10-13-sl-029-profile-edit-review-plan.md), [SL-030 review](./superpowers/reviews/2026-10-13-sl-030-feedback-settings-review-plan.md), [SL-031 review](./superpowers/reviews/2026-10-13-sl-031-local-premium-review-plan.md), [SL-034 review](./superpowers/reviews/2026-10-13-sl-034-premium-themes-review-plan.md), [SL-037 review](./superpowers/reviews/2026-10-13-sl-037-mvp-release-review-plan.md).
 
 Review batch v0.5: [SL-014](./superpowers/reviews/2026-10-13-sl-014-room-join-pin-review-plan.md), [SL-020](./superpowers/reviews/2026-10-13-sl-020-room-completion-review-plan.md), [SL-025](./superpowers/reviews/2026-10-13-sl-025-bill-overrides-review-plan.md), [SL-033](./superpowers/reviews/2026-10-13-sl-033-retention-review-plan.md), [SL-035](./superpowers/reviews/2026-10-13-sl-035-free-tier-ads-review-plan.md); SL-003 profile owner-read is appended to its existing review report.
 
 Review batch v0.6: [SL-012](./superpowers/reviews/2026-10-13-sl-012-solo-history-review-plan.md), [SL-019](./superpowers/reviews/2026-10-13-sl-019-termination-vote-review-plan.md), [SL-021](./superpowers/reviews/2026-10-13-sl-021-host-finalization-override-review-plan.md), [SL-023](./superpowers/reviews/2026-10-13-sl-023-settlement-details-review-plan.md), [SL-033](./superpowers/reviews/2026-10-13-sl-033-retention-review-plan.md), [Index](./superpowers/reviews/2026-10-13-implementation-plan-review-plan.md).
+
+Review batch v0.7: [SL-024](./superpowers/reviews/2026-10-13-sl-024-default-bill-review-plan.md), [SL-032](./superpowers/reviews/2026-10-13-sl-032-server-premium-review-plan.md), [SL-036](./superpowers/reviews/2026-10-13-sl-036-advanced-leaderboard-review-plan.md).
