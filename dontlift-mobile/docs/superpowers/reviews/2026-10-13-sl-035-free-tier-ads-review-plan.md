@@ -5,6 +5,20 @@
 **Nguồn:** [PR #24](https://github.com/coder-fishing/DontLift-Mobile/pull/24), reviewed commit `4e681b6`.
 **Execution scope:** Chỉ sửa hard dependencies/index/report; không chọn provider hoặc cài SDK.
 
+## PR24-4259477717
+
+- **Status:** RESOLVED
+- **Severity:** Medium
+- **Category:** FR-06 ad placement coverage
+- **Location:** D7, dependency header, file inventory, acceptance và `docs/implementation-plan.md`.
+- **Problem:** Plan followed the lower-priority Profile placement and omitted Home/SoloSelect required by PRD FR-06; Home's producer SL-006 was not a dependency.
+- **Recommendation:** Include Home and depend on its producer, or resolve the source conflict explicitly under D7.
+- **Created At:** 2026-10-13, review trên commit `45d52aa`.
+- **Updated By:** Codex.
+- **Updated At:** 2026-10-13, Asia/Saigon.
+- **Review reference:** [P2 finding](https://github.com/coder-fishing/DontLift-Mobile/pull/24#discussion_r4259477717).
+- **Response:** SL-035 nay phụ thuộc SL-006, tích hợp banner vào `SoloSelectScreen` (Home) và kiểm tra đúng bốn placement FR-06: Home, Lobby, History, Settings; Profile bị bỏ khỏi inventory. D7 giữ blocker để xử lý rõ mâu thuẫn trong ví dụ US-18/Product Design với FR-06; kế hoạch tuân [AGENTS.md dòng 17–18](../../../AGENTS.md#L17-L18) về precedence PRD trên Product Design.
+
 ## PR24-4255952642
 
 - **Status:** RESOLVED
@@ -35,5 +49,6 @@
 
 ## Self-review
 
-- Dependency graph remains acyclic; all referenced producers precede SL-035.
-- D7 and test-mode/native evidence requirements remain unchanged; no SDK is selected or installed.
+- Dependency graph remains acyclic; SL-006, SL-012, SL-013/016 and SL-030/031 precede SL-035.
+- D7 and test-mode/native evidence requirements remain; no SDK is selected or installed.
+- Plan scope follows FR-06; any additional Profile placement needs an explicit decision under D7.

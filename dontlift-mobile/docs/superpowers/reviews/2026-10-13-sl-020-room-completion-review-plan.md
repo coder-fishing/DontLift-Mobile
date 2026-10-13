@@ -23,3 +23,22 @@
 
 - Finding is resolved at plan-ownership level only; route/device behavior remains unimplemented and unverified.
 - Existing completion contracts and stable slice IDs are preserved.
+
+## PR24-4259477680
+
+- **Status:** RESOLVED
+- **Severity:** High
+- **Category:** Early-exit reconciliation dependency and ACK
+- **Location:** SL-020 dependency header, complete/ACK tasks and acceptance; `docs/implementation-plan.md` row SL-020.
+- **Problem:** SL-020 could freeze the pending-member set before SL-018 owns early-exit cutoff and late pre-cutoff event handling, leaving reconciliation pending or finalizing without eligible events.
+- **Recommendation:** Add SL-018 as a prerequisite and test room completion after approved early exit.
+- **Created At:** 2026-10-13, review trên commit `45d52aa`.
+- **Updated By:** Codex.
+- **Updated At:** 2026-10-13, Asia/Saigon.
+- **Review reference:** [P1 finding](https://github.com/coder-fishing/DontLift-Mobile/pull/24#discussion_r4259477680).
+- **Response:** SL-020 nay phụ thuộc SL-018, giữ exit member trong pending reconciliation tới khi eligible pre-cutoff events durable và ACK hợp đồng qua `endedAt`; test integration cover delivery sau completion, không finalize sớm/kẹt PENDING, và không đổi frozen exit stats bằng event sau cutoff. D3 còn chặn exact cutoff/ACK concurrency semantics; [AGENTS.md dòng 14–17](../../../AGENTS.md#L14-L17) giữ architecture/API làm nguồn ưu tiên.
+
+## Self-review update
+
+- Dependency SL-017 → SL-018 → SL-020 is acyclic; SL-021 remains downstream of SL-020.
+- No wire fields or early-exit policies were invented; D3 remains an execution blocker until approved.

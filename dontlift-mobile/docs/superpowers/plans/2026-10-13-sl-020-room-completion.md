@@ -8,14 +8,14 @@
 
 **Slice:** SL-020. **Ưu tiên đề xuất:** P0. **Release:** MVP + activation/Premium; post-MVP deferred. SL-036 chỉ được tính release sau D6.
 
-**Trạng thái kế hoạch:** DRAFT — chưa được human duyệt.
+**Trạng thái kế hoạch:** DRAFT — chưa được human duyệt; bị chặn bởi D3 cho interaction early-exit cutoff với reconciliation.
 **Trạng thái implementation quan sát:** End chỉ navigate sang bill, không reconcile. Chưa có evidence nghiệm thu slice.
 **Baseline khảo sát:** docs/p6.0-implementation-slices tại 57ca1eb28a2952c66d01f89b9b89bf755ab4812a.
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Plan slug:** `2026-10-13-sl-020-room-completion`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-020-room-completion]`.
 **Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13, chưa được phê duyệt. User đã yêu cầu ghi draft P6.1 cho cả 37 slice; không suy thành approval thực thi.
 **Traceability:** US-12; API §5.1–5.2; ADR-003; V06.
-**Phụ thuộc bắt buộc:** [SL-017](./2026-10-13-sl-017-group-active.md)
+**Phụ thuộc bắt buộc:** [SL-017](./2026-10-13-sl-017-group-active.md), [SL-018](./2026-10-13-sl-018-early-exit.md)
 **Ưu tiên mềm:** Theo thứ tự đề xuất trong [mục lục](../../implementation-plan.md); thứ tự không tạo thêm hard dependency.
 
 ## 1. Nguồn và ranh giới
@@ -32,7 +32,7 @@ V01–V10 chỉ các màn tương ứng tại `design/concepts/concept-final/scr
 
 ## 2. Blocker, risk và quyết định cần duyệt
 
-- Không có blocker riêng được xác nhận trong draft; dependency và quyền/runtime vẫn phải đạt gate trước thực thi.
+- **D3:** Chốt early-exit cutoff, eligible late-event/ACK outcomes và concurrency với `completeRoom`; SL-018 phải hoàn tất phần sync cutoff trước SL-020.
 
 **Rủi ro cụ thể:** In-flight flush/ACK race; field pendingMemberUids Host-only.
 
@@ -53,6 +53,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | `functions/src/complete-room.cjs` | Backend boundary của slice; server identity/validation/transaction. |
 | `functions/src/acknowledge-member-sync.cjs` | Backend boundary của slice; server identity/validation/transaction. |
 | `functions/index.js` | Backend boundary của slice; server identity/validation/transaction. |
+| `functions/tests/room-completion-early-exit.test.cjs` | Integration coverage SL-018 × SL-020 cho pre-cutoff event, pending membership, ACK và finalization sau approved early exit. |
 | `__tests__/room-completion.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
 | `__tests__/room-completion-navigation.test.ts` | Kiểm chứng End → GroupSummary, PENDING gate và ALL_SYNCED continuation; không dùng mock để claim Rules/Functions integration. |
 | `functions/tests/room-completion.test.cjs` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
@@ -103,13 +104,15 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - [ ] Non-Host complete → deny.
 - [ ] Duplicate complete → endedAt và pending count không đổi.
 - [ ] Member ACK trước đủ flush → failed-precondition.
+- [ ] Approved early-exit Member có eligible pre-cutoff event chưa đến server → complete vẫn giữ reconciliation PENDING cho tới khi event durable và ACK hợp lệ.
 
 - [ ] Chạy focused command trong mục 7; xác nhận failure đúng behavior đang thiếu, không từ toolchain lỗi.
 - [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
 
-1. Host-only complete freezes endedAt và pending relevant Members trong transaction/receipt.
-2. Member flush eligible events rồi ACK through authoritative endedAt; server verify completeness.
-3. ACK count giảm một lần; zero pending atomically finalizes ALL_SYNCED, bill gate mở.
+1. Host-only complete freezes endedAt và pending relevant Members trong transaction/receipt; không loại Member đã early-exit chỉ vì status đổi nếu còn eligible pre-cutoff event cần sync/ACK.
+2. Approved early-exit Member flushes mọi event được SL-018 xác định eligible tới cutoff; `syncEvents` nhận late pre-cutoff delivery theo D3, rồi ACK vẫn phải satisfy contract synced-through `endedAt` mà không đòi event mới sau cutoff.
+3. Server kiểm tra cutoff, durable receipts/aggregate và ACK trong boundary phù hợp; post-cutoff event không đổi frozen exit stats hoặc settlement.
+4. ACK count giảm một lần; zero pending atomically finalizes ALL_SYNCED, bill gate mở.
 
 - [ ] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
 - [ ] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-020-room-completion]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-020-room-completion.md` và `Task: 1`.
@@ -124,6 +127,7 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 
 - [ ] Duplicate ACK → count giảm một lần.
 - [ ] ACK cuối cùng → ALL_SYNCED và FINALIZED.
+- [ ] Room complete sau approved early exit có pending pre-cutoff event → không finalize sớm hoặc kẹt PENDING sau khi eligible event đã durable và Member ACKs through endedAt.
 - [ ] Bill request khi PENDING → bị chặn.
 
 - [ ] Chạy focused checks, xác nhận failure đúng behavior; giữ fixtures tách khỏi device evidence.
@@ -131,8 +135,9 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 
 1. Tất cả participants thấy summary/reconciliation state; không navigate bill giả ngay End.
 2. Network/service failure giữ retry context; unsynced Member hiển thị riêng cho Host.
-3. Early-exit/cancel/abort ownership không được tự suy; eligibility cần khớp accepted contract.
-4. GroupActive End → gọi completeRoom rồi mở GroupSummaryScreen; PENDING không mở settlement/bill flow, FINALIZED/ALL_SYNCED mới cho phép tiếp tục. SL-021 mở rộng cùng route bằng Host-override state/warning, không tạo luồng summary thứ hai.
+3. Early-exit Member vẫn nằm trong membership/history/settlement; pending set và ACK chỉ được chốt sau khi mọi event eligible trước cutoff được xử lý theo SL-018/D3.
+4. Event sau cutoff không tăng frozen exit stats; event trước cutoff đến sau room completion vẫn được xử lý đúng contract, và ACK không thể làm receipt/aggregate bị bỏ qua.
+5. GroupActive End → gọi completeRoom rồi mở GroupSummaryScreen; PENDING không mở settlement/bill flow, FINALIZED/ALL_SYNCED mới cho phép tiếp tục. SL-021 mở rộng cùng route bằng Host-override state/warning, không tạo luồng summary thứ hai.
 
 - [ ] Thực hiện các kịch bản nghiệm thu trực tiếp trong mục 6; thu logs an toàn/device timestamps khi cần.
 - [ ] Review kết quả; một branch fail hoặc thiếu required device/emulator evidence thì slice chưa hoàn thành.
@@ -145,6 +150,8 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - [ ] Member ACK trước đủ flush → failed-precondition.
 - [ ] Duplicate ACK → count giảm một lần.
 - [ ] ACK cuối cùng → ALL_SYNCED và FINALIZED.
+- [ ] Approved early-exit Member có pre-cutoff event đang chờ lúc Host complete → pending set giữ Member; event giao sau completion vẫn được ghi nhận theo SL-018/D3, rồi ACK qua endedAt finalizes đúng một lần.
+- [ ] Early-exit Member không có event sau cutoff vẫn có thể hoàn tất ACK contract qua endedAt; mọi eligible pre-cutoff event phải đã durable trước finalization.
 - [ ] Bill request khi PENDING → bị chặn.
 - [ ] End từ GroupActive → GroupSummaryScreen hiển thị PENDING và chặn bill/settlement navigation.
 - [ ] ALL_SYNCED/FINALIZED → GroupSummaryScreen cho phép continuation tới bước settlement kế tiếp.
@@ -159,7 +166,7 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 
 ## 7. Verification và ghi nhận evidence
 
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/room-completion.test.ts __tests__/room-completion-navigation.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/room-completion.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/room-completion.test.ts __tests__/room-completion-navigation.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/room-completion.test.cjs` and `node --test functions/tests/room-completion-early-exit.test.cjs`; latter requires SL-018 boundary and sync emulator coverage. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 

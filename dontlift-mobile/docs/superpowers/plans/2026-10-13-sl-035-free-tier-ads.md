@@ -15,7 +15,7 @@
 **Plan slug:** `2026-10-13-sl-035-free-tier-ads`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-035-free-tier-ads]`.
 **Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13, chưa được phê duyệt. User đã yêu cầu ghi draft P6.1 cho cả 37 slice; không suy thành approval thực thi.
 **Traceability:** US-18; FR-06; ADR-007; UX §7.3.
-**Phụ thuộc bắt buộc:** [SL-012](./2026-10-13-sl-012-solo-history.md), [SL-013](./2026-10-13-sl-013-room-create.md), [SL-016](./2026-10-13-sl-016-room-lobby-start.md), [SL-029](./2026-10-13-sl-029-profile-edit.md), [SL-030](./2026-10-13-sl-030-feedback-settings.md), [SL-031](./2026-10-13-sl-031-local-premium.md)
+**Phụ thuộc bắt buộc:** [SL-006](./2026-10-13-sl-006-solo-start.md), [SL-012](./2026-10-13-sl-012-solo-history.md), [SL-013](./2026-10-13-sl-013-room-create.md), [SL-016](./2026-10-13-sl-016-room-lobby-start.md), [SL-030](./2026-10-13-sl-030-feedback-settings.md), [SL-031](./2026-10-13-sl-031-local-premium.md)
 **Ưu tiên mềm:** Theo thứ tự đề xuất trong [mục lục](../../implementation-plan.md); thứ tự không tạo thêm hard dependency.
 
 ## 1. Nguồn và ranh giới
@@ -32,7 +32,7 @@ V01–V10 chỉ các màn tương ứng tại `design/concepts/concept-final/scr
 
 ## 2. Blocker, risk và quyết định cần duyệt
 
-- **D7:** Duyệt provider ads, test credentials, placements và consent requirements áp dụng.
+- **D7:** Duyệt provider ads, test credentials, placements và consent. PRD FR-06 yêu cầu Home/Lobby/History/Settings, còn ví dụ US-18 và Product Design §7.3 có Profile nhưng thiếu Home; plan theo FR-06 theo source precedence. Chỉ thêm Profile nếu D7 ghi quyết định placement rõ ràng.
 
 **Rủi ro cụ thể:** D7 và native rebuild; no unsolicited ads permission setup trong authoring.
 
@@ -47,9 +47,9 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | `src/features/ads/ad-eligibility.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/features/ads/ad-provider-adapter.ts` | Adapter của SDK provider được D7 duyệt; không chọn hoặc tích hợp provider trước khi blocker được giải quyết. |
 | `src/components/NonSessionBannerAd.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
+| `src/screens/SoloSelectScreen.tsx` | Home placement được FR-06 yêu cầu; mở rộng screen do SL-006 sở hữu. |
 | `src/screens/SettingsScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
 | `src/screens/HistoryScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
-| `src/screens/ProfileScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
 | `src/screens/GroupLobbyScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
 | `package.json` | SL-035 sở hữu việc chọn và khai báo SDK quảng cáo tương thích Expo/native targets sau khi D7 duyệt provider. |
 | `package-lock.json`, `pnpm-lock.yaml` | SL-035 sở hữu cập nhật đồng bộ cả hai lockfile khi thêm SDK theo quy tắc repo. |
@@ -87,7 +87,9 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Đọc lại source/spec và xác nhận tất cả blocker cùng dependency cho task đã được giải quyết; nếu chưa, dừng execution và báo đúng blocker.
 - [ ] Viết focused failing cases sau đây; runner không tìm thấy hoặc thiếu dependency không được tính là red nghiệp vụ.
 
+- [ ] Free Home/SoloSelect allowed → eligible.
 - [ ] Free lobby allowed → eligible.
+- [ ] Free History and Settings allowed → eligible.
 - [ ] Free active Solo → no request/render.
 - [ ] Free active Group → no request/render.
 
@@ -98,7 +100,8 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 2. Sau D7, SL-035 chọn SDK tương thích Expo/native targets, cập nhật `package.json` và cả hai lockfile, rồi cấu hình `app.json` theo yêu cầu thật của SDK và consent policy đã duyệt.
 3. Dùng test IDs/test mode được provider chỉ định; không dùng live placement để kiểm thử.
 4. Active Solo/Group hoặc Local Premium → không request/render banner.
-5. Chỉ dùng placements non-session đã duyệt; no-fill/loading failure không cản journey.
+5. Gắn đúng FR-06 placements: Home/SoloSelect, Lobby, History và Settings; Profile không được thêm nếu chưa có explicit D7 decision.
+6. No-fill/loading failure không cản journey.
 
 - [ ] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
 - [ ] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-035-free-tier-ads]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-035-free-tier-ads.md` và `Task: 1`.
@@ -129,12 +132,13 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 ## 6. Nghiệm thu và failure outcomes
 
 - [ ] Free lobby allowed → eligible.
+- [ ] Free Home/SoloSelect, History and Settings → eligible according to D7 consent/provider policy.
 - [ ] Free active Solo → no request/render.
 - [ ] Free active Group → no request/render.
 - [ ] Local Premium server Free → ad-free.
 - [ ] No-fill/error → journey vẫn usable.
 - [ ] Entitlement change trong màn → banner suppressed.
-- [ ] Test SDK trên devices và routes → đúng placements, no session ads.
+- [ ] Test SDK trên devices và routes → đúng Home/SoloSelect, Lobby, History, Settings placements; không hiển thị ở Profile nếu chưa được D7 duyệt và không có session ads.
 - [ ] SDK test mode hiển thị banner trên Android và iOS ở placements được duyệt; consent cho phép/từ chối/chưa chọn → SDK request/render đúng policy đã được D7 duyệt.
 - [ ] Consent flow thực tế và layout/contrast/touch không bị banner che.
 

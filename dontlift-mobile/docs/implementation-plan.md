@@ -1,6 +1,6 @@
 # P6.1 — Mục lục kế hoạch DontLift
 
-> **DRAFT v0.12 — backlog và implementation plans chưa được phê duyệt.** Đây là bộ kế hoạch được user yêu cầu soạn và lưu để review cho 37 slice, không phải backlog P6.0 đã duyệt và không phải quyền chạy P6.2.
+> **DRAFT v0.13 — backlog và implementation plans chưa được phê duyệt.** Đây là bộ kế hoạch được user yêu cầu soạn và lưu để review cho 37 slice, không phải backlog P6.0 đã duyệt và không phải quyền chạy P6.2.
 
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Baseline:** `docs/p6.0-implementation-slices`, commit `57ca1eb28a2952c66d01f89b9b89bf755ab4812a`.
@@ -52,7 +52,7 @@ P0 là nền tảng/critical journey trước; P1 là cần hoàn tất MVP; P2 
 | SL-017 | [Group active, capture và leaderboard](./superpowers/plans/2026-10-13-sl-017-group-active.md) | P0 | SL-016, SL-007, SL-009, SL-010, SL-011 | D3 |
 | SL-018 | [Early exit có Host quyết định](./superpowers/plans/2026-10-13-sl-018-early-exit.md) | P1 | SL-017 | D3 |
 | SL-019 | [Vote kết thúc sớm](./superpowers/plans/2026-10-13-sl-019-termination-vote.md) | P1 | SL-017, SL-018 | D3 |
-| SL-020 | [Host complete và ALL_SYNCED reconciliation](./superpowers/plans/2026-10-13-sl-020-room-completion.md) | P0 | SL-017 | Không xác nhận riêng |
+| SL-020 | [Host complete và ALL_SYNCED reconciliation](./superpowers/plans/2026-10-13-sl-020-room-completion.md) | P0 | SL-017, SL-018 | D3 |
 | SL-021 | [Host override khi còn Member chưa sync](./superpowers/plans/2026-10-13-sl-021-host-finalization-override.md) | P1 | SL-020 | Không xác nhận riêng |
 | SL-022 | [Stale room chuyển ABORTED](./superpowers/plans/2026-10-13-sl-022-stale-room-abort.md) | P1 | SL-017 | D3 |
 | SL-023 | [Host nhập thông tin nhận tiền](./superpowers/plans/2026-10-13-sl-023-settlement-details.md) | P1 | SL-020 | Không xác nhận riêng |
@@ -67,7 +67,7 @@ P0 là nền tảng/critical journey trước; P1 là cần hoàn tất MVP; P2 
 | SL-032 | [Redeem online và Server Premium](./superpowers/plans/2026-10-13-sl-032-server-premium.md) | P1 | SL-013, SL-014, SL-031 | D5 |
 | SL-033 | [Retention local và server](./superpowers/plans/2026-10-13-sl-033-retention.md) | P1 | SL-012, SL-023, SL-028, SL-031, SL-032 | D10 |
 | SL-034 | [Chọn custom theme](./superpowers/plans/2026-10-13-sl-034-premium-themes.md) | P1 | SL-005, SL-008, SL-012, SL-015, SL-019, SL-020, SL-024, SL-026, SL-028, SL-029, SL-030, SL-031 | D6 |
-| SL-035 | [Quảng cáo đúng tier và màn hình](./superpowers/plans/2026-10-13-sl-035-free-tier-ads.md) | P1 | SL-012, SL-013, SL-016, SL-029, SL-030, SL-031 | D7 |
+| SL-035 | [Quảng cáo đúng tier và màn hình](./superpowers/plans/2026-10-13-sl-035-free-tier-ads.md) | P1 | SL-006, SL-012, SL-013, SL-016, SL-030, SL-031 | D7 |
 | SL-036 | [Advanced leaderboard theo Server Premium](./superpowers/plans/2026-10-13-sl-036-advanced-leaderboard.md) | P2 | SL-017, SL-032 | D6 |
 | SL-037 | [Nghiệm thu MVP và phát hành đúng environment](./superpowers/plans/2026-10-13-sl-037-mvp-release.md) | P1 | SL-001–SL-036 | D1, D6, E1, E2, E3 |
 
@@ -79,11 +79,11 @@ SL-037 phụ thuộc bắt buộc SL-001–SL-036 vì phạm vi đã chọn gồ
 |---|---|
 | D1 | Thống nhất tiếp nhận quyết định emulator/dev từ feature/registration-login; xác nhận environment/config và production vẫn riêng. Không provision/deploy khi chưa được cấp quyền. |
 | D2 | Tiếp nhận hoặc duyệt ADR-009 và wire contract completeRegistrationProfile từ nhánh Auth; chúng chưa thuộc baseline này. |
-| D3 | Chốt wire/schema/error/concurrency cho start/early-exit/vote/heartbeat nếu slice dùng chúng; chốt syncEvents cho violation đang kéo dài khi áp dụng. Không đoán payload từ responsibility table. |
+| D3 | Chốt wire/schema/error/concurrency cho start/early-exit/vote/heartbeat nếu slice dùng chúng; chốt syncEvents cho violation đang kéo dài; chốt early-exit cutoff/eligible events với room-completion pending set và ACK. Không đoán payload từ responsibility table. |
 | D4 | Duyệt local completion/cutoff trigger, recovery/schema/identity và destination/projection/query/retention cho history nhóm và GROUP_SESSION_LOCAL_SUMMARY; local summary không tự complete room. |
 | D5 | Duyệt checksum cụ thể, test vectors, nguồn code hợp lệ và operational contract cấp code. Website/email mua Premium là external prerequisite, không tự implement. |
 | D6 | Duyệt theme catalog/default/downgrade và behavior advanced leaderboard; analytics nâng cao vẫn deferred. D6 tiếp tục chặn nghiệm thu SL-034/036 và downstream SL-037 cho tới khi các hành vi liên quan được chốt. |
-| D7 | Duyệt provider ads, test credentials, placements và consent requirements áp dụng. |
+| D7 | Duyệt provider ads, test credentials, placements và consent. Giải quyết rõ xung đột PRD: FR-06 bắt buộc Home/Lobby/History/Settings, còn ví dụ US-18 và Product Design có Profile nhưng thiếu Home; áp dụng FR-06 trừ khi có quyết định human mới hơn. |
 | D8 | Duyệt recalculation/override sau publication hoặc MARKED_AS_PAID: rule khóa/version/concurrency và outcome UI. |
 | D9 | Giải quyết wording non-zero base share khi bill nhỏ/nhiều Members đối nghịch integer/non-negative/exact-sum. Giữ invariant ADR-005; không tự tạo minimum bill per member. |
 | D10 | Chốt max retry/retention horizon và receipt TTL; xác định bảo vệ unsynced data trước purge, failed-event retention và expired-read policy. |
@@ -126,7 +126,7 @@ D3 chỉ chặn command/event semantics chưa có wire rõ; không blanket-block
 | FR-03 | 016–019 và 024–027: realtime authorized state |
 | FR-04 | 013/016/019/020/022: authoritative lifecycle |
 | FR-05 | 024/025: integer exact-sum shared rounding pipeline |
-| FR-06 | 033: purge; 035: nonintrusive ads; 013/014/032: entitlement limits |
+| FR-06 | 033: local runtime-triggered purge, server summary cleanup and Firestore TTL receipts; 035: nonintrusive ads on Home/Lobby/History/Settings; 013/014/032: entitlement limits |
 | NFR/SC-1 | 007/037: stationary false positives dưới 2%, sensor privacy |
 | NFR/SC-2 | 011/017/037: eventual delivery, duplicate-safe retry |
 | NFR/SC-3 | 024/025/037: zero bill discrepancy |
@@ -134,7 +134,7 @@ D3 chỉ chặn command/event semantics chưa có wire rõ; không blanket-block
 | NFR/SC-5 | 037: group completion rate trên 85% bằng cohort evidence |
 | Token/platform/latency | 002/004/009/010/017/037: native SDK security, Android/iOS, leaderboard không quá 2 giây sau confirmed và synced |
 
-Shared ownership: 001 sở hữu test harness/root lockfile changes; 002 native runtime/local emulator config/default-deny Rules và root lockfiles. 003 sở hữu SQLite dependency/database/migration foundation, backend Functions/Admin package/runtime/lockfiles, Rules test harness và callable emulator handshake; 006 chỉ mở rộng sessions migration/persistence. 007 sở hữu capture/outbox boundary; 011 mở rộng worker/server ingestion; 017 reuse cho group; 018 mở rộng syncEvents cho cutoff riêng của Member và owns cutoff/concurrency tests. 013 thêm room/member migration sau sessions migration SL-006. Rules và direct-read ownership được phân theo resource ở bảng dưới; 037 chỉ hợp nhất policy đã được resource tests xác nhận vào canonical firestore.rules và chạy lại cùng tests. 031 sở hữu local entitlement storage cùng SecureStore dependency/config/lockfiles, 032 server redemption. Không coi shared file là quyền refactor unrelated units.
+Shared ownership: 001 sở hữu test harness/root lockfile changes; 002 native runtime/local emulator config/default-deny Rules và root lockfiles. 003 sở hữu SQLite dependency/database/migration foundation, backend Functions/Admin package/runtime/lockfiles, Rules test harness và callable emulator handshake; 006 chỉ mở rộng sessions migration/persistence. 007 sở hữu capture/outbox boundary; 011 mở rộng worker/server ingestion; 017 reuse cho group; 018 mở rộng syncEvents cho cutoff riêng của Member và owns cutoff/concurrency tests; 033 mở rộng cùng syncEvents transaction để ghi receipt TTL timestamp theo D10. 013 thêm room/member migration sau sessions migration SL-006. Rules và direct-read ownership được phân theo resource ở bảng dưới; 037 hợp nhất policy đã được resource tests xác nhận vào canonical firestore.rules, chạy lại cùng tests và sở hữu cấu hình/evidence Firestore TTL qua tooling được hỗ trợ sau authorization. 031 sở hữu local entitlement storage cùng SecureStore dependency/config/lockfiles, 032 server redemption. Không coi shared file là quyền refactor unrelated units.
 
 | Resource/path | Slice sở hữu Rules và Emulator Suite | Quyền client dự kiến / giới hạn |
 |---|---|---|
@@ -148,7 +148,7 @@ Shared ownership: 001 sở hữu test harness/root lockfile changes; 002 native 
 | `rooms/{roomId}/billShares/{uid}` | 024 bill-share Rules; 025–027 reuse và kiểm tra consumer reads | Members đọc breakdown/status; chỉ calculation/payment callables ghi. |
 | Group-history queries trên room/member/violation/share resources hiện có | 028 kiểm chứng consumer query sau khi D4 chốt destination/projection | Không tạo path hoặc quyền mới trước D4; reuse Rules của producer cho mọi document được đọc. |
 | Advanced leaderboard read model nếu behavior D6 yêu cầu resource mới | 036 sau D6; nếu dùng projection hiện có thì reuse 017 | Chỉ audience/entitlement đã duyệt đọc; mọi projection writes server-only. |
-| PIN reservations, usage, command/sync receipts, activation codes, reconciliation audits | 013/014/017/020/021/032 tạo qua backend; Rules mặc định deny | Server-only; không cấp client read/write trực tiếp nếu contract không nêu rõ. |
+| PIN reservations, usage, command/sync receipts, activation codes, reconciliation audits | 013/014/017/020/021/032 tạo qua backend; 033 stamps approved `expiresAt` on `syncReceipts`; 037 configures and verifies Firestore TTL; Rules mặc định deny | Server-only; không cấp client read/write trực tiếp nếu contract không nêu rõ; TTL chỉ xóa receipt sau D10 horizon, không xóa domain records. |
 
 Mỗi resource owner chạy allowed/denied Emulator Suite tests bằng client SDK: member/owner được phép đọc, anonymous/outsider/cross-room bị deny, và client không thể tạo/sửa/xóa dữ liệu authoritative. Admin SDK chỉ seed fixture, không làm bằng chứng cho quyền client. Các schema/path đang chờ D3/D4/D6 vẫn là blocker; không đoán để làm test pass.
 
@@ -158,7 +158,7 @@ Mỗi resource owner chạy allowed/denied Emulator Suite tests bằng client SD
 2. 005 → 006 → 007 → 008; tiếp 009 và 010.
 3. 011 → 012.
 4. 013 → 014; tiếp 015 và 016 → 017.
-5. 018 → 019; 022 alongside 018/019; 020 → 021.
+5. 018 → 019/020; 022 alongside 018/019; 020 → 021.
 6. 023 → 024 → 025 và 026 → 027.
 7. 028/029/030.
 8. 031 → 032; tiếp 033/034/035; 036 sau decision.
@@ -190,6 +190,7 @@ Website mua Premium/code generation/email delivery là external operational prer
 - v0.10: SL-028 sở hữu local group-summary completion hook, schema/recorder/repository và atomic outbox enqueue, với rollback/restart/replay/reconnect coverage; D4 vẫn chặn trigger/schema chưa duyệt. SL-031 phụ thuộc SL-006 để giữ profile/session-before-entitlement migration acceptance. Không queue room completion command hoặc sửa canonical backlog.
 - v0.11: SL-018 sở hữu mở rộng syncEvents cho per-member cutoff và boundary/concurrency tests; D3 vẫn chặn policy chưa duyệt. SL-013 phụ thuộc SL-006 để room migration theo sau sessions migration, giữ version và dữ liệu cũ.
 - v0.12: SL-022 sở hữu authenticated server heartbeat write path, Functions export, authorization/client-denial Emulator Suite và discovery coverage sau khi D3 chốt contract. SL-019 phụ thuộc SL-018 và kiểm chứng early-exit Member vẫn retained nhưng không làm voter unanimity bất khả thi. Giữ nguyên D3, IDs và trạng thái draft.
+- v0.13: SL-020 phụ thuộc SL-018 và kiểm chứng completion/ACK khi early-exit events còn chờ; SL-033 gọi local purge ở app startup/resume, ghi receipt `expiresAt` và dùng native Firestore TTL do SL-037 deploy; SL-035 phụ thuộc SL-006 và theo placement FR-06, ghi xung đột Profile/Home dưới D7. Giữ nguyên 37 IDs, P6.0 draft và D10/D7 gates.
 
 **Trạng thái corrections:** [SL-003 review](./superpowers/reviews/2026-10-13-sl-003-registration-profile-review-plan.md), [SL-005 review](./superpowers/reviews/2026-10-13-sl-005-sensor-availability-review-plan.md), [SL-007 review](./superpowers/reviews/2026-10-13-sl-007-foreground-detection-review-plan.md), [SL-009 review](./superpowers/reviews/2026-10-13-sl-009-android-recovery-review-plan.md), [SL-010 review](./superpowers/reviews/2026-10-13-sl-010-ios-recovery-review-plan.md), [SL-013 review](./superpowers/reviews/2026-10-13-sl-013-room-create-review-plan.md), [SL-016 review](./superpowers/reviews/2026-10-13-sl-016-room-lobby-start-review-plan.md), [SL-028 review](./superpowers/reviews/2026-10-13-sl-028-group-history-review-plan.md), [SL-029 review](./superpowers/reviews/2026-10-13-sl-029-profile-edit-review-plan.md), [SL-030 review](./superpowers/reviews/2026-10-13-sl-030-feedback-settings-review-plan.md), [SL-031 review](./superpowers/reviews/2026-10-13-sl-031-local-premium-review-plan.md), [SL-034 review](./superpowers/reviews/2026-10-13-sl-034-premium-themes-review-plan.md), [SL-037 review](./superpowers/reviews/2026-10-13-sl-037-mvp-release-review-plan.md).
 
@@ -208,3 +209,5 @@ Review batch v0.10: [SL-028](./superpowers/reviews/2026-10-13-sl-028-group-histo
 Review batch v0.11: [SL-018](./superpowers/reviews/2026-10-13-sl-018-early-exit-review-plan.md) sở hữu mở rộng syncEvents cho per-member cutoff và boundary/concurrency tests; D3 vẫn chặn policy chưa duyệt. [SL-013](./superpowers/reviews/2026-10-13-sl-013-room-create-review-plan.md) thêm hard dependency SL-006 để room migration theo sau sessions migration thật, giữ version và dữ liệu cũ.
 
 Review batch v0.12: [SL-022](./superpowers/reviews/2026-10-13-sl-022-stale-room-abort-review-plan.md) bổ sung server heartbeat writer và authorization/discovery coverage; [SL-019](./superpowers/reviews/2026-10-13-sl-019-termination-vote-review-plan.md) thêm SL-018 hard dependency và early-exit/vote roster integration case.
+
+Review batch v0.13: [SL-020](./superpowers/reviews/2026-10-13-sl-020-room-completion-review-plan.md) thêm early-exit reconciliation dependency/cases; [SL-033](./superpowers/reviews/2026-10-13-sl-033-retention-review-plan.md) nối local retention runtime và receipt TTL ownership; [SL-035](./superpowers/reviews/2026-10-13-sl-035-free-tier-ads-review-plan.md) khôi phục Home placement/dependency và ghi rõ D7 source conflict.

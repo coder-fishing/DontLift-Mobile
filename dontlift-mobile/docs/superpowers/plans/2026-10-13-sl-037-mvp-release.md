@@ -51,8 +51,8 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | `firebase.json` | SL-037 tạo canonical deployment wiring cho Rules/indexes/Functions source/runtime; không lấy emulator config làm production config ngầm. |
 | `firestore.rules` | SL-037 tiếp nhận policy đã kiểm chứng từ firestore.emulator.rules và re-test đúng canonical file; không tự redesign quyền. |
 | `firestore.indexes.json` | SL-037 sở hữu index manifest từ query inventory các slice đã nghiệm thu; validate queries trên approved dev environment. |
+| `docs/firebase-deployment.md` | SL-037 hướng dẫn explicit aliases/environment, config validation/deploy order/smoke, Firestore TTL policy cho `users/{uid}/syncReceipts` (`expiresAt` field, D10-approved horizon) và enablement/verification qua supported Firestore tooling per authorized database; không credentials hoặc scheduled cleanup thay TTL. |
 | `functions/package.json` | Reuse bootstrap SL-003; kiểm tra engine/region/source compatibility, không bootstrap backend thứ hai. |
-| `docs/firebase-deployment.md` | Hướng dẫn explicit aliases, config validation/deploy order/smoke và stop conditions; không credentials. |
 | `docs/query-index-inventory.md` | Ghi query owner, filters/order/cursor, index requirements và verification evidence từ từng slice; không đoán indexes. |
 | `functions/tests/deployment-config.test.cjs` | Config validation/alias separation và missing-prerequisite failures, không deploy trong test. |
 | `docs/release-verification.md` | Evidence hoặc hướng dẫn thực thi sau approval; không được ghi claimed pass thiếu bằng chứng. |
@@ -92,6 +92,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Tạo firebase.json với canonical Rules/index paths và Functions source/runtime đã có từ SL-003; xác nhận region theo adapter/backend, không invent runtime.
 - [ ] Tiếp nhận firestore.emulator.rules vào firestore.rules có traceability theo owner SL-012/016/017/018/019/023/024/029/036; re-run mọi resource Rules suite với chính canonical policy, không giữ hai policies lệch nhau. D3/D6 resource nào chưa được duyệt thì giữ blocker, không thêm policy đoán.
 - [ ] Thu query inventory từ history/room/member/bill/settlement listeners; tạo index manifest chỉ cho query thật và validate trên approved development database khi có quyền.
+- [ ] Sau D10 approval, cấu hình Firestore TTL cho collection group `syncReceipts` trên field `expiresAt` bằng supported Google Cloud Console/gcloud tooling; xác nhận policy applied trên đúng authorized database/environment và ghi evidence trong `docs/firebase-deployment.md`. Không đặt TTL declaration vào `firestore.indexes.json` hoặc thêm receipt purge Function.
 - [ ] Chạy config tests: missing IDs → blocker; same dev/prod project → reject; missing source/rules/index path hoặc unsupported runtime → reject; deployment target production khi chưa authorized → reject.
 - [ ] Emulator validation/config review xong vẫn chưa deploy. Chỉ sau quyền deploy cụ thể mới thực hiện Rules → indexes → Functions → scheduled jobs/TTL → backend smoke → binary theo ADR-006.
 - [ ] Development smoke pass và production authorization là gate riêng trước production deployment/build. Lưu exact environment/config/revision/results, không fake PASS.
