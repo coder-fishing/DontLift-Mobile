@@ -48,8 +48,10 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | `src/screens/GroupSummaryScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
 | `functions/src/finalize-room-scores.cjs` | Backend boundary của slice; server identity/validation/transaction. |
 | `functions/src/sync-events.cjs` | Backend boundary của slice; server identity/validation/transaction. |
+| `functions/index.js` | Đăng ký callable finalization, giữ nguyên export syncEvents do SL-018 sở hữu và dùng bootstrap SL-003 hiện có. |
 | `__tests__/host-finalization-override.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
 | `functions/tests/host-finalization-override.test.cjs` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
+| `functions/tests/host-finalization-discovery.test.cjs` | Kiểm tra callable finalization được export và syncEvents hiện hữu vẫn được discover. |
 
 **Unit:** finalizeRoomScores.
 **Nhận:** Host confirmation đúng warning, PENDING room và unsynced membership.
@@ -119,6 +121,7 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - [ ] Override khi đã finalized → safe contract error.
 - [ ] Late valid event → excludedFromFinalScore, bill giữ nguyên.
 - [ ] Concurrent last ACK/override → một terminal finalization.
+- [ ] Chạy `functions/tests/host-finalization-discovery.test.cjs` → callable finalization được discover và syncEvents hiện hữu vẫn nguyên vẹn.
 
 - [ ] Chạy focused checks, xác nhận failure đúng behavior; giữ fixtures tách khỏi device evidence.
 - [ ] Tích hợp theo thứ tự:
@@ -126,6 +129,7 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 1. Không confirm → không command; loading/error cho phép safe retry.
 2. Late valid event vẫn vào history với exclusion reason HOST_OVERRIDE; không sửa frozen score/bill.
 3. ACK cuối và override đồng thời → một finalization canonical, không hai outcomes mâu thuẫn.
+4. Đăng ký callable finalization trong entrypoint SL-003; không đăng ký lại hoặc thay bootstrap của syncEvents từ SL-018.
 
 - [ ] Thực hiện các kịch bản nghiệm thu trực tiếp trong mục 6; thu logs an toàn/device timestamps khi cần.
 - [ ] Review kết quả; một branch fail hoặc thiếu required device/emulator evidence thì slice chưa hoàn thành.
@@ -141,6 +145,7 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - [ ] Concurrent last ACK/override → một terminal finalization.
 - [ ] Host confirm khi một device offline → inspect audit và warning evidence.
 - [ ] Device offline reconnect → history cập nhật, QR/bill không thay đổi.
+- [ ] Functions discovery → callable finalization khả dụng và syncEvents vẫn được export đúng một lần.
 
 Mỗi case phải có actual result. Unit cases dùng controlled fixtures để chứng minh domain; Firebase boundary cần Rules/Functions emulator tests cho allowed/denied/replay/concurrency khi áp dụng. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.
 
@@ -148,7 +153,7 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 
 ## 7. Verification và ghi nhận evidence
 
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/host-finalization-override.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/host-finalization-override.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/host-finalization-override.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/host-finalization-override.test.cjs` và `node --test functions/tests/host-finalization-discovery.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 

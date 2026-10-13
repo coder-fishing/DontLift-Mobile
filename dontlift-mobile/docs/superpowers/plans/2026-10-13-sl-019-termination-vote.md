@@ -51,8 +51,10 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | `src/screens/GroupActiveScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
 | `functions/src/termination-vote.cjs` | Backend boundary của slice; server identity/validation/transaction. |
 | `functions/src/cleanup-expired-votes.cjs` | Backend boundary của slice; server identity/validation/transaction. |
+| `functions/index.js` | Đăng ký hai callable và scheduled cleanup vào Functions exports hiện có; giữ bootstrap SL-003 và các exports do slice khác sở hữu. |
 | `__tests__/termination-vote.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
 | `functions/tests/termination-vote.test.cjs` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
+| `functions/tests/termination-vote-discovery.test.cjs` | Kiểm tra entrypoint export hai callable và scheduled cleanup; test không áp đặt cadence ngoài contract. |
 
 **Unit:** openTerminationVote, castTerminationVote và cleanupExpiredVotes.
 **Nhận:** Active member roster, ballots và server expiresAt.
@@ -105,6 +107,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 1. Chốt wire, voter eligibility khi roster thay đổi và one-active-vote policy.
 2. Expiry authoritative sau 30 giây; không chấp nhận ballot chỉ vì physical doc chưa cleanup.
 3. Ballot/receipt/count/transition atomically; 100% active Members mới cancel.
+4. Đăng ký hai callable và scheduled cleanup tại entrypoint Functions hiện có; cleanup chạy trễ không đổi logical expiry 30 giây. Không tự thêm cadence vào contract.
 
 - [ ] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
 - [ ] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-019-termination-vote]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-019-termination-vote.md` và `Task: 1`.
@@ -120,6 +123,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Replay ballot → không cộng count lại.
 - [ ] Hai open-vote requests đồng thời → một active vote.
 - [ ] Scheduler chạy trễ → logical expiry vẫn đúng 30 giây.
+- [ ] Chạy `functions/tests/termination-vote-discovery.test.cjs` → entrypoint export đủ callable và scheduled cleanup; test xác nhận trigger được discover, không áp đặt cadence.
 
 - [ ] Chạy focused checks, xác nhận failure đúng behavior; giữ fixtures tách khỏi device evidence.
 - [ ] Tích hợp theo thứ tự:
@@ -143,6 +147,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Nhiều users vote yes/timeout → đúng terminal room state.
 - [ ] Member offline trở lại không replay vote cũ; no settlement sau cancel.
 - [ ] Active member reads trong room → allowed; anonymous/outsider/cross-room reads và client authoritative writes → denied trên Emulator Suite.
+- [ ] Functions discovery → hai callable và scheduled cleanup được entrypoint nhận diện; cleanup chạy trễ vẫn giữ logical expiry và không khởi tạo runtime thứ hai.
 
 Mỗi case phải có actual result. Unit cases dùng controlled fixtures để chứng minh domain; Firebase boundary cần Rules/Functions emulator tests cho allowed/denied/replay/concurrency khi áp dụng. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.
 
@@ -150,7 +155,7 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 
 ## 7. Verification và ghi nhận evidence
 
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/termination-vote.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/termination-vote.test.cjs`; Rules Suite sau khi D3 chốt resource: `node --test functions/tests/termination-vote-rules.emulator.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/termination-vote.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/termination-vote.test.cjs` và `node --test functions/tests/termination-vote-discovery.test.cjs`; Rules Suite sau khi D3 chốt resource: `node --test functions/tests/termination-vote-rules.emulator.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 

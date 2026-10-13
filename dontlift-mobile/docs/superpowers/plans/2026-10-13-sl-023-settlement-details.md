@@ -48,9 +48,14 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | `functions/tests/settlement-details-rules.emulator.test.cjs` | Client-SDK Emulator Suite tests cho member allowed read, anonymous/outsider/cross-room denial và client write denial. |
 | `src/features/settlement/settlement-details-controller.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/screens/SettlementDetailsScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
+| `src/app/index.tsx` | Đăng ký render state/route cho SettlementDetailsScreen theo điều hướng hiện có. |
+| `src/types.ts` | Thêm ScreenId cho SettlementDetails. |
+| `src/constants.ts` | Thêm screen title vào map hiện có. |
+| `src/screens/GroupSummaryScreen.tsx` | Thêm Host entry sau khi kết quả room được finalized/reconciled; không cho Member submit. |
 | `functions/src/set-settlement-details.cjs` | Backend boundary của slice; server identity/validation/transaction. |
-| `functions/index.js` | Backend boundary của slice; server identity/validation/transaction. |
+| `functions/index.js` | Đăng ký callable settlement-details trong Functions exports hiện có; reuse bootstrap SL-003. |
 | `__tests__/settlement-details.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
+| `__tests__/settlement-details-navigation.test.ts` | Kiểm thử GroupSummary-to-details route, Host-only entry và tiếp tục sang bill allocation sau lưu thành công. |
 | `functions/tests/settlement-details.test.cjs` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
 
 **Unit:** setSettlementDetails.
@@ -133,6 +138,7 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - [ ] Non-member read → deny.
 - [ ] Expiry → completedAt cộng 30 ngày, không từ device time.
 - [ ] Thành viên cùng room đọc details → allowed; anonymous/outsider/cross-room → denied; direct client writes → denied trên Emulator Suite.
+- [ ] Navigation test: summary pending chặn form; Host từ summary finalized mở được form; lưu thành công tiếp tục sang bill allocation; lỗi giữ form và dữ liệu nhập.
 
 - [ ] Chạy focused checks, xác nhận failure đúng behavior; giữ fixtures tách khỏi device evidence.
 - [ ] Tích hợp theo thứ tự:
@@ -140,6 +146,7 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 1. Form blank/validation/loading/error; retry không mất data nhập.
 2. Member chỉ đọc details được phép; invalid/expired/cached state phải rõ.
 3. Bỏ hardcoded bank fixture khỏi production; details không dùng ngoài room.
+4. Từ GroupSummary của room đã finalized/reconciled, Host mở form; Member không có đường gửi thông tin. Chỉ sau khi lưu thành công chuyển đến route bill allocation SL-024; lỗi giữ Host trên form với dữ liệu để retry.
 
 - [ ] Thực hiện các kịch bản nghiệm thu trực tiếp trong mục 6; thu logs an toàn/device timestamps khi cần.
 - [ ] Review kết quả; một branch fail hoặc thiếu required device/emulator evidence thì slice chưa hoàn thành.
@@ -155,6 +162,8 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - [ ] Expiry → completedAt cộng 30 ngày, không từ device time.
 - [ ] Host nhập, Member authorized thấy details; outsider không thấy.
 - [ ] Error logging review → không có bank account/full payload.
+- [ ] GroupSummary của room pending → không mở form; summary finalized/reconciled cho Host → mở form; Member không có submit entry.
+- [ ] Lưu thành công → tiếp tục tới bill allocation; lỗi lưu → ở form, giữ dữ liệu và không báo thành công.
 
 Mỗi case phải có actual result. Unit cases dùng controlled fixtures để chứng minh domain; Firebase boundary cần Rules/Functions emulator tests cho allowed/denied/replay/concurrency khi áp dụng. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.
 
@@ -162,7 +171,7 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 
 ## 7. Verification và ghi nhận evidence
 
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/settlement-details.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/settlement-details.test.cjs`; Rules Suite: `node --test functions/tests/settlement-details-rules.emulator.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/settlement-details.test.ts` và `pnpm test --runTestsByPath __tests__/settlement-details-navigation.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/settlement-details.test.cjs`; Rules Suite: `node --test functions/tests/settlement-details-rules.emulator.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 

@@ -49,8 +49,12 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | `src/features/history/solo-history-repository.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/features/history/history-controller.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/screens/HistoryScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
-| `src/app/index.tsx` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
+| `src/app/index.tsx` | Đăng ký state/render route cho History theo mô hình điều hướng hiện có. |
+| `src/types.ts` | Thêm ScreenId cho History. |
+| `src/constants.ts` | Thêm title cho History vào map hiện có. |
+| `src/screens/SoloSelectScreen.tsx` | Thêm entry nhìn thấy được để mở History từ tab Solo. |
 | `__tests__/solo-history.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
+| `__tests__/solo-history-navigation.test.ts` | Kiểm thử route, entry từ SoloSelect và render History. |
 | `functions/tests/solo-history.test.cjs` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
 
 **Unit:** Solo history repository.
@@ -119,6 +123,8 @@ SL-012 sở hữu mở rộng firestore.emulator.rules cho owner path users/{uid
 - [ ] User B truy cập user A → bị deny.
 - [ ] Cloud request fail → cached list giữ nguyên và retry.
 - [ ] Free-retention boundary → dữ liệu hiển thị đúng cutoff.
+- [ ] Từ SoloSelect mở History → History route được chọn và HistoryScreen hiển thị; quay lại SoloSelect không làm mất lựa chọn tab hiện tại.
+- [ ] Chạy `__tests__/solo-history-navigation.test.ts` và xác nhận entry/route/title/render của History được nối đầy đủ.
 
 - [ ] Chạy focused checks, xác nhận failure đúng behavior; giữ fixtures tách khỏi device evidence.
 - [ ] Tích hợp theo thứ tự:
@@ -126,6 +132,7 @@ SL-012 sở hữu mở rộng firestore.emulator.rules cho owner path users/{uid
 1. Có loading/empty/error/cached/syncing state và retry; không dùng mock stats.
 2. Detail đủ date/duration/lift count/violation duration/score; list không tạo duplicate khi page overlap.
 3. Changing user hủy listeners và pagination cũ; không leak history.
+4. Đăng ký History trong ScreenId/title/render state hiện có và đặt entry từ SoloSelect; không thêm tab thứ sáu vào BottomNav.
 
 - [ ] Thực hiện các kịch bản nghiệm thu trực tiếp trong mục 6; thu logs an toàn/device timestamps khi cần.
 - [ ] Review kết quả; một branch fail hoặc thiếu required device/emulator evidence thì slice chưa hoàn thành.
@@ -139,6 +146,7 @@ SL-012 sở hữu mở rộng firestore.emulator.rules cho owner path users/{uid
 - [ ] User B truy cập user A → bị deny.
 - [ ] Cloud request fail → cached list giữ nguyên và retry.
 - [ ] Free-retention boundary → dữ liệu hiển thị đúng cutoff.
+- [ ] User mở History từ SoloSelect → đúng route/title/screen; điều hướng quay lại không làm sai Solo selection.
 - [ ] Complete vài session, offline mở list/detail → dữ liệu thật.
 - [ ] Cloud fills gaps → list merge đúng, order không nhảy ngẫu nhiên.
 
@@ -151,6 +159,8 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 Rules integration trước cloud history: `node --test functions/tests/solo-history-rules.emulator.test.cjs` bên trong Emulator Suite đã được SL-002/003 chuẩn bị; thiếu environment là blocker/failure, không skipped PASS.
 
 App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/solo-history.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/solo-history.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+
+Navigation focused test: `pnpm test --runTestsByPath __tests__/solo-history-navigation.test.ts`.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 
