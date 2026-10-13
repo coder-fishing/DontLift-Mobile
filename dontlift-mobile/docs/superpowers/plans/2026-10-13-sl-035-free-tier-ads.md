@@ -45,11 +45,15 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | File dự kiến | Trách nhiệm |
 |---|---|
 | `src/features/ads/ad-eligibility.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
+| `src/features/ads/ad-provider-adapter.ts` | Adapter của SDK provider được D7 duyệt; không chọn hoặc tích hợp provider trước khi blocker được giải quyết. |
 | `src/components/NonSessionBannerAd.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
 | `src/screens/SettingsScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
 | `src/screens/HistoryScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
 | `src/screens/ProfileScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
 | `src/screens/GroupLobbyScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
+| `package.json` | SL-035 sở hữu việc chọn và khai báo SDK quảng cáo tương thích Expo/native targets sau khi D7 duyệt provider. |
+| `package-lock.json`, `pnpm-lock.yaml` | SL-035 sở hữu cập nhật đồng bộ cả hai lockfile khi thêm SDK theo quy tắc repo. |
+| `app.json` | SL-035 sở hữu plugin/native configuration theo provider đã duyệt và yêu cầu consent thực tế; không thêm config trước D7. |
 | `__tests__/free-tier-ads.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
 
 **Unit:** ad eligibility controller.
@@ -90,9 +94,11 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Chạy focused command trong mục 7; xác nhận failure đúng behavior đang thiếu, không từ toolchain lỗi.
 - [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
 
-1. Chốt provider/test IDs/placements/consent trước dependency hoặc config changes.
-2. Active Solo/Group hoặc Local Premium → không request/render banner.
-3. Only approved non-session placements; no-fill/loading failure không cản journey.
+1. D7 duyệt provider, test IDs, placements và consent policy trước khi chọn SDK hoặc thay đổi dependency/native configuration.
+2. Sau D7, SL-035 chọn SDK tương thích Expo/native targets, cập nhật `package.json` và cả hai lockfile, rồi cấu hình `app.json` theo yêu cầu thật của SDK và consent policy đã duyệt.
+3. Dùng test IDs/test mode được provider chỉ định; không dùng live placement để kiểm thử.
+4. Active Solo/Group hoặc Local Premium → không request/render banner.
+5. Chỉ dùng placements non-session đã duyệt; no-fill/loading failure không cản journey.
 
 - [ ] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
 - [ ] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-035-free-tier-ads]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-035-free-tier-ads.md` và `Task: 1`.
@@ -129,6 +135,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] No-fill/error → journey vẫn usable.
 - [ ] Entitlement change trong màn → banner suppressed.
 - [ ] Test SDK trên devices và routes → đúng placements, no session ads.
+- [ ] SDK test mode hiển thị banner trên Android và iOS ở placements được duyệt; consent cho phép/từ chối/chưa chọn → SDK request/render đúng policy đã được D7 duyệt.
 - [ ] Consent flow thực tế và layout/contrast/touch không bị banner che.
 
 Mỗi case phải có actual result. Unit cases dùng controlled fixtures để chứng minh domain; Firebase boundary cần Rules/Functions emulator tests cho allowed/denied/replay/concurrency khi áp dụng. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.

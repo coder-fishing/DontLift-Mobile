@@ -48,6 +48,10 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | `src/features/profile/profile-repository.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/features/profile/profile-controller.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/screens/ProfileScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
+| `src/app/index.tsx` | Đăng ký state/route của ProfileScreen và render màn hình trong app flow hiện tại. |
+| `src/types.ts` | Bổ sung định danh màn Profile vào ScreenId dùng chung. |
+| `src/constants.ts` | Bổ sung tiêu đề màn Profile theo ScreenId. |
+| `src/components/BottomNav.tsx` | Điều hướng tab Account tới Profile thay vì Login. |
 | `firestore.emulator.rules` | SL-029 mở rộng profile read/edit allowlist trên Rules đã có; canonical firestore.rules được SL-037 tiếp nhận sau D1/E2. |
 | `src/features/auth/auth-session.tsx` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `__tests__/profile-edit.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
@@ -94,6 +98,7 @@ SL-029 không là nền tảng Rules cho lobby. Dùng local Rules/config từ SL
 - [ ] Viết focused failing cases sau đây; runner không tìm thấy hoặc thiếu dependency không được tính là red nghiệp vụ.
 
 - [ ] Name hợp lệ → displayName thay đổi.
+- [ ] Chọn tab Account → mở ProfileScreen; màn profile có đường quay lại luồng chính.
 - [ ] Tên rỗng/quá limit đã duyệt → field error.
 - [ ] Client đổi isPremium/email → deny.
 
@@ -125,6 +130,7 @@ SL-029 không là nền tảng Rules cho lobby. Dùng local Rules/config từ SL
 1. Form loading/save/error/retry giữ input; successful snapshot cập nhật UI ngay.
 2. Local projection cập nhật từ canonical state; failure không báo saved giả.
 3. Offline edit acceptance cần chốt trước chọn queue/offline behavior; không thêm outbox event type tự động.
+4. Đăng ký ProfileScreen vào app navigation hiện có, thêm ScreenId/title và nối tab Account tới màn profile; không để người dùng phải vào route prototype/debug để truy cập.
 
 - [ ] Thực hiện các kịch bản nghiệm thu trực tiếp trong mục 6; thu logs an toàn/device timestamps khi cần.
 - [ ] Review kết quả; một branch fail hoặc thiếu required device/emulator evidence thì slice chưa hoàn thành.

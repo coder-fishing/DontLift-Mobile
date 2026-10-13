@@ -30,6 +30,8 @@ V01–V10 chỉ các màn tương ứng tại `design/concepts/concept-final/scr
 
 **Không gồm:** Camera detection, social sharing platform integration chưa có scope.
 
+Trong slice này, camera chỉ được dùng để quét QR invitation có consent; camera-based phone detection vẫn ngoài phạm vi.
+
 ## 2. Blocker, risk và quyết định cần duyệt
 
 - **E1:** Cần Development Build, Android/iOS physical devices, toolchains và Emulator Suite để có native/integration evidence.
@@ -46,7 +48,9 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 |---|---|
 | `src/features/rooms/room-invite-parser.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/screens/JoinRoomScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
-| `app.json` | Configuration theo quyền và version thực tế; đọc trước chỉnh. |
+| `package.json` | SL-015 sở hữu việc chọn và khai báo package quét QR tương thích Expo SDK đang dùng sau khi xác minh native support. |
+| `package-lock.json`, `pnpm-lock.yaml` | SL-015 sở hữu cập nhật đồng bộ cả hai lockfile khi thêm package scanner theo quy tắc repo. |
+| `app.json` | SL-015 sở hữu cấu hình plugin và quyền camera tối thiểu theo package đã chọn; đọc cấu hình thực tế trước khi sửa. |
 | `__tests__/room-join-qr.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
 
 **Unit:** room invitation parser.
@@ -88,8 +92,10 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
 
 1. Thống nhất payload và app scheme với server invitation trước config changes.
-2. Chỉ chấp nhận room invitation shape được duyệt; QR banking/unknown link không join.
-3. Reuse join PIN command; không tạo endpoint thứ hai hoặc client-side capacity rule.
+2. Xác minh package camera/QR tương thích Expo SDK và native targets hiện tại; sau đó SL-015 thêm dependency cùng cập nhật cả hai lockfile.
+3. Cấu hình quyền camera và plugin native theo yêu cầu package đã chọn; chỉ xin quyền khi người dùng mở scanner.
+4. Chỉ chấp nhận room invitation shape được duyệt; QR banking/unknown link không join.
+5. Reuse join PIN command; không tạo endpoint thứ hai hoặc client-side capacity rule.
 
 - [ ] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
 - [ ] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-015-room-join-qr]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-015-room-join-qr.md` và `Task: 1`.
@@ -103,6 +109,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Viết các failing cases về integration/recovery sau; không viết tests chỉ mirror implementation.
 
 - [ ] Permission denied → scanner không chạy, có recovery.
+- [ ] Package scanner và cấu hình native tương thích Android/iOS; cả hai lockfile phản ánh cùng dependency.
 - [ ] Repeated frame cùng QR → một inflight join.
 - [ ] Offline scanning → không queue membership mutation.
 
