@@ -32,7 +32,7 @@ V01–V10 chỉ các màn tương ứng tại `design/concepts/concept-final/scr
 
 ## 2. Blocker, risk và quyết định cần duyệt
 
-- **D4:** Duyệt destination/projection/query/retention cho history nhóm và GROUP_SESSION_LOCAL_SUMMARY.
+- **D4:** Duyệt local completion/cutoff trigger, recovery/schema/identity và destination/projection/query/retention cho history nhóm và GROUP_SESSION_LOCAL_SUMMARY. Không suy ra room COMPLETED từ local completion.
 
 **Rủi ro cụ thể:** D4 và E1; graph history quyền theo membership phải tránh data leak.
 
@@ -46,6 +46,12 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 |---|---|
 | `functions/tests/group-history-read-rules.emulator.test.cjs` | SL-028 xác minh group-history client query/read với client SDK trên Emulator Suite sau khi D4 duyệt destination/projection/query; resource write Rules vẫn thuộc producer slices. |
 | `src/features/history/group-history-repository.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
+| `src/features/history/group-summary-recorder.ts` | SL-028 sở hữu producer: nhận local group recording completion/cutoff từ controller, gọi atomic domain/outbox commit đúng contract D4/API §4. |
+| `src/features/history/group-summary-repository.ts` | Ghi local group summary và matching GROUP_SESSION_LOCAL_SUMMARY outbox envelope trong một SQLite transaction; stable identity/replay theo D4. |
+| `src/features/rooms/completion-controller.ts` | Mở rộng controller SL-020 bằng completion/cutoff hook vào recorder; đăng ký lại sau restart và không queue completeRoom command. |
+| `src/features/sync/outbox-repository.ts` | Reuse outbox runner/repository từ dependency chain; hỗ trợ atomic enqueue group summary và ACK/retry hiện có. |
+| `src/features/local/migrations.ts` | SL-028 sở hữu versioned local-summary schema sau D4, reuse migration runner/schema/outbox hiện có; không khởi tạo database thứ hai. |
+| `__tests__/group-summary-outbox.test.ts` | Atomic failure/commit, repeated completion, crash/restart/reconnect/duplicate delivery và summary migration fresh-install/upgrade coverage. |
 | `src/features/history/history-controller.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/screens/HistoryScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
 | `functions/src/sync-events.cjs` | Backend boundary của slice; server identity/validation/transaction. |
@@ -75,6 +81,29 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 **Producer prerequisites:** SL-018 tạo early-exit participant/frozen cutoff được nghiệm thu; SL-021 tạo HOST_OVERRIDE audit và late-event exclusion. History integration chỉ claim pass sau hai producer có thật. Unit fixtures vẫn được dùng kiểm tra merge/display nhưng không thay end-to-end acceptance. D4 về history destination/query chưa được giải quyết bởi việc bổ sung dependencies.
 
 ## 5. Các task thực hiện sau approval
+
+### Task 0 — Producer local summary và durable outbox
+
+**Files:** `group-summary-recorder.ts`, `group-summary-repository.ts`, completion controller, outbox repository, migrations và `__tests__/group-summary-outbox.test.ts` trong mục 3.
+
+**Trigger:** Local group recording được controller đánh dấu hoàn tất theo completion/cutoff contract được D4 duyệt, kể cả khi thiết bị offline; final local interval phải được ghi trước khi lấy thống kê. Không dùng mất mạng đơn thuần để tự complete room.
+
+**Nhận:** Durable group recording identity/roomId, thống kê local đã commit và completion time theo D4. **Trả:** Local domain summary cùng pending GROUP_SESSION_LOCAL_SUMMARY envelope bền vững, hoặc rollback toàn bộ; không tạo canonical room/score/bill authority.
+
+- [ ] D4 chưa duyệt trigger/identity/schema → giữ BLOCKED; không tự chọn cutoff hoặc group-history destination.
+- [ ] Fresh install/upgrade → local-summary migration chạy trước writes, dữ liệu cũ và outbox được giữ nguyên.
+- [ ] Inject lỗi giữa domain write và enqueue → cả hai rollback; không để summary thiếu envelope hoặc envelope thiếu domain record.
+- [ ] Completion callback lặp/restart sau commit → một summary và một logical event cùng stable identity, không phát event mới cho cùng completion.
+- [ ] Crash trước commit → không có partial state; durable controller recovery retry theo D4. Crash sau commit/offline restart → summary đọc được và pending envelope còn để worker retry.
+- [ ] Reconnect/ACK response bị mất/duplicate delivery → reuse syncEvents receipt/idempotency; ACK chỉ đánh dấu bền vững sau success, không xóa pending payload sớm.
+
+Hành vi sau approval:
+1. Migrate local schema, nối recorder vào local recording completion/cutoff hook; recovery đọc durable controller state và kiểm tra summary đã ghi trước khi replay trigger.
+2. Lấy final committed local stats, tạo payload theo API §4 gồm roomId, liftCount, violationDurationSeconds, penaltyScore và completedAtUtcMs; identity/envelope theo approved sync contract và D4, không thêm fields tự đoán.
+3. Trong một SQLite transaction, ghi local summary cùng matching outbox envelope; failure rollback và giữ context để retry. Repeated trigger dùng cùng identity, không enqueue lần hai.
+4. History đọc local summary ngay khi offline; outbox worker hiện có gửi tới syncEvents khi reconnect. Local summary được ghi rõ là local/pending, không thay finalized score/bill hoặc gửi lệnh lifecycle muộn.
+
+Chạy focused cases rồi review atomic/recovery evidence; producer chưa có thật thì fixtures không được thay end-to-end acceptance.
 
 ### Task 1 — Boundary và quy tắc của Group history và phục hồi dữ liệu
 
@@ -124,6 +153,9 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 ## 6. Nghiệm thu và failure outcomes
 
+- [ ] Completion trigger thật khi offline → domain summary và pending outbox cùng commit; app restart vẫn đọc history, reconnect sync được.
+- [ ] Atomic failure/repeated trigger/crash/duplicate delivery → không partial state hoặc duplicate logical event; canonical room/score/bill không bị local summary ghi đè.
+
 - [ ] Offline local group complete → history đọc được.
 - [ ] Group summary replay → một record.
 - [ ] Late excluded event → visible reason, final bill không đổi.
@@ -141,6 +173,8 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 **Failure recovery bắt buộc:** không hiển thị successful save/transition khi commit/request chưa thành công; giữ dữ liệu/retry context theo hành vi cụ thể trong tasks. Không log email đầy đủ, token, activation code hoặc bank details. Case không áp dụng cho slice phải ghi lý do trong evidence, không bỏ im lặng.
 
 ## 7. Verification và ghi nhận evidence
+
+Producer/migration/recovery focused tests sau harness prerequisites: `pnpm test --runTestsByPath __tests__/group-summary-outbox.test.ts`. Kiểm chứng reconnect/duplicate/receipt bằng backend group-history suite trong Emulator Suite; không lấy mock server ACK làm end-to-end evidence.
 
 App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/group-history.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/group-history.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
 

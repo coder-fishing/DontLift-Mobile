@@ -34,6 +34,20 @@
 - **Review reference:** [Finding](https://github.com/coder-fishing/DontLift-Mobile/pull/24#discussion_r4256869046).
 - **Response:** Plan/index cùng thêm SL-024; dependency DAG không vòng. SL-028 reuse billShares/read Rules SL-024 và kiểm chứng client reads, không tự tạo share schema/authority. Tuân [AGENTS.md dòng 32–33](../../../AGENTS.md#L32-L33); D4 vẫn chặn history contract, finding chỉ resolved ở plan level.
 
+## PR24-4256973572
+
+- **Status:** RESOLVED
+- **Severity:** High
+- **Category:** Local summary producer/outbox
+- **Location:** SL-028 mục 3, Task 0, acceptance/verification; index D4.
+- **Problem:** History readers và syncEvents consumer không có producer atomically ghi GROUP_SESSION_LOCAL_SUMMARY domain/outbox khi local group recording kết thúc offline.
+- **Recommendation:** Giao trigger/recorder/repository/outbox/migration cho SL-028 và kiểm chứng atomicity/restart/replay.
+- **Created At:** 2026-10-13, review trên commit 17287f3.
+- **Updated By:** Codex, theo yêu cầu tiếp tục sửa findings.
+- **Updated At:** 2026-10-13, Asia/Saigon.
+- **Review reference:** [Finding](https://github.com/coder-fishing/DontLift-Mobile/pull/24#discussion_r4256973572).
+- **Response:** SL-028 nay sở hữu completion hook theo D4, local-summary migration và domain/outbox transaction; rollback, crash trước/sau commit, repeated trigger, reconnect/ACK loss/duplicate delivery đều có cases. Local summary không queue completeRoom hoặc sửa frozen bill. Tuân [AGENTS.md dòng 25](../../../AGENTS.md#L25); D4 vẫn chặn trigger/schema chưa duyệt. Chỉ resolved ownership ở plan level.
+
 ## Self-review
 
 - Original comment identity giữ nguyên; Response đối chiếu owner/tasks/acceptance trong plan đã sửa.

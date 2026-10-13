@@ -1,6 +1,6 @@
 # P6.1 — Mục lục kế hoạch DontLift
 
-> **DRAFT v0.9 — backlog và implementation plans chưa được phê duyệt.** Đây là bộ kế hoạch được user yêu cầu soạn và lưu để review cho 37 slice, không phải backlog P6.0 đã duyệt và không phải quyền chạy P6.2.
+> **DRAFT v0.10 — backlog và implementation plans chưa được phê duyệt.** Đây là bộ kế hoạch được user yêu cầu soạn và lưu để review cho 37 slice, không phải backlog P6.0 đã duyệt và không phải quyền chạy P6.2.
 
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Baseline:** `docs/p6.0-implementation-slices`, commit `57ca1eb28a2952c66d01f89b9b89bf755ab4812a`.
@@ -63,7 +63,7 @@ P0 là nền tảng/critical journey trước; P1 là cần hoàn tất MVP; P2 
 | SL-028 | [Group history và phục hồi dữ liệu](./superpowers/plans/2026-10-13-sl-028-group-history.md) | P1 | SL-020, SL-012, SL-018, SL-021, SL-024 | D4 |
 | SL-029 | [Xem và sửa profile](./superpowers/plans/2026-10-13-sl-029-profile-edit.md) | P1 | SL-004 | Không xác nhận riêng |
 | SL-030 | [Settings cho haptic và sound](./superpowers/plans/2026-10-13-sl-030-feedback-settings.md) | P1 | SL-003, SL-004, SL-007 | D11 |
-| SL-031 | [Activation offline và Local Premium](./superpowers/plans/2026-10-13-sl-031-local-premium.md) | P1 | SL-003, SL-004 | D5 |
+| SL-031 | [Activation offline và Local Premium](./superpowers/plans/2026-10-13-sl-031-local-premium.md) | P1 | SL-003, SL-004, SL-006 | D5 |
 | SL-032 | [Redeem online và Server Premium](./superpowers/plans/2026-10-13-sl-032-server-premium.md) | P1 | SL-013, SL-014, SL-031 | D5 |
 | SL-033 | [Retention local và server](./superpowers/plans/2026-10-13-sl-033-retention.md) | P1 | SL-012, SL-023, SL-028, SL-031, SL-032 | D10 |
 | SL-034 | [Chọn custom theme](./superpowers/plans/2026-10-13-sl-034-premium-themes.md) | P1 | SL-005, SL-008, SL-012, SL-015, SL-019, SL-020, SL-024, SL-026, SL-028, SL-029, SL-030, SL-031 | D6 |
@@ -80,7 +80,7 @@ SL-037 phụ thuộc bắt buộc SL-001–SL-036 vì phạm vi đã chọn gồ
 | D1 | Thống nhất tiếp nhận quyết định emulator/dev từ feature/registration-login; xác nhận environment/config và production vẫn riêng. Không provision/deploy khi chưa được cấp quyền. |
 | D2 | Tiếp nhận hoặc duyệt ADR-009 và wire contract completeRegistrationProfile từ nhánh Auth; chúng chưa thuộc baseline này. |
 | D3 | Chốt wire/schema/error/concurrency cho start/early-exit/vote/heartbeat nếu slice dùng chúng; chốt syncEvents cho violation đang kéo dài khi áp dụng. Không đoán payload từ responsibility table. |
-| D4 | Duyệt destination/projection/query/retention cho history nhóm và GROUP_SESSION_LOCAL_SUMMARY. |
+| D4 | Duyệt local completion/cutoff trigger, recovery/schema/identity và destination/projection/query/retention cho history nhóm và GROUP_SESSION_LOCAL_SUMMARY; local summary không tự complete room. |
 | D5 | Duyệt checksum cụ thể, test vectors, nguồn code hợp lệ và operational contract cấp code. Website/email mua Premium là external prerequisite, không tự implement. |
 | D6 | Duyệt theme catalog/default/downgrade và behavior advanced leaderboard; analytics nâng cao vẫn deferred. D6 tiếp tục chặn nghiệm thu SL-034/036 và downstream SL-037 cho tới khi các hành vi liên quan được chốt. |
 | D7 | Duyệt provider ads, test credentials, placements và consent requirements áp dụng. |
@@ -117,7 +117,7 @@ D3 chỉ chặn command/event semantics chưa có wire rõ; không blanket-block
 | US-13 | 024: Host/state/amount validation |
 | US-14 | 024: default/zero-score/early-exit/exact integer math; 025: overrides |
 | US-15 | 023: details; 026: QR/memo/bank scanning; 027: manual paid |
-| US-16 | 012: Solo; 028: Group; 033: retention |
+| US-16 | 012: Solo; 028: Group local-summary producer/atomic outbox, sync consumer và history; 033: retention |
 | US-17 | 029: profile/name update and canonical projection |
 | US-18 | 030: feedback/settings persistence; 035: ads suppression |
 | US-19 | 031: local checksum; 032: server redemption; 033–035 local benefits; 036 scope pending |
@@ -187,6 +187,7 @@ Website mua Premium/code generation/email delivery là external operational prer
 - v0.7: Sửa review mới trên PR #24: SL-036 không thể tự gỡ hard release gate của SL-037 khi defer; SL-024 phụ thuộc SL-018 vì dùng frozen score; SL-032 phụ thuộc SL-013/014 vì nghiệm thu room quota/capacity. Đồng bộ blocker và dependency index; giữ nguyên accepted ADR-007 scope, D3/D5/D6/D9 và draft status.
 - v0.8: SL-013 sở hữu invitation encoder/QR renderer, dependency/lockfiles và canonical contract dùng lại bởi SL-015. Ghi D12 timezone quota và D13 scheme/payload thành blockers, thêm rollover/replay/leading-zero/render-failure/producer-parser scan coverage. Không quyết định timezone/scheme hoặc sửa backlog P6.0.
 - v0.9: Sửa source precedence ở prompt P6.1 và prompt P6.0 theo AGENTS; SL-034 sở hữu app-level provider và migration toàn bộ theme consumers cùng producer prerequisites/rendered-state matrix; SL-028 phụ thuộc SL-024 trước share reads. D6 và D4 vẫn mở, quyền lợi theme Local Premium không phụ thuộc redemption Server Premium.
+- v0.10: SL-028 sở hữu local group-summary completion hook, schema/recorder/repository và atomic outbox enqueue, với rollback/restart/replay/reconnect coverage; D4 vẫn chặn trigger/schema chưa duyệt. SL-031 phụ thuộc SL-006 để giữ profile/session-before-entitlement migration acceptance. Không queue room completion command hoặc sửa canonical backlog.
 
 **Trạng thái corrections:** [SL-003 review](./superpowers/reviews/2026-10-13-sl-003-registration-profile-review-plan.md), [SL-005 review](./superpowers/reviews/2026-10-13-sl-005-sensor-availability-review-plan.md), [SL-007 review](./superpowers/reviews/2026-10-13-sl-007-foreground-detection-review-plan.md), [SL-009 review](./superpowers/reviews/2026-10-13-sl-009-android-recovery-review-plan.md), [SL-010 review](./superpowers/reviews/2026-10-13-sl-010-ios-recovery-review-plan.md), [SL-013 review](./superpowers/reviews/2026-10-13-sl-013-room-create-review-plan.md), [SL-016 review](./superpowers/reviews/2026-10-13-sl-016-room-lobby-start-review-plan.md), [SL-028 review](./superpowers/reviews/2026-10-13-sl-028-group-history-review-plan.md), [SL-029 review](./superpowers/reviews/2026-10-13-sl-029-profile-edit-review-plan.md), [SL-030 review](./superpowers/reviews/2026-10-13-sl-030-feedback-settings-review-plan.md), [SL-031 review](./superpowers/reviews/2026-10-13-sl-031-local-premium-review-plan.md), [SL-034 review](./superpowers/reviews/2026-10-13-sl-034-premium-themes-review-plan.md), [SL-037 review](./superpowers/reviews/2026-10-13-sl-037-mvp-release-review-plan.md).
 
@@ -199,3 +200,5 @@ Review batch v0.7: [SL-024](./superpowers/reviews/2026-10-13-sl-024-default-bill
 Review batch v0.8: [SL-013](./superpowers/reviews/2026-10-13-sl-013-room-create-review-plan.md), [SL-015 synchronization](./superpowers/reviews/2026-10-13-sl-015-room-join-qr-review-plan.md).
 
 Review batch v0.9: [Prompt precedence](./superpowers/reviews/2026-10-13-implementation-plan-review-plan.md), [SL-034](./superpowers/reviews/2026-10-13-sl-034-premium-themes-review-plan.md), [SL-028](./superpowers/reviews/2026-10-13-sl-028-group-history-review-plan.md).
+
+Review batch v0.10: [SL-028](./superpowers/reviews/2026-10-13-sl-028-group-history-review-plan.md), [SL-031](./superpowers/reviews/2026-10-13-sl-031-local-premium-review-plan.md).
