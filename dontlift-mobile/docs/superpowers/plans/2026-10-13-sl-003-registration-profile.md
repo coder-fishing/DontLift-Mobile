@@ -96,11 +96,11 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 **Unit:** local database initialization và migration runner. **Nhận:** database lifecycle, schema version và migrations thuộc slice đã duyệt. **Trả:** database ready cho profile repository hoặc lỗi không có partial profile write.
 
-- [ ] Xác nhận expo-sqlite version theo Expo SDK 57 thực tế; lập dependency change với cả hai root lockfiles, không dùng installed leftovers làm evidence.
-- [ ] Viết cases: fresh database tạo đúng schema; reopen giữ profile; migration đã áp dụng không chạy lại; migration lỗi rollback và không báo ready.
-- [ ] Chạy focused failing cases bằng harness SL-001; thiếu SQLite package không được tính là red nghiệp vụ.
-- [ ] Mở database qua một shared boundary; ghi migration version chỉ sau schema commit thành công.
-- [ ] Tạo profile schema theo ADR-009 đã được chấp thuận; không đưa token/password/entitlement vào profile table.
+- [x] Xác nhận expo-sqlite version theo Expo SDK 57 thực tế; lập dependency change với cả hai root lockfiles, không dùng installed leftovers làm evidence.
+- [x] Viết cases: fresh database tạo đúng schema; reopen giữ profile; migration đã áp dụng không chạy lại; migration lỗi rollback và không báo ready.
+- [x] Chạy focused failing cases bằng harness SL-001; thiếu SQLite package không được tính là red nghiệp vụ.
+- [x] Mở database qua một shared boundary; ghi migration version chỉ sau schema commit thành công.
+- [x] Tạo profile schema theo ADR-009 đã được chấp thuận; không đưa token/password/entitlement vào profile table.
 - [ ] Profile upsert chỉ chạy sau readiness; init/migration/write lỗi giữ user ở retryable completion, không vào app giả.
 - [ ] Reopen trên Development Build, kiểm tra profile còn và rollback bảo toàn data. Đồng bộ/kiểm tra root manifest và hai lockfiles.
 - [ ] Review task trước commit theo dated plan slug; không tạo domain session/outbox schema thuộc SL-006/007 trước scope của chúng.
@@ -205,6 +205,8 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 ## 7. Verification và ghi nhận evidence
 
 Foundation focused tests sau Task 0A: `pnpm test --runTestsByPath __tests__/local-database.test.ts`. Backend bootstrap sau Task 0B: `node --test functions/tests/runtime-bootstrap.test.cjs`. Owner-read Rules cần Firestore Emulator Suite đang chạy: `node --test functions/tests/profile-owner-read.rules.emulator.test.cjs`. App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/registration-profile.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/registration-profile.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+
+**Execution evidence — Task 0A, 2026-10-14:** `expo-sqlite ~57.0.4` matches Expo SDK 57; `pnpm install --offline --frozen-lockfile` and `npm install --package-lock-only --ignore-scripts --offline` both succeeded. The focused SQLite suite passed 3/3 cases (fresh schema, reopen/preservation/no rerun, rollback on migration failure); `pnpm exec tsc --noEmit` and `git diff --check` passed. The tests use Node's SQLite-backed fixture for migration semantics. Expo Development Build restart persistence remains UNVERIFIED until the profile flow is implemented and exercised on a device.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 
