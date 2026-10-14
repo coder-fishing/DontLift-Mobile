@@ -2,15 +2,16 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use the qskill-executing-plans skill to implement this plan task-by-task. Steps use checkbox tracking.
 > Kế hoạch chỉ mô tả file, unit, hành vi, quy tắc, đầu ra và test cases; không có implementation code hoặc signatures. Đọc source thật trước mỗi task.
-> **Gate:** Không execute kế hoạch khi trạng thái còn DRAFT hoặc khi blocker/dependency chưa giải quyết. Việc tạo file này không phê duyệt backlog hay P6.2.
+> **Gate:** Human đã duyệt riêng Android development execution ngày 2026-10-14; không mở rộng sang production deployment, các slice khác hoặc nghiệm thu iOS chưa kiểm chứng.
 
-**Mục tiêu:** Development runtime cho Firebase: native Auth/Firestore client kết nối đúng emulator, Functions client được khởi tạo đúng host/region; callable handshake chỉ nghiệm thu sau backend bootstrap SL-003.
+**Mục tiêu:** Native Auth/Firestore/Functions runtime trong Development Build dùng Firebase cloud config hiện có đã được human chọn; Functions region `asia-southeast1`. Emulator là mode lựa chọn rõ ràng; callable handshake chỉ nghiệm thu sau backend bootstrap SL-003.
 
 **Slice:** SL-002. **Ưu tiên đề xuất:** P0. **Release:** MVP + activation/Premium; post-MVP deferred. SL-036 chỉ được tính release sau D6.
 
-**Trạng thái kế hoạch:** DRAFT — chưa được human duyệt; bị chặn bởi D1, E1.
-**Trạng thái implementation quan sát:** Chưa có native Firebase config/dependencies được track. Chưa có evidence nghiệm thu slice.
-**Baseline khảo sát:** docs/p6.0-implementation-slices tại 57ca1eb28a2952c66d01f89b9b89bf755ab4812a.
+**Trạng thái kế hoạch:** APPROVED AND COMPLETE FOR ANDROID DEVELOPMENT — iOS device verification remains deferred; full cross-platform verification is not claimed.
+**Approval evidence:** Human đã chọn React Native Firebase, reuse `.env.local` và `firebase-config/` để Android/iOS cùng dùng database hiện có; tạm hoãn kiểm thử iOS khi không có Mac/iPhone; ngày 2026-10-14 trả lời “ok run” sau đề xuất hoàn thiện Firebase runtime. Quyết định này supersede emulator-only scope của draft; không phê duyệt toàn bộ P6.0 hoặc production.
+**Trạng thái implementation quan sát:** Android development scope COMPLETE: APK build/cài/mở thành công; native Auth/Firestore/Functions clients khởi tạo đúng cloud project; Firestore probe trả `server-reached-access-denied` khi signed-out, xác nhận server reachability và Rules production chặn unauthenticated read như dự kiến. 24 focused tests, 25 full Jest tests và TypeScript pass. Probe ban đầu trả `invalid-argument` do fixture ID khớp reserved pattern `__.*__`; source/test đã sửa. Database `(default)` Standard/Singapore đã được xác nhận trong Cloud Console. iOS device verification deferred và Emulator Suite vẫn UNVERIFIED; full cross-platform verification chưa được claim. Evidence ở `docs/firebase-emulators.md`.
+**Baseline execution:** feature/sl-002-native-firebase-runtime tại 786261c069f32f9ae335f57ba92074a25e9a3f2d. Baseline authoring ban đầu: 57ca1eb28a2952c66d01f89b9b89bf755ab4812a.
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Plan slug:** `2026-10-13-sl-002-native-firebase-runtime`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-002-native-firebase-runtime]`.
 **Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13, chưa được phê duyệt. User đã yêu cầu ghi draft P6.1 cho cả 37 slice; không suy thành approval thực thi.
@@ -32,10 +33,11 @@ V01–V10 chỉ các màn tương ứng tại `design/concepts/concept-final/scr
 
 ## 2. Blocker, risk và quyết định cần duyệt
 
-- **D1:** Thống nhất tiếp nhận quyết định emulator/dev từ feature/registration-login; xác nhận environment/config và production vẫn riêng. Không provision/deploy khi chưa được cấp quyền.
-- **E1:** Cần Development Build, Android/iOS physical devices, toolchains và Emulator Suite để có native/integration evidence.
+- **D1 development:** Human đã chọn bộ Firebase config hiện có cho development. Native project phải khớp expected project từ env. Production vẫn cần project/config riêng theo ADR-006; release chưa cấu hình phải fail closed.
+- **E1 Android:** Có physical Android device, Android SDK và JDK của Android Studio. Native integration evidence phải lấy từ APK có đầy đủ SDK.
+- **E1 deferred/unverified:** iOS Pods/build/run tạm hoãn theo lựa chọn human; actual Emulator Suite và metadata edition/location cloud chưa có evidence. ADR-006 quy định Standard/Singapore; Functions region client không chứng minh location database thực tế.
 
-**Rủi ro cụ thể:** E1 gồm JDK/Android SDK/macOS Xcode và devices; D1 phải giải quyết trước config.
+**Rủi ro cụ thể:** JDK 25 cần native-access flag cho tiến trình build; Windows dùng persistent pnpm hoisted layout để tránh CMake long paths. iOS config inspection không thay thế actual device evidence.
 
 Nếu một contract chỉ có responsibility mà chưa có schema, task đầu là trình bày missing decision với nguồn; không tự tạo endpoint/field mới. Các hành vi test bên dưới mô tả outcome cần đạt, không thay thế wire approval. Ngưỡng/range/default chưa được spec xác định phải có quyết định ghi lại trước khi implement.
 
@@ -50,11 +52,16 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | `package-lock.json` | Ownership cùng package.json: giữ đồng bộ npm dependency resolution khi manifest thay đổi, theo AGENTS. |
 | `pnpm-lock.yaml` | Ownership cùng package.json: giữ đồng bộ pnpm dependency resolution; không commit một lockfile lệch manifest. |
 | `app.json` | Configuration theo quyền và version thực tế; đọc trước chỉnh. |
+| `pnpm-workspace.yaml` | Hoisted layout ổn định cho pnpm/native Windows build; quyết định install-script allowance rõ ràng. |
+| `assets/splashscreen.xml` | Drawable splash không logo để thay tham chiếu template ảnh bị thiếu; branding cuối chưa được nghiệm thu. |
 | `package.json` | Configuration theo quyền và version thực tế; đọc trước chỉnh. |
 | `src/features/auth/firebase-adapters.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
+| `src/features/auth/firebase-runtime-config.ts` | Kiểm tra platform/mode/project, production isolation và explicit emulator host/ports. |
+| `src/app/_layout.tsx` | Caller startup thực tế; native init và safe development diagnostics, không implement auth journey. |
 | `firebase.emulator.json` | Configuration theo quyền và version thực tế; đọc trước chỉnh. |
 | `docs/firebase-emulators.md` | Evidence hoặc hướng dẫn thực thi sau approval; không được ghi claimed pass thiếu bằng chứng. |
 | `__tests__/native-firebase-runtime.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
+| `__tests__/native-firebase-adapters.test.ts` | Native client boundary, emulator routing, timeout/offline và diagnostics không leak. |
 
 **Unit:** Firebase runtime adapter.
 **Nhận:** Development project/config được human xác nhận, platform và emulator host.
@@ -74,7 +81,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - Bill dùng integer VND, deterministic residual và tổng exact theo ADR-005; VietQR non-custodial, không bank polling.
 - UI dùng semantic tokens và accepted Liquid Acrylic; loading/empty/error/offline/syncing, labels, safe areas và touch targets được kiểm chứng khi phù hợp.
 - Không thêm social login, analytics dashboards, kiosk, wallet, chat, AI coaching hoặc camera-based detection vào MVP.
-- Không install/provision/deploy/publish trong lượt authoring plan này; mọi check bên dưới là hướng dẫn execution sau approval.
+- Native dependencies/build đã được human cho phép trong execution SL-002; không provision/deploy/publish hoặc thay credentials/project ngoài scope này.
 
 ### Ownership môi trường local
 
@@ -104,7 +111,7 @@ Không tạo backend manifest hoặc deploy canonical config tại đây. SL-003
 - [ ] Chạy focused command trong mục 7; xác nhận failure đúng behavior đang thiếu, không từ toolchain lỗi.
 - [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
 
-1. Xác nhận quyết định dùng emulator trước khi thay config; không tạo project hoặc dùng production làm development.
+1. Reuse cloud development config đã được human chọn; emulator chỉ dùng khi mode/host/ports được cấu hình rõ. Không tạo project, fallback environment hoặc dùng cùng project cho development và production.
 2. Kết nối native modules và region asia-southeast1; chọn host phù hợp simulator/device.
 3. Cấu hình iOS linkage theo phiên bản RNFirebase, đối chiếu SDK 57 docs; giữ secrets ngoài Git.
 
@@ -126,8 +133,8 @@ Không tạo backend manifest hoặc deploy canonical config tại đây. SL-003
 - [ ] Tích hợp theo thứ tự:
 
 1. Tạo Development Build theo setup đã được duyệt; Expo Go không phải runtime kiểm chứng.
-2. Mở app trên Android/iOS và kiểm tra môi trường hiển thị chính xác; không có fallback sang production.
-3. Tắt emulator rồi mở lại app → trạng thái cấu hình/kết nối có recovery, không authenticated giả.
+2. Mở app trên Android thật và kiểm tra diagnostics đúng project/mode/region; iOS build/run được human tạm hoãn và ghi UNVERIFIED.
+3. Development read-only server probe: đọc current user document nếu có native session, hoặc ID fixture không tồn tại trong `users` khi signed out. Không tạo user/document, không đọc collection, không in document content. Permission-denied chỉ chứng minh server reached; lỗi/offline/timeout không báo authorized/success và có thể thử lại qua reload.
 
 - [ ] Thực hiện các kịch bản nghiệm thu trực tiếp trong mục 6; thu logs an toàn/device timestamps khi cần.
 - [ ] Review kết quả; một branch fail hoặc thiếu required device/emulator evidence thì slice chưa hoàn thành.
@@ -139,7 +146,8 @@ Không tạo backend manifest hoặc deploy canonical config tại đây. SL-003
 - [ ] Sai hoặc thiếu native config → không truy cập production.
 - [ ] Release chưa cấu hình backend → báo lỗi an toàn, không tự dùng emulator.
 - [ ] Host emulator trên thiết bị thật → kết nối được theo LAN/USB setup đã duyệt.
-- [ ] Chạy native Development Build kết nối Auth/Firestore emulators → có evidence client/environment; Functions callable handshake được nghiệm thu ở SL-003.
+- [ ] Chạy native Development Build Android dùng cloud config đã chọn → có evidence native Auth/Firestore/Functions initialization và Firestore server probe. Đây không phải nghiệm thu registration/login hoặc token persistence; Functions callable handshake thuộc SL-003.
+- [ ] Actual Emulator Suite integration và iOS build/run vẫn UNVERIFIED; mocked routing không thay thế native evidence.
 - [ ] Đọc project/region từ diagnostics an toàn → đúng environment; không in token/config bí mật.
 
 Mỗi case phải có actual result. Unit cases dùng controlled fixtures để chứng minh domain; Firebase boundary cần Rules/Functions emulator tests cho allowed/denied/replay/concurrency khi áp dụng. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.
@@ -148,14 +156,14 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 
 ## 7. Verification và ghi nhận evidence
 
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/native-firebase-runtime.test.ts`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+App focused tests: `pnpm test --runTestsByPath __tests__/native-firebase-runtime.test.ts __tests__/native-firebase-adapters.test.ts --runInBand`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế. Execution commands/device evidence ở `docs/firebase-emulators.md`.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 
-Ghi trong kết quả execution: baseline/commit mới, command, exit status, số cases, emulator/device/runtime version, date, actual outcomes và remaining gaps. Các checklist hiện đều chưa chạy.
+Ghi trong kết quả execution: baseline/commit mới, command, exit status, số cases, emulator/device/runtime version, date, actual outcomes và remaining gaps. Ngày 2026-10-14: configuration tests đã RED trước implementation rồi GREEN; 23 focused cases và TypeScript đạt. Device integration với APK mới chưa được tick trước khi có log thực tế.
 
 ## 8. Human review và bàn giao P6.2
 
-Human phải duyệt scope, non-goals, tasks, acceptance cases, dependencies và các quyết định còn mở của **SL-002** trước implementation. Duyệt một slice không duyệt tất cả 37; duyệt authoring batch không duyệt code.
+Human đã duyệt execution scope mới của **SL-002** trong approval evidence phía trên. Duyệt một slice không duyệt tất cả 37. Chỉ gọi Android development milestone hoàn thành sau actual native evidence; full cross-platform SL-002 vẫn cần đóng iOS/native integration gaps hoặc approval riêng thay đổi acceptance.
 
-Sau approval, cập nhật trạng thái/date/decision evidence trong đúng plan; kế hoạch mới chỉ đủ execution-ready khi blocker đã được giải quyết và baseline được re-inspect. Dùng qskill-executing-plans khi user yêu cầu execute plan đã duyệt. Không tự bắt đầu P6.2 từ file draft hoặc từ prompt batch.
+Execution dùng qskill-executing-plans trên branch hiện tại. SL-003 nhận clients/config boundary và local emulator baseline; backend/helper/Functions discovery/callable handshake thuộc SL-003. Không tự bắt đầu slice tiếp theo.

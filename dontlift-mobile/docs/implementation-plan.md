@@ -2,11 +2,13 @@
 
 > **DRAFT v0.13 — backlog và implementation plans chưa được phê duyệt.** Đây là bộ kế hoạch được user yêu cầu soạn và lưu để review cho 37 slice, không phải backlog P6.0 đã duyệt và không phải quyền chạy P6.2.
 
+> **Execution update 2026-10-14:** Human duyệt riêng SL-002 Android development runtime: reuse Firebase cloud config hiện có, iOS device verification tạm hoãn. [Plan SL-002](./superpowers/plans/2026-10-13-sl-002-native-firebase-runtime.md) ghi scope/evidence hiện tại; approval này không duyệt các slice khác hay toàn bộ backlog.
+
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Baseline:** `docs/p6.0-implementation-slices`, commit `57ca1eb28a2952c66d01f89b9b89bf755ab4812a`.
 **Phạm vi:** MVP + activation/Premium theo lựa chọn human; social login và analytics nâng cao deferred.
 **Nguồn slice:** Backlog P6.0 v0.1 đề xuất trong cuộc trò chuyện. Chưa tạo `docs/implementation-slices.md` vì chưa có explicit backlog approval.
-**Quyền tác vụ hiện tại:** Author draft plans; không implement, không sửa code, không provision/deploy, không suy authoring approval thành plan approval.
+**Quyền tác vụ:** SL-002 execution theo update riêng phía trên. Phần còn lại của backlog chỉ được author draft plans; không suy authoring approval thành implementation hoặc provisioning/deployment approval.
 
 ## 1. Cách dùng
 
@@ -29,12 +31,12 @@
 
 ## 3. Danh sách 37 kế hoạch
 
-P0 là nền tảng/critical journey trước; P1 là cần hoàn tất MVP; P2 là cần chốt feature scope. Dependency là hard prerequisite, không phải thứ tự priority. Mọi plan vẫn DRAFT.
+P0 là nền tảng/critical journey trước; P1 là cần hoàn tất MVP; P2 là cần chốt feature scope. Dependency là hard prerequisite, không phải thứ tự priority. Trạng thái execution SL-002 theo update riêng ở trên; các draft khác không được duyệt bởi update này.
 
 | ID | Kế hoạch | Priority | Dependency bắt buộc | Blocker riêng |
 |---|---|---|---|---|
 | SL-001 | [Nền tảng kiểm thử](./superpowers/plans/2026-10-13-sl-001-test-foundation.md) | P0 | Không | Không xác nhận riêng |
-| SL-002 | [Development runtime cho Firebase](./superpowers/plans/2026-10-13-sl-002-native-firebase-runtime.md) | P0 | SL-001 | D1, E1 |
+| SL-002 | [Development runtime cho Firebase](./superpowers/plans/2026-10-13-sl-002-native-firebase-runtime.md) | P0 | SL-001 | D1 production deferred; E1 iOS/emulator/metadata chưa kiểm chứng |
 | SL-003 | [Đăng ký và hoàn tất profile](./superpowers/plans/2026-10-13-sl-003-registration-profile.md) | P0 | SL-002 | D2 |
 | SL-004 | [Login, khôi phục phiên và logout](./superpowers/plans/2026-10-13-sl-004-login-session.md) | P0 | SL-003 | Không xác nhận riêng |
 | SL-005 | [Kiểm tra sensor trước khi focus](./superpowers/plans/2026-10-13-sl-005-sensor-availability.md) | P0 | SL-001, SL-002 | E1 |
