@@ -174,7 +174,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 3. Chỉ vào authenticated content khi server profile và local projection sẵn sàng; không để restore callback cũ đổi trạng thái mới.
 
 - [ ] Thực hiện các kịch bản nghiệm thu trực tiếp trong mục 6; thu logs an toàn/device timestamps khi cần.
-- [ ] Review kết quả; một branch fail hoặc thiếu required device/emulator evidence thì slice chưa hoàn thành.
+- [x] Review kết quả; device evidence còn thiếu nên slice được giữ ở trạng thái chưa hoàn thành.
 - [ ] Commit task sau review nếu execution được phép. Subject dùng `[2026-10-13-sl-003-registration-profile]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-003-registration-profile.md` và `Task: 2`.
 
 ### Acceptance bổ sung cho foundation
