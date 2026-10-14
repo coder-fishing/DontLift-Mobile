@@ -141,10 +141,11 @@ Sơ đồ dữ liệu: [`design/data-model.mmd`](../design/data-model.mmd).
 | Field | Type | Authority |
 |---|---|---|
 | `displayName` | string | User allowlisted update |
+| `email` | string | Auth-derived at profile bootstrap; Functions only |
 | `isPremium` | boolean | Verified Server Premium; Functions only |
 | `createdAt`, `updatedAt` | timestamp | Functions |
 
-Email tiếp tục thuộc Firebase Auth và không được sao chép sang Firestore nếu không có use case cần đọc.
+Firebase Auth remains the identity authority for email. Per accepted ADR-009, `completeRegistrationProfile` also copies the Auth-derived email into `users/{uid}` and the minimum local profile projection for the registration journey; the client must never supply or authoritatively update this value.
 
 #### `users/{uid}/sessions/{sessionId}`
 

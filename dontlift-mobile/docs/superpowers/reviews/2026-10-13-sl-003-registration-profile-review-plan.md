@@ -50,22 +50,22 @@
 
 ## P6.1-AUDIT-SL003-ADR009-BASELINE
 
-- **Status:** OPEN
+- **Status:** RESOLVED
 - **Severity:** High
 - **Category:** Accepted registration contract missing from execution baseline
 - **Location:** SL-003 mục 2 và `docs/implementation-plan.md` mục 2/4.
 - **Problem:** Plan gọi ADR-009 và wire contract là nội dung cần “tiếp nhận hoặc duyệt”, nhưng ADR-009 trên `feature/registration-login` đã ghi Accepted — human approved 2026-10-06 và API contract mục 8 định nghĩa `completeRegistrationProfile`. Đồng thời implementation-plan xác nhận hai tài liệu này chỉ là external Git-ref context, chưa có trong baseline hiện tại, nên SL-003 vẫn bị chặn và người thực thi không biết phải dùng chính xác revision nào hay xử lý các review findings của nhánh Auth ra sao.
 - **Recommendation:** Sửa blocker D2 và SL-003 mục 2 thành bước baseline-integration rõ ràng: xác định revision của ADR-009/API contract đã chấp thuận, đối chiếu các review findings trên nhánh Auth, đưa quyết định/tài liệu đã chấp thuận vào baseline theo repository source precedence, rồi ghi commit/evidence trong blocker và implementation-plan. Chỉ yêu cầu approval mới nếu đối chiếu phát hiện thay đổi behavior chưa được chấp thuận.
 - **Created At:** 2026-10-14, trong review SL-003 so với baseline sau SL-002.
-- **Updated By:** Codex, review mode.
+- **Updated By:** Codex, sau khi tích hợp tài liệu được chấp thuận vào baseline.
 - **Updated At:** 2026-10-14, Asia/Saigon.
 - **Review reference:** [ADR-009 ở nhánh Auth](../../decisions/ADR-009-auth-profile-bootstrap.md) trong `feature/registration-login`; [API contract mục 8](../../api-contracts.md) trên cùng nhánh; [AGENTS.md source precedence](../../../AGENTS.md#L11-L19).
-- **Response:** Xác nhận bằng `git show feature/registration-login:dontlift-mobile/docs/decisions/ADR-009-auth-profile-bootstrap.md` (trạng thái Accepted, human approved 2026-10-06) và mục 8 của `docs/api-contracts.md` trên nhánh đó. Cây hiện tại `feature/sl-002-native-firebase-runtime` không chứa ADR-009; `docs/implementation-plan.md` mục 2 nói ADR/API và test evidence vẫn là external Git-ref context và có review findings chưa xử lý. Giữ blocker OPEN vì quyết định đã chấp thuận chưa được tích hợp/đối chiếu vào baseline thực thi; plan chưa bị sửa trong review mode.
+- **Response:** ADR-009 và API §8 đã được sao chép vào tài liệu canonical; `docs/software-architecture.md` được đồng bộ để phản ánh email Auth-derived trong profile theo quyết định ADR. `docs/implementation-plan.md` và SL-003 nay ghi D2 đã giải quyết, nhưng Auth code/test evidence vẫn không được coi là implementation của baseline. Đã kiểm tra review report được track trên nhánh Auth: RC-001 mở về ESLint setup cho Slice 0A, không liên quan registration; không có registration-specific finding trong các report đó. SL-003 vẫn DRAFT và cần human duyệt plan trước P6.2.
 
 ## Self-review
 
 - Original comment identity giữ nguyên; Response đối chiếu owner/tasks/acceptance trong plan đã sửa.
 - Product behavior, ADRs, stable IDs và blockers không bị đổi thành approval tự động.
 - Runtime/device/provisioning evidence vẫn unverified; không source hoặc resource mutation trong corrections.
-- Ba finding PR cũ vẫn được plan xử lý; D2 được giữ OPEN với bằng chứng revision Auth đã accepted nhưng chưa được tích hợp vào baseline hiện hành.
-- Review mode chỉ cập nhật report; target plan và source tree không bị thay đổi.
+- Ba finding PR cũ vẫn được plan xử lý; finding D2 đã được giải quyết bằng tích hợp ADR/API và đồng bộ các tài liệu phụ thuộc.
+- SL-003 vẫn DRAFT; integration của tài liệu không phê duyệt plan hoặc triển khai P6.2.

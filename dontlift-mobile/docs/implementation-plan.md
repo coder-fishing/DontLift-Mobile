@@ -1,6 +1,6 @@
 # P6.1 — Mục lục kế hoạch DontLift
 
-> **DRAFT v0.13 — backlog và implementation plans chưa được phê duyệt.** Đây là bộ kế hoạch được user yêu cầu soạn và lưu để review cho 37 slice, không phải backlog P6.0 đã duyệt và không phải quyền chạy P6.2.
+> **DRAFT v0.15 — backlog P6.0 và các slice chưa được duyệt vẫn là draft.** SL-002 đã được duyệt riêng cho Android development; SL-003 đã được duyệt riêng và execution đang diễn ra. Những approval này không duyệt toàn bộ backlog.
 
 > **Execution update 2026-10-14:** Human duyệt riêng SL-002 Android development runtime: reuse Firebase cloud config hiện có, iOS device verification tạm hoãn. [Plan SL-002](./superpowers/plans/2026-10-13-sl-002-native-firebase-runtime.md) ghi scope/evidence hiện tại; approval này không duyệt các slice khác hay toàn bộ backlog.
 
@@ -24,9 +24,9 @@
 
 - Baseline có Expo UI/prototype layer; Auth screen PIN mẫu, active session trong memory, participants/PIN mock.
 - Calibration dùng timer giả; VietQR là SVG mô phỏng; activation mặc định Pro active.
-- Package manifest chưa có React Native Firebase/SQLite/test dependencies được track như nhánh Auth; chưa có test script.
+- Root package manifest tracks the Expo SDK 57 Jest harness from SL-001 and React Native Firebase development runtime from SL-002; `expo-sqlite` is not installed yet. The `test` script is configured; this does not prove SL-003 behavior.
 - Không có plan nào đạt production nghiệm thu trên baseline này. Không chạy test/build/device/emulator trong lượt viết tài liệu.
-- P6.1 template, Auth implementation, ADR-009 và test evidence ở `feature/registration-login` là external Git-ref context; chưa merged vào baseline và còn các lỗi review cần sửa.
+- Auth implementation và historical test evidence trên `feature/registration-login` vẫn là external Git-ref context, không phải implementation evidence cho baseline này. ADR-009 và `completeRegistrationProfile` API §8 đã được tích hợp vào tài liệu canonical. Review report được track trên nhánh Auth chỉ ghi RC-001 về thiếu ESLint setup cho Slice 0A; không thấy finding riêng cho registration trong các report đã kiểm tra. Không dùng Auth source code làm bằng chứng nghiệm thu.
 - V01–V10 trong plan là màn 01–10 tại `design/concepts/concept-final/screens/`. Screens/prototype là read-only; không chứng minh adapters hoặc backend đã có.
 
 ## 3. Danh sách 37 kế hoạch
@@ -37,7 +37,7 @@ P0 là nền tảng/critical journey trước; P1 là cần hoàn tất MVP; P2 
 |---|---|---|---|---|
 | SL-001 | [Nền tảng kiểm thử](./superpowers/plans/2026-10-13-sl-001-test-foundation.md) | P0 | Không | Không xác nhận riêng |
 | SL-002 | [Development runtime cho Firebase](./superpowers/plans/2026-10-13-sl-002-native-firebase-runtime.md) | P0 | SL-001 | D1 production deferred; E1 iOS/emulator/metadata chưa kiểm chứng |
-| SL-003 | [Đăng ký và hoàn tất profile](./superpowers/plans/2026-10-13-sl-003-registration-profile.md) | P0 | SL-002 | D2 |
+| SL-003 | [Đăng ký và hoàn tất profile](./superpowers/plans/2026-10-13-sl-003-registration-profile.md) | P0 | SL-002 | E1 acceptance evidence |
 | SL-004 | [Login, khôi phục phiên và logout](./superpowers/plans/2026-10-13-sl-004-login-session.md) | P0 | SL-003 | Không xác nhận riêng |
 | SL-005 | [Kiểm tra sensor trước khi focus](./superpowers/plans/2026-10-13-sl-005-sensor-availability.md) | P0 | SL-001, SL-002 | E1 |
 | SL-006 | [Chọn mode và bắt đầu Solo session](./superpowers/plans/2026-10-13-sl-006-solo-start.md) | P0 | SL-004, SL-005 | Không xác nhận riêng |
@@ -80,7 +80,7 @@ SL-037 phụ thuộc bắt buộc SL-001–SL-036 vì phạm vi đã chọn gồ
 | Mã | Nội dung |
 |---|---|
 | D1 | Thống nhất tiếp nhận quyết định emulator/dev từ feature/registration-login; xác nhận environment/config và production vẫn riêng. Không provision/deploy khi chưa được cấp quyền. |
-| D2 | Tiếp nhận hoặc duyệt ADR-009 và wire contract completeRegistrationProfile từ nhánh Auth; chúng chưa thuộc baseline này. |
+| D2 | Đã giải quyết cho SL-003: ADR-009 (human approved 2026-10-06) và API `completeRegistrationProfile` §8 đã được đưa vào tài liệu canonical. Không yêu cầu duyệt lại behavior đã chấp thuận; nếu thay đổi behavior thì cần quyết định mới. |
 | D3 | Chốt wire/schema/error/concurrency cho start/early-exit/vote/heartbeat nếu slice dùng chúng; chốt syncEvents cho violation đang kéo dài; chốt early-exit cutoff/eligible events với room-completion pending set và ACK. Không đoán payload từ responsibility table. |
 | D4 | Duyệt local completion/cutoff trigger, recovery/schema/identity và destination/projection/query/retention cho history nhóm và GROUP_SESSION_LOCAL_SUMMARY; local summary không tự complete room. |
 | D5 | Duyệt checksum cụ thể, test vectors, nguồn code hợp lệ và operational contract cấp code. Website/email mua Premium là external prerequisite, không tự implement. |
@@ -193,6 +193,11 @@ Website mua Premium/code generation/email delivery là external operational prer
 - v0.11: SL-018 sở hữu mở rộng syncEvents cho per-member cutoff và boundary/concurrency tests; D3 vẫn chặn policy chưa duyệt. SL-013 phụ thuộc SL-006 để room migration theo sau sessions migration, giữ version và dữ liệu cũ.
 - v0.12: SL-022 sở hữu authenticated server heartbeat write path, Functions export, authorization/client-denial Emulator Suite và discovery coverage sau khi D3 chốt contract. SL-019 phụ thuộc SL-018 và kiểm chứng early-exit Member vẫn retained nhưng không làm voter unanimity bất khả thi. Giữ nguyên D3, IDs và trạng thái draft.
 - v0.13: SL-020 phụ thuộc SL-018 và kiểm chứng completion/ACK khi early-exit events còn chờ; SL-033 gọi local purge ở app startup/resume, ghi receipt `expiresAt` và dùng native Firestore TTL do SL-037 deploy; SL-035 phụ thuộc SL-006 và theo placement FR-06, ghi xung đột Profile/Home dưới D7. Giữ nguyên 37 IDs, P6.0 draft và D10/D7 gates.
+
+**Changelog 2026-10-14:**
+
+- v0.14: Tích hợp ADR-009 đã accepted và wire contract `completeRegistrationProfile` §8 vào baseline; đồng bộ `users/{uid}` email authority trong architecture; gỡ D2 khỏi SL-003 blocker sau khi đối chiếu tracked Auth review report (RC-001 chỉ thuộc lint Slice 0A). Giữ Auth source/test evidence ngoài baseline.
+- v0.15: Human duyệt riêng execution SL-003 ngày 2026-10-14; cập nhật trạng thái approval trong plan và implementation index. Các slice/backlog khác không đổi trạng thái.
 
 **Trạng thái corrections:** [SL-003 review](./superpowers/reviews/2026-10-13-sl-003-registration-profile-review-plan.md), [SL-005 review](./superpowers/reviews/2026-10-13-sl-005-sensor-availability-review-plan.md), [SL-007 review](./superpowers/reviews/2026-10-13-sl-007-foreground-detection-review-plan.md), [SL-009 review](./superpowers/reviews/2026-10-13-sl-009-android-recovery-review-plan.md), [SL-010 review](./superpowers/reviews/2026-10-13-sl-010-ios-recovery-review-plan.md), [SL-013 review](./superpowers/reviews/2026-10-13-sl-013-room-create-review-plan.md), [SL-016 review](./superpowers/reviews/2026-10-13-sl-016-room-lobby-start-review-plan.md), [SL-028 review](./superpowers/reviews/2026-10-13-sl-028-group-history-review-plan.md), [SL-029 review](./superpowers/reviews/2026-10-13-sl-029-profile-edit-review-plan.md), [SL-030 review](./superpowers/reviews/2026-10-13-sl-030-feedback-settings-review-plan.md), [SL-031 review](./superpowers/reviews/2026-10-13-sl-031-local-premium-review-plan.md), [SL-034 review](./superpowers/reviews/2026-10-13-sl-034-premium-themes-review-plan.md), [SL-037 review](./superpowers/reviews/2026-10-13-sl-037-mvp-release-review-plan.md).
 

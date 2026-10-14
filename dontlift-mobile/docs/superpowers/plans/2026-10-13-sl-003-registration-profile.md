@@ -8,13 +8,14 @@
 
 **Slice:** SL-003. **Ưu tiên đề xuất:** P0. **Release:** MVP + activation/Premium; post-MVP deferred. SL-036 chỉ được tính release sau D6.
 
-**Trạng thái kế hoạch:** DRAFT — chưa được human duyệt; bị chặn bởi D2.
+**Trạng thái kế hoạch:** APPROVED — human duyệt riêng execution SL-003 ngày 2026-10-14; D2 đã được giải quyết ở mức tài liệu.
+**Approval evidence:** Human yêu cầu thực thi riêng SL-003 trên `feature/sl-003-registration-profile`, giữ nguyên scope/dependencies/acceptance/verification và dừng khi gặp blocker chưa duyệt; ngày 2026-10-14.
 **Trạng thái implementation quan sát:** LoginScreen chỉ dùng PIN mẫu và Alert. Chưa có evidence nghiệm thu slice.
 **Baseline khảo sát:** docs/p6.0-implementation-slices tại 57ca1eb28a2952c66d01f89b9b89bf755ab4812a.
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Plan slug:** `2026-10-13-sl-003-registration-profile`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-003-registration-profile]`.
 **Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13, chưa được phê duyệt. User đã yêu cầu ghi draft P6.1 cho cả 37 slice; không suy thành approval thực thi.
-**Traceability:** US-01; FS §1; UX §2; V01; ADR-001 và ADR-009 ở nhánh Auth.
+**Traceability:** US-01; FS §1; UX §2; V01; ADR-001; [ADR-009](../../decisions/ADR-009-auth-profile-bootstrap.md); [API §8](../../api-contracts.md#8-completeregistrationprofile).
 **Phụ thuộc bắt buộc:** [SL-002](./2026-10-13-sl-002-native-firebase-runtime.md)
 **Ưu tiên mềm:** Theo thứ tự đề xuất trong [mục lục](../../implementation-plan.md); thứ tự không tạo thêm hard dependency.
 
@@ -32,9 +33,9 @@ V01–V10 chỉ các màn tương ứng tại `design/concepts/concept-final/scr
 
 ## 2. Blocker, risk và quyết định cần duyệt
 
-- **D2:** Tiếp nhận hoặc duyệt ADR-009 và wire contract completeRegistrationProfile từ nhánh Auth; chúng chưa thuộc baseline này.
+- **D2 — đã giải quyết:** ADR-009 đã được human chấp thuận ngày 2026-10-06; nội dung ADR và wire contract `completeRegistrationProfile` đã được đưa vào baseline tại `docs/decisions/ADR-009-auth-profile-bootstrap.md` và `docs/api-contracts.md` §8. Không cần duyệt lại behavior đã chấp thuận. Nếu đối chiếu lúc thực thi phát hiện thay đổi behavior chưa được duyệt, dừng và xin quyết định riêng.
 
-**Rủi ro cụ thể:** D2 và E1; cân nhắc tái sử dụng nhánh Auth sau sửa các lỗi đã review.
+**Rủi ro cụ thể:** E1; không coi implementation/test evidence ở nhánh Auth là nghiệm thu của baseline hiện tại. Review report được track trên nhánh Auth chỉ có RC-001 về lint của Slice 0A; không có finding riêng cho registration trong các report đã kiểm tra. Không tái sử dụng Auth source code cho tới khi nó được review theo baseline hiện tại.
 
 Nếu một contract chỉ có responsibility mà chưa có schema, task đầu là trình bày missing decision với nguồn; không tự tạo endpoint/field mới. Các hành vi test bên dưới mô tả outcome cần đạt, không thay thế wire approval. Ngưỡng/range/default chưa được spec xác định phải có quyết định ghi lại trước khi implement.
 
@@ -99,7 +100,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Viết cases: fresh database tạo đúng schema; reopen giữ profile; migration đã áp dụng không chạy lại; migration lỗi rollback và không báo ready.
 - [ ] Chạy focused failing cases bằng harness SL-001; thiếu SQLite package không được tính là red nghiệp vụ.
 - [ ] Mở database qua một shared boundary; ghi migration version chỉ sau schema commit thành công.
-- [ ] Tạo profile schema theo ADR-009 chỉ sau D2 được giải quyết; không đưa token/password/entitlement vào profile table.
+- [ ] Tạo profile schema theo ADR-009 đã được chấp thuận; không đưa token/password/entitlement vào profile table.
 - [ ] Profile upsert chỉ chạy sau readiness; init/migration/write lỗi giữ user ở retryable completion, không vào app giả.
 - [ ] Reopen trên Development Build, kiểm tra profile còn và rollback bảo toàn data. Đồng bộ/kiểm tra root manifest và hai lockfiles.
 - [ ] Review task trước commit theo dated plan slug; không tạo domain session/outbox schema thuộc SL-006/007 trước scope của chúng.
@@ -134,7 +135,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 **Files:** Dùng units/config/backend/repositories trong bảng mục 3; khi test source đã được chỉ định, đặt cases thuộc boundary vào đúng app/backend target. Không thay presentation chưa cần cho task này.
 
-**Nhận/trả:** Nhận Tên, email, password, confirmation và Auth-derived identity; trả Canonical profile đã lưu SQLite hoặc field error / retryable profile-completion. Với contract đang bị chặn, chưa có quyền thêm schema dù test outcome đã được nêu.
+**Nhận/trả:** Nhận Tên, email, password, confirmation và Auth-derived identity; trả Canonical profile đã lưu SQLite hoặc field error / retryable profile-completion. Implement đúng schema và behavior trong ADR-009/API §8; nếu source lúc execute có khác biệt chưa được duyệt thì dừng, ghi rõ evidence và xin quyết định thay vì tự mở rộng contract.
 
 - [ ] Đọc lại source/spec và xác nhận tất cả blocker cùng dependency cho task đã được giải quyết; nếu chưa, dừng execution và báo đúng blocker.
 - [ ] Viết focused failing cases sau đây; runner không tìm thấy hoặc thiếu dependency không được tính là red nghiệp vụ.
@@ -146,7 +147,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Chạy focused command trong mục 7; xác nhận failure đúng behavior đang thiếu, không từ toolchain lỗi.
 - [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
 
-1. Chỉ áp dụng ADR-009 sau khi human tiếp nhận; không tự nghĩ schema bootstrap còn thiếu trên baseline.
+1. Áp dụng đúng ADR-009 và API §8 đã chấp thuận; không tự nghĩ thêm profile schema hoặc behavior bootstrap.
 2. Validate tên/email/password/confirmation trước network; dùng generic duplicate-email error.
 3. Tạo Auth account, set name, bootstrap profile create-only, rồi upsert local profile; không ghi token/password vào SQLite.
 
@@ -211,6 +212,6 @@ Ghi trong kết quả execution: baseline/commit mới, command, exit status, s�
 
 ## 8. Human review và bàn giao P6.2
 
-Human phải duyệt scope, non-goals, tasks, acceptance cases, dependencies và các quyết định còn mở của **SL-003** trước implementation. Duyệt một slice không duyệt tất cả 37; duyệt authoring batch không duyệt code.
+Human đã duyệt scope, non-goals, tasks, acceptance cases, dependencies và verification riêng của **SL-003** ngày 2026-10-14 (xem Approval evidence). Duyệt một slice không duyệt tất cả 37; duyệt authoring batch không duyệt code.
 
-Sau approval, cập nhật trạng thái/date/decision evidence trong đúng plan; kế hoạch mới chỉ đủ execution-ready khi blocker đã được giải quyết và baseline được re-inspect. Dùng qskill-executing-plans khi user yêu cầu execute plan đã duyệt. Không tự bắt đầu P6.2 từ file draft hoặc từ prompt batch.
+Sau approval, cập nhật trạng thái/date/decision evidence trong đúng plan; kế hoạch mới chỉ đủ execution-ready khi blocker đã được giải quyết và baseline được re-inspect. Dùng qskill-executing-plans khi user yêu cầu execute plan đã duyệt. Không tự bắt đầu slice khác từ file draft hoặc từ prompt batch.
