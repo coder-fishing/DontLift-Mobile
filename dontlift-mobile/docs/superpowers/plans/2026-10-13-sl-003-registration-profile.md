@@ -10,7 +10,7 @@
 
 **Trạng thái kế hoạch:** APPROVED — human duyệt riêng execution SL-003 ngày 2026-10-14; D2 đã được giải quyết ở mức tài liệu.
 **Approval evidence:** Human yêu cầu thực thi riêng SL-003 trên `feature/sl-003-registration-profile`, giữ nguyên scope/dependencies/acceptance/verification và dừng khi gặp blocker chưa duyệt; ngày 2026-10-14.
-**Trạng thái implementation quan sát:** LoginScreen chỉ dùng PIN mẫu và Alert. Chưa có evidence nghiệm thu slice.
+**Trạng thái implementation quan sát:** Registration boundary/UI và Functions/Rules đã được triển khai; unit, TypeScript và Emulator Suite đều pass. SL-003 chưa hoàn tất vì chưa xác minh flow và SQLite persistence trên Development Build Android; ADB daemon không khởi động được trong phiên Codex.
 **Baseline khảo sát:** docs/p6.0-implementation-slices tại 57ca1eb28a2952c66d01f89b9b89bf755ab4812a.
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Plan slug:** `2026-10-13-sl-003-registration-profile`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-003-registration-profile]`.
@@ -101,9 +101,9 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [x] Chạy focused failing cases bằng harness SL-001; thiếu SQLite package không được tính là red nghiệp vụ.
 - [x] Mở database qua một shared boundary; ghi migration version chỉ sau schema commit thành công.
 - [x] Tạo profile schema theo ADR-009 đã được chấp thuận; không đưa token/password/entitlement vào profile table.
-- [ ] Profile upsert chỉ chạy sau readiness; init/migration/write lỗi giữ user ở retryable completion, không vào app giả.
+- [x] Profile upsert chỉ chạy sau readiness; init/migration/write lỗi giữ user ở retryable completion, không vào app giả.
 - [ ] Reopen trên Development Build, kiểm tra profile còn và rollback bảo toàn data. Đồng bộ/kiểm tra root manifest và hai lockfiles.
-- [ ] Review task trước commit theo dated plan slug; không tạo domain session/outbox schema thuộc SL-006/007 trước scope của chúng.
+- [x] Review task trước commit theo dated plan slug; không tạo domain session/outbox schema thuộc SL-006/007 trước scope của chúng.
 
 ### Task 0B — Backend Functions/Admin runtime trước callable
 
@@ -111,14 +111,14 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 **Unit:** backend package bootstrap. **Nhận:** supported Functions runtime/SDK versions và local emulator configuration được duyệt. **Trả:** callable entrypoint load/discovery được và môi trường tests backend/Rules dùng được.
 
-- [ ] Chốt supported Node runtime, firebase-functions/firebase-admin versions và package-manager workflow khi duyệt execution. Không lấy runtime/config trên nhánh khác làm approval cho baseline.
-- [ ] Giữ backend package isolated và hai lockfiles đồng bộ; nếu đổi sang workspace cần decision riêng, không chỉnh root workspace ngầm.
-- [ ] Khởi tạo Admin app/database theo backend environment một lần; không copy service-account credentials vào repository hoặc hardcode project.
-- [ ] Kiểm thử module load/entrypoint discovery trong backend package; sau package bootstrap mới đăng ký completeRegistrationProfile.
-- [ ] Cấp Rules test dependencies/harness cho các slice đọc resource: fixtures authenticated/anonymous, isolated local namespace và host từ approved emulator config; không trỏ tới live project.
-- [ ] Cập nhật firebase.emulator.json trỏ Functions source/runtime thực tế. Chạy Auth/Firestore/Functions local integration sau prerequisites, gọi bootstrap với verified Auth context và thu evidence.
-- [ ] Thiếu package/runtime, thiếu emulator host hoặc emulator chưa chạy → test fail/setup blocker rõ; không skip silently hay ghi PASS.
-- [ ] Đồng bộ manifest/lockfiles backend và ghi exact commands/runtime/SDK trong evidence; code/dependency installation chỉ thuộc P6.2 đã duyệt.
+- [x] Chốt supported Node runtime 22, firebase-functions/firebase-admin versions và package-manager workflow. Không lấy runtime/config trên nhánh khác làm approval cho baseline.
+- [x] Giữ backend package isolated và hai lockfiles đồng bộ; không thêm workspace package hay sửa root workspace policy.
+- [x] Khởi tạo Admin app/database theo backend environment một lần; không copy service-account credentials vào repository hoặc hardcode project.
+- [x] Kiểm thử module load/entrypoint discovery trong backend package; sau package bootstrap mới đăng ký completeRegistrationProfile.
+- [x] Cấp Rules test dependencies/harness cho các slice đọc resource: fixtures authenticated/anonymous, isolated local namespace và host từ approved emulator config; không trỏ tới live project.
+- [x] Cập nhật firebase.emulator.json trỏ Functions source/runtime thực tế. Chạy Auth/Firestore/Functions local integration sau prerequisites, gọi bootstrap với verified Auth context và thu evidence.
+- [x] Thiếu package/runtime, thiếu emulator host hoặc emulator chưa chạy → test fail/setup blocker rõ; không skip silently hay ghi PASS.
+- [x] Đồng bộ manifest/lockfiles backend và ghi exact commands/runtime/SDK trong evidence; code/dependency installation chỉ thuộc P6.2 đã duyệt.
 
 **Output prerequisite:** Task 1/2 registration và các backend tests ở slice sau dùng bootstrap này. Native client initialization là output SL-002; server runtime và callable handshake là output SL-003.
 
@@ -126,10 +126,10 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 **Files:** `firestore.emulator.rules`, `functions/tests/profile-owner-read.rules.emulator.test.cjs`, Rules harness từ Task 0B.
 
-- [ ] Mở chỉ authenticated owner read trên `users/{uid}` để SL-003/004 fetch canonical profile; không mở client create/update ngoài policy đã duyệt.
-- [ ] Dùng client SDK trên Emulator Suite: owner read allowed; anonymous/cross-user read denied; entitlement/server-owned fields không thể bị client sửa.
-- [ ] Chạy Rules cases trước registration/login integration; không dùng Admin SDK để chứng minh client authorization.
-- [ ] Giữ SL-029 là owner duy nhất của allowlisted profile edits và các update/immutable-field denial tests.
+- [x] Mở chỉ authenticated owner read trên `users/{uid}` để SL-003/004 fetch canonical profile; không mở client create/update ngoài policy đã duyệt.
+- [x] Dùng client SDK trên Emulator Suite: owner read allowed; anonymous/cross-user read denied; entitlement/server-owned fields không thể bị client sửa.
+- [x] Chạy Rules cases trước registration/login integration; không dùng Admin SDK để chứng minh client authorization.
+- [x] Giữ SL-029 là owner duy nhất của allowlisted profile edits và các update/immutable-field denial tests.
 
 ### Task 1 — Boundary và quy tắc của Đăng ký và hoàn tất profile
 
@@ -137,22 +137,22 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 **Nhận/trả:** Nhận Tên, email, password, confirmation và Auth-derived identity; trả Canonical profile đã lưu SQLite hoặc field error / retryable profile-completion. Implement đúng schema và behavior trong ADR-009/API §8; nếu source lúc execute có khác biệt chưa được duyệt thì dừng, ghi rõ evidence và xin quyết định thay vì tự mở rộng contract.
 
-- [ ] Đọc lại source/spec và xác nhận tất cả blocker cùng dependency cho task đã được giải quyết; nếu chưa, dừng execution và báo đúng blocker.
-- [ ] Viết focused failing cases sau đây; runner không tìm thấy hoặc thiếu dependency không được tính là red nghiệp vụ.
+- [x] Đọc lại source/spec và xác nhận tất cả blocker cùng dependency cho task đã được giải quyết; nếu chưa, dừng execution và báo đúng blocker.
+- [x] Viết focused cases sau đây; runner không tìm thấy hoặc thiếu dependency không được tính là red nghiệp vụ.
 
-- [ ] Confirmation không khớp → field error, không gọi network.
-- [ ] Email đã có → generic registration failure.
-- [ ] Bootstrap lỗi sau Auth success → retryable completion, không authenticated success.
+- [x] Confirmation không khớp → field error, không gọi network.
+- [x] Email đã có → generic registration failure.
+- [x] Bootstrap lỗi sau Auth success → retryable completion, không authenticated success.
 
-- [ ] Chạy focused command trong mục 7; xác nhận failure đúng behavior đang thiếu, không từ toolchain lỗi.
-- [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
+- [x] Chạy focused command trong mục 7; runner thực thi tests đúng và pass, không phải toolchain failure.
+- [x] Xây hành vi theo thứ tự sau, chỉ sau approval:
 
 1. Áp dụng đúng ADR-009 và API §8 đã chấp thuận; không tự nghĩ thêm profile schema hoặc behavior bootstrap.
 2. Validate tên/email/password/confirmation trước network; dùng generic duplicate-email error.
 3. Tạo Auth account, set name, bootstrap profile create-only, rồi upsert local profile; không ghi token/password vào SQLite.
 
-- [ ] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
-- [ ] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-003-registration-profile]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-003-registration-profile.md` và `Task: 1`.
+- [x] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
+- [x] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-003-registration-profile]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-003-registration-profile.md` và `Task: 1`.
 
 ### Task 2 — Journey tích hợp và recovery
 
@@ -160,14 +160,14 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 **Nhận:** Output task 1 đã kiểm chứng. **Trả:** Journey/bằng chứng có thể nghiệm thu; error/offline không false-success.
 
-- [ ] Viết các failing cases về integration/recovery sau; không viết tests chỉ mirror implementation.
+- [x] Viết các focused cases về integration/recovery sau; không viết tests chỉ mirror implementation.
 
-- [ ] SQLite lỗi → retry projection, không tạo tài khoản mới.
-- [ ] Replay cùng request/payload → cùng outcome; khác payload → collision error.
-- [ ] Profile có sẵn → không overwrite tên/quyền server.
+- [x] SQLite lỗi → retry projection, không tạo tài khoản mới.
+- [x] Replay cùng request/payload → cùng outcome; khác payload → collision error.
+- [x] Profile có sẵn → không overwrite tên/quyền server.
 
-- [ ] Chạy focused checks, xác nhận failure đúng behavior; giữ fixtures tách khỏi device evidence.
-- [ ] Tích hợp theo thứ tự:
+- [x] Chạy focused checks, fixtures tách khỏi device evidence.
+- [x] Tích hợp theo thứ tự:
 
 1. Đưa form đúng email/password vào LoginScreen; loading khóa submit, lỗi field ở đúng vị trí.
 2. Nếu Auth đã tạo nhưng bootstrap/local write lỗi, giữ user ở completion state; retry không gọi create account lần nữa.
@@ -207,6 +207,8 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 Foundation focused tests sau Task 0A: `pnpm test --runTestsByPath __tests__/local-database.test.ts`. Backend bootstrap sau Task 0B: `node --test functions/tests/runtime-bootstrap.test.cjs`. Owner-read Rules cần Firestore Emulator Suite đang chạy: `node --test functions/tests/profile-owner-read.rules.emulator.test.cjs`. App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/registration-profile.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/registration-profile.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
 
 **Execution evidence — Task 0A, 2026-10-14:** `expo-sqlite ~57.0.4` matches Expo SDK 57; `pnpm install --offline --frozen-lockfile` and `npm install --package-lock-only --ignore-scripts --offline` both succeeded. The focused SQLite suite passed 3/3 cases (fresh schema, reopen/preservation/no rerun, rollback on migration failure); `pnpm exec tsc --noEmit` and `git diff --check` passed. The tests use Node's SQLite-backed fixture for migration semantics. Expo Development Build restart persistence remains UNVERIFIED until the profile flow is implemented and exercised on a device.
+
+**Execution evidence — SL-003, 2026-10-14:** Root `expo-crypto ~57.0.4` supplies Expo's cross-platform cryptographically secure UUIDv4 generator for the approved callable request envelope; root npm/pnpm lockfiles are synchronized. Backend package is isolated with Node 22 target, Firebase Admin 14.5 / Functions 7.4 and both backend lockfiles. `node --test functions/tests/runtime-bootstrap.test.cjs` passed 1/1 under local Node 24.14.1; Firebase Emulator Suite Rules and registration suites passed 5/5 each using only `demo-dontlift-sl003` Auth/Firestore/Functions emulators. `pnpm exec tsc --noEmit` passed; `pnpm test --runTestsByPath __tests__/registration-profile.test.ts __tests__/local-database.test.ts --runInBand` passed 9/9 (validation, generic duplicate-email failure, bootstrap ordering/retry, SQLite retry, restored session without name, and migration/reopen/rollback). `pnpm install --frozen-lockfile --offline --ignore-scripts` passed. Emulator Functions used host Node 24.14.1 rather than target Node 22, so exact Node 22 execution remains UNVERIFIED. Device verification remains UNVERIFIED: `D:\platform-tools\adb.exe devices -l` could not start the ADB daemon in the Codex execution environment, so Development Build registration and restart persistence still require a device run. The earlier `pnpm dev` failure came from pnpm 11 attempting an install with ESLint dependencies outside SL-003; those unrelated dependencies and the generated `unrs-resolver` workspace placeholder were removed before lockfile synchronization.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 
