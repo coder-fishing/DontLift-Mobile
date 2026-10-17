@@ -13,7 +13,7 @@
 **Baseline khảo sát:** docs/p6.0-implementation-slices tại 57ca1eb28a2952c66d01f89b9b89bf755ab4812a.
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Plan slug:** `2026-10-13-sl-005-sensor-availability`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-005-sensor-availability]`.
-**Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13, chưa được phê duyệt. User đã yêu cầu ghi draft P6.1 cho cả 37 slice; không suy thành approval thực thi.
+**Đầu vào phạm vi:** Ngày 2026-10-18, user yêu cầu tạo nhánh `feature/sl-005-sensor-availability` từ `main` và thực hiện SL-005. Đây là chỉ thị triển khai rõ ràng cho riêng slice này; không suy thành approval cho các slice khác.
 **Traceability:** US-04; UX §3; V10.
 **Phụ thuộc bắt buộc:** [SL-001](./2026-10-13-sl-001-test-foundation.md), [SL-002](./2026-10-13-sl-002-native-firebase-runtime.md)
 **Ưu tiên mềm:** Theo thứ tự đề xuất trong [mục lục](../../implementation-plan.md); thứ tự không tạo thêm hard dependency.
@@ -148,3 +148,15 @@ Ghi trong kết quả execution: baseline/commit mới, command, exit status, s�
 Human phải duyệt scope, non-goals, tasks, acceptance cases, dependencies và các quyết định còn mở của **SL-005** trước implementation. Duyệt một slice không duyệt tất cả 37; duyệt authoring batch không duyệt code.
 
 Sau approval, cập nhật trạng thái/date/decision evidence trong đúng plan; kế hoạch mới chỉ đủ execution-ready khi blocker đã được giải quyết và baseline được re-inspect. Dùng qskill-executing-plans khi user yêu cầu execute plan đã duyệt. Không tự bắt đầu P6.2 từ file draft hoặc từ prompt batch.
+
+
+## 9. Execution evidence — 2026-10-18
+
+- Branch: `feature/sl-005-sensor-availability`, based on main commit `4bd2917`.
+- Focused unit tests: `pnpm test --runTestsByPath __tests__/sensor-availability.test.ts` — PASS, 6 tests.
+- TypeScript: `pnpm exec tsc --noEmit` — PASS.
+- Expo config: `pnpm exec expo config --type public` — PASS; `expo-sensors` plugin and motion permission string resolved.
+- Whitespace: `git diff --check` — PASS.
+- Lint: not run to completion because repository has no ESLint config; Expo attempted to install lint packages. The auto-added packages were removed and both lockfiles remain scoped to `expo-sensors`.
+- Physical Android/iOS sensor, permission, Settings-return, and rendered UI checks: UNVERIFIED; no app was installed or launched on a physical device in this execution.
+- Slice status remains INCOMPLETE until required physical-device acceptance evidence is recorded.

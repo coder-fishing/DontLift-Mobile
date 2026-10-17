@@ -6,6 +6,7 @@ import {
   StyleSheet,
   StatusBar,
   Alert,
+  Linking,
   Text,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -27,6 +28,7 @@ import { VietQRSettlementScreen } from '../screens/VietQRSettlementScreen';
 import { ActivationScreen } from '../screens/ActivationScreen';
 import { HardwareDiagnosticsScreen } from '../screens/HardwareDiagnosticsScreen';
 import { useAuthSession } from '../features/auth/auth-session';
+import { useSensorAvailability } from '../features/sensors/use-sensor-availability';
 import type { RegistrationProfile, RegistrationUser } from '../features/auth/auth-controller';
 import type { AuthSessionState } from '../features/auth/auth-session-controller';
 
@@ -80,6 +82,7 @@ function LoginGate({ state, recoveryUser }: { state: AuthSessionState; recoveryU
 function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const insets = useSafeAreaInsets();
   const session = useAuthSession();
+  const sensorAvailability = useSensorAvailability();
   // Navigation & Drawer
   const [currentScreen, setCurrentScreen] = useState<ScreenId>('02-solo-select');
   const [drawerVisible, setDrawerVisible] = useState<boolean>(false);
@@ -171,6 +174,10 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
 
   // Solo handlers
   const handleStartSolo = (mins: number) => {
+    if (sensorAvailability.state.kind !== 'ready') {
+      Alert.alert('Sensor check required', 'Wait for the accelerometer check to pass before starting focus.');
+      return;
+    }
     setSelectedDuration(mins);
     setSoloSecondsLeft(mins * 60);
     setIsSoloRunning(true);
@@ -234,6 +241,13 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
             selectedDuration={selectedDuration}
             onSelectDuration={setSelectedDuration}
             onStartSession={handleStartSolo}
+            sensorAvailability={sensorAvailability.state}
+            onRetrySensorCheck={() => { void sensorAvailability.retry(); }}
+            onOpenSettings={() => {
+              void Linking.openSettings().catch(() => {
+                Alert.alert('Settings unavailable', 'Open your device settings and allow motion access for DontLift.');
+              });
+            }}
           />
         )}
 
@@ -296,7 +310,17 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
 
         {currentScreen === '09-activation' && <ActivationScreen />}
 
-        {currentScreen === '10-hardware-diagnostics' && <HardwareDiagnosticsScreen />}
+        {currentScreen === '10-hardware-diagnostics' && (
+          <HardwareDiagnosticsScreen
+            sensorAvailability={sensorAvailability.state}
+            onRetrySensorCheck={() => { void sensorAvailability.retry(); }}
+            onOpenSettings={() => {
+              void Linking.openSettings().catch(() => {
+                Alert.alert('Settings unavailable', 'Open your device settings and allow motion access for DontLift.');
+              });
+            }}
+          />
+        )}
         </ScrollView>
       </View>
 

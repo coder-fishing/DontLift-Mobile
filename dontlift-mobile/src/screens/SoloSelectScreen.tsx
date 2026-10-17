@@ -3,28 +3,37 @@ import { View, Text, TouchableOpacity, StyleSheet, Platform, useColorScheme } fr
 import { Colors } from '../constants/theme';
 import { GlassCard } from '../components/GlassCard';
 import { PrimaryButton } from '../components/PrimaryButton';
+import { SensorAvailabilityPanel } from '../components/SensorAvailabilityPanel';
+import type { SensorAvailabilityState } from '../features/sensors/sensor-adapter';
 
 interface SoloSelectScreenProps {
   selectedDuration: number;
   onSelectDuration: (mins: number) => void;
   onStartSession: (mins: number) => void;
+  sensorAvailability: SensorAvailabilityState;
+  onRetrySensorCheck: () => void;
+  onOpenSettings: () => void;
 }
 
 export function SoloSelectScreen({
   selectedDuration,
   onSelectDuration,
   onStartSession,
+  sensorAvailability,
+  onRetrySensorCheck,
+  onOpenSettings,
 }: SoloSelectScreenProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = colorScheme === 'dark' ? Colors.dark : Colors.light;
   const [customMinutes, setCustomMinutes] = useState<number>(90);
   const [showCustomStepper, setShowCustomStepper] = useState<boolean>(false);
+  const canStartSession = sensorAvailability.kind === 'ready';
 
   return (
     <View style={styles.container}>
       <View style={styles.titleSection}>
-        <Text style={styles.sectionTitle}>Solo Focus Mode</Text>
-        <Text style={styles.sectionDesc}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>Solo Focus Mode</Text>
+        <Text style={[styles.sectionDesc, { color: colors.textSecondary }]}>
           Select discipline interval before placing phone face-down.
         </Text>
       </View>
@@ -78,10 +87,10 @@ export function SoloSelectScreen({
 
               <Text style={styles.cardDuration}>
                 {item.duration}
-                <Text style={styles.durationUnit}>m</Text>
+                <Text style={[styles.durationUnit, { color: colors.text }]}>m</Text>
               </Text>
-              <Text style={styles.cardTitle}>{item.title}</Text>
-              <Text style={styles.cardDesc}>{item.desc}</Text>
+              <Text style={[styles.cardTitle, { color: colors.text }]}>{item.title}</Text>
+              <Text style={[styles.cardDesc, { color: colors.textSecondary }]}>{item.desc}</Text>
             </TouchableOpacity>
           );
         })}
@@ -90,7 +99,7 @@ export function SoloSelectScreen({
       {/* Stepper adjustment row if custom */}
       {showCustomStepper && (
         <GlassCard style={styles.stepperCard}>
-          <Text style={styles.stepperTitle}>Adjust Custom Interval</Text>
+          <Text style={[styles.stepperTitle, { color: colors.text }]}>Adjust Custom Interval</Text>
           <View style={styles.stepperControls}>
             <TouchableOpacity
               onPress={() => {
@@ -117,25 +126,19 @@ export function SoloSelectScreen({
         </GlassCard>
       )}
 
-      {/* Gyroscope Readiness */}
-      <GlassCard style={styles.readinessCard}>
-        <View style={styles.readinessRow}>
-          <View style={styles.gyroBadge}>
-            <Text style={styles.gyroIcon}>🔄</Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.gyroTitle}>Phone-Down Detection Ready</Text>
-            <Text style={styles.gyroSub}>50Hz Gyroscope Active • 3.0s Grace Window</Text>
-          </View>
-          <View style={styles.armedBadge}>
-            <Text style={styles.armedBadgeText}>ARMED</Text>
-          </View>
-        </View>
-      </GlassCard>
+      <SensorAvailabilityPanel
+        state={sensorAvailability}
+        onRetry={onRetrySensorCheck}
+        onOpenSettings={onOpenSettings}
+      />
 
       <PrimaryButton
         title={`Start ${selectedDuration}m Solo Focus Session`}
         onPress={() => onStartSession(selectedDuration)}
+        disabled={!canStartSession}
+        accessibilityState={{ disabled: !canStartSession }}
+        accessibilityHint={canStartSession ? undefined : 'The session starts after the accelerometer check is ready'}
+        style={!canStartSession ? styles.startDisabled : undefined}
       />
     </View>
   );
@@ -144,6 +147,9 @@ export function SoloSelectScreen({
 const styles = StyleSheet.create({
   container: {
     gap: 16,
+  },
+  startDisabled: {
+    opacity: 0.55,
   },
   titleSection: {
     marginBottom: 4,
