@@ -168,9 +168,50 @@ Repeating the same `requestId` with the same canonical payload returns the previ
 
 **Transaction outputs:** read `activationCodes/{codeHash}`, verify unused code, set `redeemedBy` and `redeemedAt`, set `users/{uid}.isPremium = true`, and store command receipt atomically. Plaintext activation codes are never document IDs or logs.
 
-## 8. Contract validation obligations
+## 8. `completeRegistrationProfile`
+
+**Purpose:** Initialize the authenticated user's profile after Firebase Email/Password account creation. This is a callable Cloud Function and requires Firebase Authentication.
+
+**Request schema**
+
+| Field | Type | Required | Rule |
+|---|---|---|---|
+| `version` | integer | yes | `1` |
+| `requestId` | UUID string | yes | Common idempotency rule |
+| `displayName` | string | yes | Trimmed; 1–40 Unicode code points |
+
+The request does not accept `uid`, `email` or `password`. The Function derives `actorUid` from the verified Firebase Auth context and reads the email from the corresponding Firebase Auth user record. If the authenticated record has no email, return `failed-precondition`.
+
+Both client and Function trim and validate `displayName`. The Function is authoritative and repeats all validation.
+
+**Response schema:** common response plus `profile`:
+
+| Field | Type | Rule |
+|---|---|---|
+| `profile.uid` | string | Authenticated UID |
+| `profile.displayName` | string | Canonical trimmed name |
+| `profile.email` | string | Email from Firebase Auth |
+| `profile.isPremium` | boolean | Initial value is `false`; server-owned |
+| `profile.createdAtUtcMs` | integer | Server-observed creation timestamp |
+
+**Transaction behavior:**
+
+1. Read `users/{uid}/commandReceipts/{requestId}`. If present with the same canonical payload, return its previous outcome. If the payload differs, return `already-exists`.
+2. Read `users/{uid}`. If absent, create it with `displayName`, `email`, `isPremium: false`, and server timestamps `createdAt` and `updatedAt`.
+3. If the profile already exists, do not overwrite it; return its canonical profile. Profile editing is a separate journey.
+4. Store the request receipt and outcome atomically with profile creation where applicable. Receipt writes are server-only.
+5. Never log full email, password, ID token, or refresh token.
+
+**Errors:** `unauthenticated`; `invalid-argument` for an invalid name or malformed envelope; `failed-precondition` when the Auth record lacks an email; `already-exists` when a `requestId` is reused with another payload; `unavailable` for retryable service failure. Errors follow the common safe-error shape.
+
+**Recovery:** The client may retry after Auth account creation succeeds but this Function or the local SQLite write fails. Repeating the same request is idempotent. A retry must not overwrite an existing profile. The app remains in a retryable profile-completion state until the server profile and local projection are available.
+
+---
+
+## 9. Contract validation obligations
 
 - Functions tests cover every required field, error code, idempotent replay and payload-hash collision.
+- `completeRegistrationProfile` tests cover Auth-derived identity, trimmed-name validation, create-only profile initialization, same-request replay, request-ID payload collision, existing-profile preservation, and retryable failure.
 - Security tests verify that direct writes cannot reproduce any transaction output owned by a Function.
 - Property tests verify bill-share non-negativity and `sumShareVnd == totalBillVnd` for default and override calculations, including totals not divisible by 1,000.
 - Emulator tests verify `HOST_OVERRIDE` audit append, late-event exclusion, settlement-details membership reads and 30-day deletion eligibility.

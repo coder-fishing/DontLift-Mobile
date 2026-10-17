@@ -4,6 +4,10 @@ import {
   FirebaseRuntimeSettings,
   resolveFirebaseRuntimeConfig,
 } from './firebase-runtime-config';
+import * as Crypto from 'expo-crypto';
+import { createAuthController } from './auth-controller';
+import type { RegistrationRequest, RegistrationResponse, RegistrationUser } from './auth-controller';
+import { createLocalProfileRepository } from './local-profile-repository';
 
 export interface FirebaseRuntime {
   config: FirebaseRuntimeConfig;
@@ -77,6 +81,48 @@ export function initializeFirebaseRuntime(settings: FirebaseRuntimeSettings): Fi
       : new FirebaseRuntimeConfigurationError('native-runtime-unavailable', 'Firebase native modules are unavailable. Rebuild the development app with the required SDKs.');
     throw initializationFailure;
   }
+}
+
+export function getConfiguredFirebaseRuntime(platform: string, isDevelopment: boolean): FirebaseRuntime {
+  return initializeFirebaseRuntime({
+    platform,
+    isDevelopment,
+    mode: process.env.EXPO_PUBLIC_FIREBASE_RUNTIME_MODE,
+    developmentProjectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+    productionProjectId: process.env.EXPO_PUBLIC_FIREBASE_PRODUCTION_PROJECT_ID,
+    emulatorHost: process.env.EXPO_PUBLIC_FIREBASE_EMULATOR_HOST,
+    authEmulatorPort: process.env.EXPO_PUBLIC_FIREBASE_AUTH_EMULATOR_PORT,
+    firestoreEmulatorPort: process.env.EXPO_PUBLIC_FIREBASE_FIRESTORE_EMULATOR_PORT,
+    functionsEmulatorPort: process.env.EXPO_PUBLIC_FIREBASE_FUNCTIONS_EMULATOR_PORT,
+  });
+}
+
+export function createFirebaseRegistrationController(current: FirebaseRuntime) {
+  const authSdk = require('@react-native-firebase/auth') as typeof import('@react-native-firebase/auth');
+  const functionsSdk = require('@react-native-firebase/functions') as typeof import('@react-native-firebase/functions');
+  const completeProfile = functionsSdk.httpsCallable<RegistrationRequest, RegistrationResponse>(
+    current.functions,
+    'completeRegistrationProfile',
+  );
+
+  return createAuthController({
+    getCurrentUser: () => current.auth.currentUser,
+    onAuthStateChanged(listener) {
+      return authSdk.onAuthStateChanged(current.auth, listener);
+    },
+    async createAccount(email, password) {
+      const credential = await authSdk.createUserWithEmailAndPassword(current.auth, email, password);
+      return credential.user;
+    },
+    async setDisplayName(user, displayName) {
+      const currentUser = current.auth.currentUser;
+      if (!currentUser || currentUser.uid !== user.uid) throw new Error('Registration session changed.');
+      await authSdk.updateProfile(currentUser, { displayName });
+    },
+    async completeProfile(request) {
+      return (await completeProfile(request)).data;
+    },
+  }, createLocalProfileRepository(), Crypto.randomUUID);
 }
 
 export function firebaseRuntimeDiagnostics(current: FirebaseRuntime) {
