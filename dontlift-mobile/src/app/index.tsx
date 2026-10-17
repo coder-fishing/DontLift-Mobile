@@ -67,7 +67,9 @@ function LoginGate({ state, recoveryUser }: { state: AuthSessionState; recoveryU
         <LoginScreen
           onAuthenticated={() => { void session.refreshProfile(); }}
           onSignIn={session.signIn}
+          onSignOut={session.signOut}
           recoveryUser={recoveryUser}
+          canSignOut={state.kind === 'profile-recovery'}
           formError={formError}
         />
       </ScrollView>

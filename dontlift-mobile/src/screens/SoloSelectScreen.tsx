@@ -60,9 +60,9 @@ export function SoloSelectScreen({
               style={[
                 styles.card,
                 {
-                  backgroundColor: colors.authFormSurface,
-                  borderColor: isSelected ? colors.authAccent : colors.glassBorder,
-                  shadowColor: colors.glassShadow,
+                  backgroundColor: Colors.light.authFormSurface,
+                  borderColor: isSelected ? colors.authAccent : Colors.light.glassBorder,
+                  shadowColor: Colors.light.glassShadow,
                 },
                 isSelected && styles.cardActive,
               ]}

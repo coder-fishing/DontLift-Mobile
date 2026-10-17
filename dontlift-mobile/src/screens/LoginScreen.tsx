@@ -29,6 +29,7 @@ interface LoginScreenProps {
   recoveryUser?: RegistrationUser;
   authenticatedProfile?: RegistrationProfile;
   onSignOut?: () => Promise<{ kind: 'signed-out' } | { kind: 'failed'; message: string }>;
+  canSignOut?: boolean;
   formError?: string;
 }
 
@@ -55,7 +56,7 @@ function FieldError({ message, color }: { message?: string; color: string }) {
   );
 }
 
-export function LoginScreen({ onAuthenticated, onSignIn, recoveryUser, authenticatedProfile, onSignOut, formError: initialFormError }: LoginScreenProps) {
+export function LoginScreen({ onAuthenticated, onSignIn, recoveryUser, authenticatedProfile, onSignOut, canSignOut, formError: initialFormError }: LoginScreenProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = colorScheme === 'dark' ? Colors.dark : Colors.light;
   const controller = useRef<RegistrationController | null>(null);
@@ -114,7 +115,11 @@ export function LoginScreen({ onAuthenticated, onSignIn, recoveryUser, authentic
   }, [initialFormError]);
 
   useEffect(() => {
-    if (!recoveryUser || didCompleteProfile.current || recoveryAttemptedUid.current === recoveryUser.uid) return;
+    if (!recoveryUser) {
+      recoveryAttemptedUid.current = null;
+      return;
+    }
+    if (didCompleteProfile.current || recoveryAttemptedUid.current === recoveryUser.uid) return;
     setIsRecovering(true);
     setAuthMode('signup');
     setDisplayName((current) => recoveryUser.displayName || current);
@@ -183,6 +188,45 @@ export function LoginScreen({ onAuthenticated, onSignIn, recoveryUser, authentic
     },
   ];
 
+  const requestSignOut = () => {
+    if (!onSignOut || isSubmitting) return;
+
+    Alert.alert('Sign out?', 'You can sign back in with the same account or use another one.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign out',
+        style: 'destructive',
+        onPress: () => {
+          setIsSubmitting(true);
+          void (async () => {
+            try {
+              const result = await onSignOut();
+              if (result.kind === 'failed') {
+                if (authenticatedProfile) Alert.alert('Sign out failed', result.message);
+                else setFormError(result.message);
+                setIsSubmitting(false);
+                return;
+              }
+              recoveryAttemptedUid.current = recoveryUser?.uid ?? null;
+              setIsRecovering(false);
+              setAuthMode('signin');
+              setDisplayName('');
+              setPassword('');
+              setPasswordConfirmation('');
+              setFormError('');
+              setIsSubmitting(false);
+            } catch {
+              const message = 'We could not sign you out. Please try again.';
+              if (authenticatedProfile) Alert.alert('Sign out failed', message);
+              else setFormError(message);
+              setIsSubmitting(false);
+            }
+          })();
+        },
+      },
+    ]);
+  };
+
   if (authenticatedProfile) {
     return (
       <View style={[styles.container, { backgroundColor: 'transparent' }]}>
@@ -202,20 +246,7 @@ export function LoginScreen({ onAuthenticated, onSignIn, recoveryUser, authentic
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Sign out"
-              onPress={() => Alert.alert('Sign out?', 'You can sign back in with the same account.', [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Sign out',
-                  style: 'destructive',
-                  onPress: () => {
-                    if (onSignOut) {
-                      void onSignOut().then((result) => {
-                        if (result.kind === 'failed') Alert.alert('Sign out failed', result.message);
-                      });
-                    }
-                  },
-                },
-              ])}
+              onPress={requestSignOut}
               style={({ pressed }) => [styles.signOutButton, { backgroundColor: colors.backgroundSelected }, pressed && styles.pressed]}
             >
               <Text style={[styles.signOutText, { color: colors.text }]}>Sign Out</Text>
@@ -416,6 +447,19 @@ export function LoginScreen({ onAuthenticated, onSignIn, recoveryUser, authentic
             </Text>
           </Pressable>
         </View>
+
+        {canSignOut && onSignOut && (
+          <Pressable
+            accessibilityLabel="Sign out and use another account"
+            accessibilityRole="button"
+            accessibilityState={{ disabled: isSubmitting, busy: isSubmitting }}
+            disabled={isSubmitting}
+            onPress={requestSignOut}
+            style={({ pressed }) => [styles.signOutButton, { backgroundColor: colors.backgroundSelected }, pressed && styles.pressed]}
+          >
+            <Text style={[styles.signOutText, { color: colors.text }]}>Sign out and use another account</Text>
+          </Pressable>
+        )}
         </View>
       </View>
       </KeyboardAvoidingView>
