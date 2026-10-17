@@ -14,7 +14,7 @@ import { BottomNav } from '../components/BottomNav';
 import { ControlDeckDrawer } from '../components/ControlDeckDrawer';
 
 // 10 Core Screens
-import { LoginScreen } from '../screens/LoginScreen';
+import { LoginScreen, LoginScreenBackground } from '../screens/LoginScreen';
 import { SoloSelectScreen } from '../screens/SoloSelectScreen';
 import { SoloTimerScreen } from '../screens/SoloTimerScreen';
 import { SoloSummaryScreen } from '../screens/SoloSummaryScreen';
@@ -160,10 +160,13 @@ export default function HomeScreen() {
       />
 
       {/* Main Body */}
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
+      <View style={styles.mainBody}>
+        {currentScreen === '01-login' && <LoginScreenBackground />}
+        <ScrollView
+          style={styles.mainBodyScrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
         {currentScreen === '01-login' && (
           <LoginScreen onAuthenticated={() => setCurrentScreen('02-solo-select')} />
         )}
@@ -236,7 +239,8 @@ export default function HomeScreen() {
         {currentScreen === '09-activation' && <ActivationScreen />}
 
         {currentScreen === '10-hardware-diagnostics' && <HardwareDiagnosticsScreen />}
-      </ScrollView>
+        </ScrollView>
+      </View>
 
       {/* 5-Tab Bottom Navigation Bar */}
       <BottomNav
@@ -263,6 +267,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#EEF2FF',
+  },
+  mainBody: {
+    flex: 1,
+    position: 'relative',
+  },
+  mainBodyScrollView: {
+    flex: 1,
   },
   scrollContent: {
     padding: 16,
