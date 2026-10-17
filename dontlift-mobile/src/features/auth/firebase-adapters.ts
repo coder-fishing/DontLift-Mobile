@@ -7,7 +7,8 @@ import {
 import * as Crypto from 'expo-crypto';
 import { createAuthController } from './auth-controller';
 import type { RegistrationRequest, RegistrationResponse, RegistrationUser } from './auth-controller';
-import { createLocalProfileRepository } from './local-profile-repository';
+import { createAuthSessionController } from './auth-session-controller';
+import { createAuthSessionProfileRepository, createLocalProfileRepository } from './local-profile-repository';
 
 export interface FirebaseRuntime {
   config: FirebaseRuntimeConfig;
@@ -123,6 +124,49 @@ export function createFirebaseRegistrationController(current: FirebaseRuntime) {
       return (await completeProfile(request)).data;
     },
   }, createLocalProfileRepository(), Crypto.randomUUID);
+}
+
+export function createFirebaseAuthSessionController(current: FirebaseRuntime) {
+  const authSdk = require('@react-native-firebase/auth') as typeof import('@react-native-firebase/auth');
+  const firestoreSdk = require('@react-native-firebase/firestore') as typeof import('@react-native-firebase/firestore');
+
+  return createAuthSessionController({
+    getCurrentUser() {
+      const user = current.auth.currentUser;
+      return user ? { uid: user.uid, email: user.email, displayName: user.displayName } : null;
+    },
+    async signIn(email, password) {
+      const credential = await authSdk.signInWithEmailAndPassword(current.auth, email, password);
+      return {
+        uid: credential.user.uid,
+        email: credential.user.email,
+        displayName: credential.user.displayName,
+      };
+    },
+    async signOut() {
+      await authSdk.signOut(current.auth);
+    },
+  }, createAuthSessionProfileRepository(), {
+    async get(uid) {
+      if (current.auth.currentUser?.uid !== uid) throw new Error('The active account changed.');
+      const snapshot = await firestoreSdk.getDoc(firestoreSdk.doc(current.firestore, 'users', uid));
+      if (!snapshot.exists() || current.auth.currentUser?.uid !== uid) return null;
+
+      const profile = snapshot.data();
+      if (typeof profile.displayName !== 'string' || typeof profile.email !== 'string') return null;
+      const createdAtUtcMs = profile.createdAt && typeof profile.createdAt.toMillis === 'function'
+        ? profile.createdAt.toMillis()
+        : Date.now();
+
+      return {
+        uid,
+        email: profile.email,
+        displayName: profile.displayName,
+        isPremium: profile.isPremium === true,
+        createdAtUtcMs,
+      };
+    },
+  });
 }
 
 export function firebaseRuntimeDiagnostics(current: FirebaseRuntime) {

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -10,7 +11,6 @@ import {
   useColorScheme,
   View,
 } from 'react-native';
-import { BlurTargetView, BlurView } from 'expo-blur';
 import { Colors } from '../constants/theme';
 import {
   createFirebaseRegistrationController,
@@ -20,13 +20,31 @@ import type {
   RegistrationField,
   RegistrationFieldErrors,
 } from '../features/auth/auth-validation';
-import type { RegistrationResult } from '../features/auth/auth-controller';
+import type { RegistrationProfile, RegistrationResult, RegistrationUser } from '../features/auth/auth-controller';
+import type { AuthSessionResult } from '../features/auth/auth-session-controller';
 
 interface LoginScreenProps {
   onAuthenticated: () => void;
+  onSignIn: (email: string, password: string) => Promise<AuthSessionResult>;
+  recoveryUser?: RegistrationUser;
+  authenticatedProfile?: RegistrationProfile;
+  onSignOut?: () => Promise<{ kind: 'signed-out' } | { kind: 'failed'; message: string }>;
+  formError?: string;
 }
 
 type RegistrationController = ReturnType<typeof createFirebaseRegistrationController>;
+
+export function LoginScreenBackground() {
+  const colorScheme = useColorScheme() ?? 'light';
+  const colors = colorScheme === 'dark' ? Colors.dark : Colors.light;
+
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <View style={[styles.glow, styles.glowPrimary, { backgroundColor: colors.authGlow }]} />
+      <View style={[styles.glow, styles.glowSecondary, { backgroundColor: colors.authGlowSecondary }]} />
+    </View>
+  );
+}
 
 function FieldError({ message, color }: { message?: string; color: string }) {
   if (!message) return null;
@@ -37,12 +55,13 @@ function FieldError({ message, color }: { message?: string; color: string }) {
   );
 }
 
-export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
+export function LoginScreen({ onAuthenticated, onSignIn, recoveryUser, authenticatedProfile, onSignOut, formError: initialFormError }: LoginScreenProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = colorScheme === 'dark' ? Colors.dark : Colors.light;
-  const backdropRef = useRef<View | null>(null);
   const controller = useRef<RegistrationController | null>(null);
   const onAuthenticatedRef = useRef(onAuthenticated);
+  const recoveryAttemptedUid = useRef<string | null>(null);
+  const didCompleteProfile = useRef(false);
   onAuthenticatedRef.current = onAuthenticated;
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   const [displayName, setDisplayName] = useState('');
@@ -50,14 +69,15 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
   const [password, setPassword] = useState('');
   const [passwordConfirmation, setPasswordConfirmation] = useState('');
   const [fieldErrors, setFieldErrors] = useState<RegistrationFieldErrors>({});
-  const [formError, setFormError] = useState('');
+  const [formError, setFormError] = useState(initialFormError ?? '');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isRecovering, setIsRecovering] = useState(false);
+  const [isRecovering, setIsRecovering] = useState(Boolean(recoveryUser));
   const [focusedField, setFocusedField] = useState<RegistrationField | null>(null);
 
   const showResult = useCallback((result: RegistrationResult) => {
     setFieldErrors(result.kind === 'invalid' ? result.fieldErrors : {});
     if (result.kind === 'completed') {
+      didCompleteProfile.current = true;
       setFormError('');
       onAuthenticatedRef.current();
       return;
@@ -79,40 +99,45 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
   }, []);
 
   useEffect(() => {
-    let active = true;
-
     try {
       const runtime = getConfiguredFirebaseRuntime(Platform.OS, __DEV__);
       const registrationController = createFirebaseRegistrationController(runtime);
       controller.current = registrationController;
-      const unsubscribe = registrationController.onAuthStateChanged((user) => {
-        if (!active || !user) return;
-        setIsRecovering(true);
-        setAuthMode('signup');
-        setDisplayName((current) => user.displayName || current);
-        void registrationController.resumeProfileCompletion().then((result) => {
-          if (active) showResult(result);
-        });
-      });
-
-      return () => {
-        active = false;
-        unsubscribe();
-      };
     } catch {
       setFormError('Account services are unavailable. Check your connection and try again.');
-      return () => {
-        active = false;
-      };
+      return undefined;
     }
   }, [showResult]);
+
+  useEffect(() => {
+    setFormError(initialFormError ?? '');
+  }, [initialFormError]);
+
+  useEffect(() => {
+    if (!recoveryUser || didCompleteProfile.current || recoveryAttemptedUid.current === recoveryUser.uid) return;
+    setIsRecovering(true);
+    setAuthMode('signup');
+    setDisplayName((current) => recoveryUser.displayName || current);
+    if (isSubmitting) return;
+
+    const activeController = controller.current;
+    if (activeController) {
+      recoveryAttemptedUid.current = recoveryUser.uid;
+      void activeController.resumeProfileCompletion().then(showResult);
+    }
+  }, [isSubmitting, recoveryUser?.uid, recoveryUser?.displayName, showResult]);
 
   const handleSubmit = async () => {
     setFieldErrors({});
     setFormError('');
     if (authMode === 'signin') {
-      setFormError('Sign-in is not available yet. Choose Create Account to register.');
-      return;
+      const errors: RegistrationFieldErrors = {};
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) errors.email = 'Enter a valid email address.';
+      if (!password) errors.password = 'Enter a password.';
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors);
+        return;
+      }
     }
 
     setIsSubmitting(true);
@@ -121,6 +146,13 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
         getConfiguredFirebaseRuntime(Platform.OS, __DEV__),
       );
       controller.current = activeController;
+      if (authMode === 'signin') {
+        const result = await onSignIn(email, password);
+        if (result.kind === 'failed') setFormError(result.message);
+        if (result.kind === 'profile-recovery') setFormError('Your account is signed in, but its profile needs to be restored.');
+        return;
+      }
+
       const result = isRecovering
         ? await activeController.resumeProfileCompletion(displayName)
         : await activeController.register({
@@ -151,13 +183,51 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
     },
   ];
 
-  return (
-    <View style={[styles.container, { backgroundColor: colors.authBackdrop }]}>
-      <BlurTargetView ref={backdropRef} pointerEvents="none" style={StyleSheet.absoluteFill}>
-        <View style={[styles.glow, styles.glowPrimary, { backgroundColor: colors.authGlow }]} />
-        <View style={[styles.glow, styles.glowSecondary, { backgroundColor: colors.authGlowSecondary }]} />
-      </BlurTargetView>
+  if (authenticatedProfile) {
+    return (
+      <View style={[styles.container, { backgroundColor: 'transparent' }]}>
+        <View style={[styles.formGlass, { backgroundColor: colors.authFormSurface, borderColor: colors.glassBorder, shadowColor: colors.glassShadow }]}>
+          <View style={styles.formCard}>
+            <Text accessibilityRole="header" style={[styles.accountTitle, { color: colors.text }]}>Your account</Text>
+            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Name</Text>
+            <Text
+              testID="account-display-name"
+              accessibilityLabel={`Account name: ${authenticatedProfile.displayName}`}
+              style={[styles.accountValue, { color: colors.text }]}
+            >
+              {authenticatedProfile.displayName}
+            </Text>
+            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Email</Text>
+            <Text style={[styles.accountValue, { color: colors.text }]}>{authenticatedProfile.email}</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Sign out"
+              onPress={() => Alert.alert('Sign out?', 'You can sign back in with the same account.', [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Sign out',
+                  style: 'destructive',
+                  onPress: () => {
+                    if (onSignOut) {
+                      void onSignOut().then((result) => {
+                        if (result.kind === 'failed') Alert.alert('Sign out failed', result.message);
+                      });
+                    }
+                  },
+                },
+              ])}
+              style={({ pressed }) => [styles.signOutButton, { backgroundColor: colors.backgroundSelected }, pressed && styles.pressed]}
+            >
+              <Text style={[styles.signOutText, { color: colors.text }]}>Sign Out</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    );
+  }
 
+  return (
+    <View style={[styles.container, { backgroundColor: 'transparent' }]}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.content}
@@ -329,14 +399,14 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
           style={[
             styles.submitButtonFrame,
             { backgroundColor: colors.primary, shadowColor: colors.primary },
-            (isSubmitting || (authMode === 'signin' && !isRecovering)) && styles.submitButtonDisabled,
+            isSubmitting && styles.submitButtonDisabled,
           ]}
         >
           <Pressable
-            accessibilityLabel={isRecovering ? 'Retry profile setup' : 'Create account and begin'}
+            accessibilityLabel={isRecovering ? 'Retry profile setup' : authMode === 'signin' ? 'Sign in' : 'Create account and begin'}
             accessibilityRole="button"
-            accessibilityState={{ disabled: isSubmitting || (authMode === 'signin' && !isRecovering), busy: isSubmitting }}
-            disabled={isSubmitting || (authMode === 'signin' && !isRecovering)}
+            accessibilityState={{ disabled: isSubmitting, busy: isSubmitting }}
+            disabled={isSubmitting}
             onPress={handleSubmit}
             style={({ pressed }) => [styles.submitButton, pressed && styles.pressed]}
           >
@@ -346,11 +416,6 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
             </Text>
           </Pressable>
         </View>
-        {authMode === 'signin' && (
-          <Text style={[styles.signInNote, { color: colors.textSecondary }]}>
-            Sign in will be available in the next account update.
-          </Text>
-        )}
         </View>
       </View>
       </KeyboardAvoidingView>
@@ -359,7 +424,7 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, position: 'relative', gap: 16, paddingVertical: 12, overflow: 'hidden', borderRadius: 28 },
+  container: { flex: 1, gap: 16, paddingVertical: 12 },
   content: { gap: 16 },
   glow: { position: 'absolute', borderRadius: 999 },
   glowPrimary: { width: 240, height: 240, top: -90, right: -80 },
@@ -389,6 +454,8 @@ const styles = StyleSheet.create({
   formGlass: { borderWidth: 1, borderRadius: 28, overflow: 'hidden', padding: 1, shadowOffset: { width: 0, height: 14 }, shadowOpacity: 0.14, shadowRadius: 30, elevation: 8 },
   formCard: { padding: 19, gap: 15 },
   recoveryTitle: { fontSize: 18, lineHeight: 24, fontWeight: '700' },
+  accountTitle: { fontSize: 20, lineHeight: 26, fontWeight: '800' },
+  accountValue: { fontSize: 16, lineHeight: 22, fontWeight: '600', marginTop: -8 },
   inputGroup: { gap: 6 },
   inputLabel: { fontSize: 14, fontWeight: '700' },
   textInput: { minHeight: 52, borderRadius: 16, borderWidth: 1.5, paddingHorizontal: 16, fontSize: 16 },
@@ -396,6 +463,8 @@ const styles = StyleSheet.create({
   submitButton: { flex: 1, minHeight: 54, borderRadius: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 18 },
   submitButtonDisabled: { opacity: 0.52, elevation: 0, shadowOpacity: 0 },
   submitButtonText: { fontSize: 15, fontWeight: '800', textAlign: 'center' },
+  signOutButton: { minHeight: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginTop: 10 },
+  signOutText: { fontSize: 15, fontWeight: '800' },
   fieldError: { fontSize: 13, lineHeight: 18, fontWeight: '600' },
   formError: { fontSize: 14, lineHeight: 20 },
   signInNote: { fontSize: 12, lineHeight: 18, textAlign: 'center', paddingHorizontal: 6 },

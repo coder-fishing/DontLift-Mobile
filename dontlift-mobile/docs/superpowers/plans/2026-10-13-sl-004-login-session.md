@@ -8,7 +8,8 @@
 
 **Slice:** SL-004. **Ưu tiên đề xuất:** P0. **Release:** MVP + activation/Premium; post-MVP deferred. SL-036 chỉ được tính release sau D6.
 
-**Trạng thái kế hoạch:** DRAFT — chưa được human duyệt.
+**Trạng thái kế hoạch:** APPROVED for SL-004 execution by the human on 2026-10-17.
+**Approval evidence:** Human requested a new branch and implementation of SL-004 in this conversation; approval is limited to this slice.
 **Trạng thái implementation quan sát:** Auth gate và SDK session chưa có trên baseline. Chưa có evidence nghiệm thu slice.
 **Baseline khảo sát:** docs/p6.0-implementation-slices tại 57ca1eb28a2952c66d01f89b9b89bf755ab4812a.
 **Ngày soạn:** 2026-10-13, Asia/Saigon.

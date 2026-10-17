@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, ViewProps, StyleSheet } from 'react-native';
+import { View, ViewProps, StyleSheet, useColorScheme } from 'react-native';
+import { Colors } from '../constants/theme';
 
 interface GlassCardProps extends ViewProps {
   children: React.ReactNode;
@@ -7,10 +8,21 @@ interface GlassCardProps extends ViewProps {
 }
 
 export function GlassCard({ children, className = '', style, ...props }: GlassCardProps) {
+  const colorScheme = useColorScheme() ?? 'light';
+  const colors = colorScheme === 'dark' ? Colors.dark : Colors.light;
+
   return (
     <View
-      className={`rounded-3xl border border-white/90 bg-white/45 p-4 shadow-sm ${className}`}
-      style={[styles.card, style]}
+      className={`p-4 ${className}`}
+      style={[
+        styles.card,
+        {
+          backgroundColor: colors.authFormSurface,
+          borderColor: colors.glassBorder,
+          shadowColor: colors.glassShadow,
+        },
+        style,
+      ]}
       {...props}
     >
       {children}
@@ -20,15 +32,12 @@ export function GlassCard({ children, className = '', style, ...props }: GlassCa
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: 'rgba(255, 255, 255, 0.45)',
-    borderColor: 'rgba(255, 255, 255, 0.9)',
     borderWidth: 1,
-    borderRadius: 24,
+    borderRadius: 28,
     padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.1,
+    shadowRadius: 24,
+    elevation: 5,
   },
 });

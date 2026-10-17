@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, useColorScheme } from 'react-native';
+import { Colors } from '../constants/theme';
 import { GlassCard } from '../components/GlassCard';
 import { PrimaryButton } from '../components/PrimaryButton';
 
@@ -14,6 +15,8 @@ export function SoloSelectScreen({
   onSelectDuration,
   onStartSession,
 }: SoloSelectScreenProps) {
+  const colorScheme = useColorScheme() ?? 'light';
+  const colors = colorScheme === 'dark' ? Colors.dark : Colors.light;
   const [customMinutes, setCustomMinutes] = useState<number>(90);
   const [showCustomStepper, setShowCustomStepper] = useState<boolean>(false);
 
@@ -43,6 +46,8 @@ export function SoloSelectScreen({
             <TouchableOpacity
               key={idx}
               activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityState={{ selected: isSelected }}
               onPress={() => {
                 if (isCustom) {
                   setShowCustomStepper(true);
@@ -52,7 +57,15 @@ export function SoloSelectScreen({
                   onSelectDuration(item.duration);
                 }
               }}
-              style={[styles.card, isSelected ? styles.cardActive : styles.cardInactive]}
+              style={[
+                styles.card,
+                {
+                  backgroundColor: colors.authFormSurface,
+                  borderColor: isSelected ? colors.authAccent : colors.glassBorder,
+                  shadowColor: colors.glassShadow,
+                },
+                isSelected && styles.cardActive,
+              ]}
             >
               <View style={styles.cardTop}>
                 <View style={styles.tagPill}>
@@ -155,22 +168,15 @@ const styles = StyleSheet.create({
   },
   card: {
     width: '48%',
-    borderRadius: 20,
+    borderRadius: 28,
     padding: 16,
-    borderWidth: 1.5,
+    borderWidth: 1,
   },
   cardActive: {
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    borderColor: '#2563EB',
-    shadowColor: '#2563EB',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 3,
-  },
-  cardInactive: {
-    backgroundColor: 'rgba(255, 255, 255, 0.45)',
-    borderColor: 'rgba(255, 255, 255, 0.9)',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.1,
+    shadowRadius: 24,
+    elevation: 5,
   },
   cardTop: {
     flexDirection: 'row',

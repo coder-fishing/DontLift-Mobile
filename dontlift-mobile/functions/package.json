@@ -8,8 +8,9 @@
   "scripts": {
     "test:bootstrap": "node --test tests/runtime-bootstrap.test.cjs",
     "test:rules": "node --test tests/profile-owner-read.rules.emulator.test.cjs",
+    "test:login": "node --test tests/login-profile-read.rules.emulator.test.cjs",
     "test:registration": "node --test tests/registration-profile.test.cjs",
-    "test:emulators": "firebase emulators:exec --config ../firebase.emulator.json --project demo-dontlift-sl003 --only auth,firestore,functions \"pnpm run test:rules && pnpm run test:registration\""
+    "test:emulators": "firebase emulators:exec --config ../firebase.emulator.json --project demo-dontlift-sl003 --only auth,firestore,functions \"pnpm run test:rules && pnpm run test:login && pnpm run test:registration\""
   },
   "dependencies": {
     "firebase-admin": "^14.5.0",

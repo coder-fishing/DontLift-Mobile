@@ -3,6 +3,7 @@ import { Stack } from 'expo-router';
 import React, { useEffect } from 'react';
 import { Platform } from 'react-native';
 import { firebaseRuntimeDiagnostics, getConfiguredFirebaseRuntime, probeFirebaseConnection } from '../features/auth/firebase-adapters';
+import { AuthSessionProvider } from '../features/auth/auth-session';
 import { FirebaseRuntimeConfigurationError } from '../features/auth/firebase-runtime-config';
 
 export default function RootLayout() {
@@ -25,8 +26,10 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <Stack>
-      <Stack.Screen name="index" options={{ headerShown: false }} />
-    </Stack>
+    <AuthSessionProvider>
+      <Stack>
+        <Stack.Screen name="index" options={{ headerShown: false }} />
+      </Stack>
+    </AuthSessionProvider>
   );
 }
