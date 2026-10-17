@@ -10,7 +10,6 @@ import {
   useColorScheme,
   View,
 } from 'react-native';
-import { BlurTargetView, BlurView } from 'expo-blur';
 import { Colors } from '../constants/theme';
 import {
   createFirebaseRegistrationController,
@@ -28,6 +27,18 @@ interface LoginScreenProps {
 
 type RegistrationController = ReturnType<typeof createFirebaseRegistrationController>;
 
+export function LoginScreenBackground() {
+  const colorScheme = useColorScheme() ?? 'light';
+  const colors = colorScheme === 'dark' ? Colors.dark : Colors.light;
+
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <View style={[styles.glow, styles.glowPrimary, { backgroundColor: colors.authGlow }]} />
+      <View style={[styles.glow, styles.glowSecondary, { backgroundColor: colors.authGlowSecondary }]} />
+    </View>
+  );
+}
+
 function FieldError({ message, color }: { message?: string; color: string }) {
   if (!message) return null;
   return (
@@ -40,7 +51,6 @@ function FieldError({ message, color }: { message?: string; color: string }) {
 export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = colorScheme === 'dark' ? Colors.dark : Colors.light;
-  const backdropRef = useRef<View | null>(null);
   const controller = useRef<RegistrationController | null>(null);
   const onAuthenticatedRef = useRef(onAuthenticated);
   onAuthenticatedRef.current = onAuthenticated;
@@ -152,12 +162,7 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
   ];
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.authBackdrop }]}>
-      <BlurTargetView ref={backdropRef} pointerEvents="none" style={StyleSheet.absoluteFill}>
-        <View style={[styles.glow, styles.glowPrimary, { backgroundColor: colors.authGlow }]} />
-        <View style={[styles.glow, styles.glowSecondary, { backgroundColor: colors.authGlowSecondary }]} />
-      </BlurTargetView>
-
+    <View style={[styles.container, { backgroundColor: 'transparent' }]}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.content}
@@ -359,7 +364,7 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, position: 'relative', gap: 16, paddingVertical: 12, overflow: 'hidden', borderRadius: 28 },
+  container: { flex: 1, gap: 16, paddingVertical: 12 },
   content: { gap: 16 },
   glow: { position: 'absolute', borderRadius: 999 },
   glowPrimary: { width: 240, height: 240, top: -90, right: -80 },
