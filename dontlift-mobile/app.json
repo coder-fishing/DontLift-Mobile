@@ -36,6 +36,12 @@
           }
         }
       ],
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "DontLift uses motion data to check your accelerometer before starting a focus session."
+        }
+      ],
       "@react-native-firebase/app",
       "@react-native-firebase/auth",
       [
