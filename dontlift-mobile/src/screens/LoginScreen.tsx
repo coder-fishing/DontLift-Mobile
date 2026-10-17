@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Platform,
   Pressable,
   StyleSheet,
@@ -9,8 +10,7 @@ import {
   useColorScheme,
   View,
 } from 'react-native';
-import { GlassCard } from '../components/GlassCard';
-import { PrimaryButton } from '../components/PrimaryButton';
+import { BlurTargetView, BlurView } from 'expo-blur';
 import { Colors } from '../constants/theme';
 import {
   createFirebaseRegistrationController,
@@ -40,6 +40,7 @@ function FieldError({ message, color }: { message?: string; color: string }) {
 export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = colorScheme === 'dark' ? Colors.dark : Colors.light;
+  const backdropRef = useRef<View | null>(null);
   const controller = useRef<RegistrationController | null>(null);
   const onAuthenticatedRef = useRef(onAuthenticated);
   onAuthenticatedRef.current = onAuthenticated;
@@ -52,6 +53,7 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRecovering, setIsRecovering] = useState(false);
+  const [focusedField, setFocusedField] = useState<RegistrationField | null>(null);
 
   const showResult = useCallback((result: RegistrationResult) => {
     setFieldErrors(result.kind === 'invalid' ? result.fieldErrors : {});
@@ -138,15 +140,33 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
   const setFieldError = (field: RegistrationField, message?: string) => fieldErrors[field] ? (
     <FieldError message={message ?? fieldErrors[field]} color={colors.error} />
   ) : null;
+  const inputStyle = (field: RegistrationField) => [
+    styles.textInput,
+    {
+      backgroundColor: colors.inputSurface,
+      borderColor: fieldErrors[field]
+        ? colors.error
+        : focusedField === field ? colors.authAccent : colors.glassBorder,
+      color: colors.text,
+    },
+  ];
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.authBackdrop }]}>
+      <BlurTargetView ref={backdropRef} pointerEvents="none" style={StyleSheet.absoluteFill}>
+        <View style={[styles.glow, styles.glowPrimary, { backgroundColor: colors.authGlow }]} />
+        <View style={[styles.glow, styles.glowSecondary, { backgroundColor: colors.authGlowSecondary }]} />
+      </BlurTargetView>
+
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.content}
+      >
       <View style={styles.heroSection}>
-        <View style={[styles.iconCircle, { backgroundColor: colors.backgroundSelected }]}>
-          <Text style={[styles.heroIcon, { color: colors.primary }]} accessibilityElementsHidden>
-            ◈
-          </Text>
+        <View style={[styles.iconCircle, { backgroundColor: colors.glassSurface, borderColor: colors.glassBorder, shadowColor: colors.authAccent }]}>
+          <Text style={[styles.heroIcon, { color: colors.authAccent }]} accessibilityElementsHidden>DL</Text>
         </View>
+        <Text style={[styles.heroEyebrow, { color: colors.authAccent }]}>FOCUS STARTS HERE</Text>
         <Text style={[styles.heroTitle, { color: colors.text }]}>Welcome to DontLift</Text>
         <Text style={[styles.heroSubtitle, { color: colors.textSecondary }]}>
           Put your phone down and make room for focused work.
@@ -156,7 +176,7 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
       {!isRecovering && (
         <View
           accessibilityRole="tablist"
-          style={[styles.tabPillContainer, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}
+          style={[styles.tabPillContainer, { backgroundColor: colors.glassSurface, borderColor: colors.glassBorder }]}
         >
           <Pressable
             accessibilityRole="tab"
@@ -165,9 +185,9 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
               setAuthMode('signin');
               setFormError('');
             }}
-            style={[styles.authTab, authMode === 'signin' && { backgroundColor: colors.background }]}
+            style={({ pressed }) => [styles.authTab, authMode === 'signin' && { backgroundColor: colors.backgroundSelected }, pressed && styles.pressed]}
           >
-            <Text style={[styles.authTabText, { color: authMode === 'signin' ? colors.primary : colors.textSecondary }]}>
+            <Text style={[styles.authTabText, { color: authMode === 'signin' ? colors.authAccent : colors.textSecondary }]}>
               Sign In
             </Text>
           </Pressable>
@@ -178,16 +198,19 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
               setAuthMode('signup');
               setFormError('');
             }}
-            style={[styles.authTab, authMode === 'signup' && { backgroundColor: colors.background }]}
+            style={({ pressed }) => [styles.authTab, authMode === 'signup' && { backgroundColor: colors.backgroundSelected }, pressed && styles.pressed]}
           >
-            <Text style={[styles.authTabText, { color: authMode === 'signup' ? colors.primary : colors.textSecondary }]}>
+            <Text style={[styles.authTabText, { color: authMode === 'signup' ? colors.authAccent : colors.textSecondary }]}>
               Create Account
             </Text>
           </Pressable>
         </View>
       )}
 
-      <GlassCard style={styles.formCard}>
+      <View
+        style={[styles.formGlass, { backgroundColor: colors.authFormSurface, borderColor: colors.glassBorder, shadowColor: colors.glassShadow }]}
+      >
+        <View style={styles.formCard}>
         {isRecovering && (
           <Text style={[styles.recoveryTitle, { color: colors.text }]}>Finish account setup</Text>
         )}
@@ -201,6 +224,8 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
               autoComplete="name"
               autoCapitalize="words"
               editable={!isSubmitting}
+              onBlur={() => setFocusedField(null)}
+              onFocus={() => setFocusedField('displayName')}
               onChangeText={(value) => {
                 setDisplayName(value);
                 setFieldErrors({ ...fieldErrors, displayName: undefined });
@@ -208,7 +233,7 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
               placeholder="Your name"
               placeholderTextColor={colors.textSecondary}
               returnKeyType="next"
-              style={[styles.textInput, { backgroundColor: colors.background, borderColor: fieldErrors.displayName ? colors.error : colors.border, color: colors.text }]}
+              style={inputStyle('displayName')}
               value={displayName}
             />
             <FieldError message={fieldErrors.displayName} color={colors.error} />
@@ -225,6 +250,8 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
               autoCorrect={false}
               editable={!isSubmitting}
               keyboardType="email-address"
+              onBlur={() => setFocusedField(null)}
+              onFocus={() => setFocusedField('email')}
               onChangeText={(value) => {
                 setEmail(value);
                 setFieldErrors({ ...fieldErrors, email: undefined });
@@ -232,7 +259,7 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
               placeholder="name@example.com"
               placeholderTextColor={colors.textSecondary}
               returnKeyType="next"
-              style={[styles.textInput, { backgroundColor: colors.background, borderColor: fieldErrors.email ? colors.error : colors.border, color: colors.text }]}
+              style={inputStyle('email')}
               textContentType="emailAddress"
               value={email}
             />
@@ -248,6 +275,8 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
               autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'}
               autoCapitalize="none"
               editable={!isSubmitting}
+              onBlur={() => setFocusedField(null)}
+              onFocus={() => setFocusedField('password')}
               onChangeText={(value) => {
                 setPassword(value);
                 setFieldErrors({ ...fieldErrors, password: undefined });
@@ -256,7 +285,7 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
               placeholderTextColor={colors.textSecondary}
               returnKeyType={authMode === 'signup' ? 'next' : 'done'}
               secureTextEntry
-              style={[styles.textInput, { backgroundColor: colors.background, borderColor: fieldErrors.password ? colors.error : colors.border, color: colors.text }]}
+              style={inputStyle('password')}
               textContentType={authMode === 'signup' ? 'newPassword' : 'password'}
               value={password}
             />
@@ -272,6 +301,8 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
               autoComplete="new-password"
               autoCapitalize="none"
               editable={!isSubmitting}
+              onBlur={() => setFocusedField(null)}
+              onFocus={() => setFocusedField('passwordConfirmation')}
               onChangeText={(value) => {
                 setPasswordConfirmation(value);
                 setFieldErrors({ ...fieldErrors, passwordConfirmation: undefined });
@@ -280,7 +311,7 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
               placeholderTextColor={colors.textSecondary}
               returnKeyType="done"
               secureTextEntry
-              style={[styles.textInput, { backgroundColor: colors.background, borderColor: fieldErrors.passwordConfirmation ? colors.error : colors.border, color: colors.text }]}
+              style={inputStyle('passwordConfirmation')}
               textContentType="newPassword"
               value={passwordConfirmation}
             />
@@ -294,48 +325,78 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
           </Text>
         )}
 
-        <PrimaryButton
-          accessibilityRole="button"
-          accessibilityState={{ disabled: isSubmitting || authMode === 'signin', busy: isSubmitting }}
-          disabled={isSubmitting || authMode === 'signin'}
-          onPress={handleSubmit}
-          style={{ marginTop: 8, backgroundColor: colors.primary }}
-          icon={isSubmitting ? <ActivityIndicator color={colors.onPrimary} /> : undefined}
-          title={isSubmitting ? 'Please wait…' : isRecovering ? 'Retry setup' : 'Create Account & Begin'}
-        />
+        <View
+          style={[
+            styles.submitButtonFrame,
+            { backgroundColor: colors.primary, shadowColor: colors.primary },
+            (isSubmitting || (authMode === 'signin' && !isRecovering)) && styles.submitButtonDisabled,
+          ]}
+        >
+          <Pressable
+            accessibilityLabel={isRecovering ? 'Retry profile setup' : 'Create account and begin'}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: isSubmitting || (authMode === 'signin' && !isRecovering), busy: isSubmitting }}
+            disabled={isSubmitting || (authMode === 'signin' && !isRecovering)}
+            onPress={handleSubmit}
+            style={({ pressed }) => [styles.submitButton, pressed && styles.pressed]}
+          >
+            {isSubmitting ? <ActivityIndicator color={colors.onPrimary} /> : null}
+            <Text style={[styles.submitButtonText, { color: colors.onPrimary }]}>
+              {isSubmitting ? 'Please wait…' : isRecovering ? 'Retry setup' : authMode === 'signin' ? 'Sign In' : 'Create Account & Begin'}
+            </Text>
+          </Pressable>
+        </View>
         {authMode === 'signin' && (
           <Text style={[styles.signInNote, { color: colors.textSecondary }]}>
-            Returning account access is not available yet.
+            Sign in will be available in the next account update.
           </Text>
         )}
-      </GlassCard>
+        </View>
+      </View>
+      </KeyboardAvoidingView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { gap: 16 },
-  heroSection: { alignItems: 'center', paddingVertical: 10 },
+  container: { flex: 1, position: 'relative', gap: 16, paddingVertical: 12, overflow: 'hidden', borderRadius: 28 },
+  content: { gap: 16 },
+  glow: { position: 'absolute', borderRadius: 999 },
+  glowPrimary: { width: 240, height: 240, top: -90, right: -80 },
+  glowSecondary: { width: 200, height: 200, bottom: 120, left: -100 },
+  heroSection: { alignItems: 'center', paddingVertical: 10, paddingHorizontal: 12 },
   iconCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 20,
+    width: 64,
+    height: 64,
+    borderRadius: 22,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 4,
   },
-  heroIcon: { fontSize: 28, fontWeight: '700' },
-  heroTitle: { fontSize: 22, fontWeight: '800', textAlign: 'center' },
-  heroSubtitle: { fontSize: 14, lineHeight: 20, textAlign: 'center', marginTop: 4, paddingHorizontal: 20 },
-  tabPillContainer: { flexDirection: 'row', borderRadius: 999, padding: 4, borderWidth: 1 },
-  authTab: { flex: 1, minHeight: 48, paddingVertical: 10, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
-  authTabText: { fontSize: 14, fontWeight: '700' },
-  formCard: { padding: 20, gap: 14 },
-  recoveryTitle: { fontSize: 18, fontWeight: '700' },
+  heroIcon: { fontSize: 18, fontWeight: '900', letterSpacing: -0.8 },
+  heroEyebrow: { fontSize: 11, lineHeight: 16, fontWeight: '800', letterSpacing: 1.2, marginBottom: 5 },
+  heroTitle: { fontSize: 24, lineHeight: 30, fontWeight: '800', textAlign: 'center', letterSpacing: -0.5 },
+  heroSubtitle: { fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 6, paddingHorizontal: 12, maxWidth: 320 },
+  tabPillContainer: { flexDirection: 'row', borderRadius: 999, padding: 4, borderWidth: 1, gap: 4 },
+  authTab: { flex: 1, minHeight: 48, paddingVertical: 10, paddingHorizontal: 6, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
+  authTabText: { fontSize: 14, fontWeight: '700', textAlign: 'center' },
+  pressed: { opacity: 0.78 },
+  formGlass: { borderWidth: 1, borderRadius: 28, overflow: 'hidden', padding: 1, shadowOffset: { width: 0, height: 14 }, shadowOpacity: 0.14, shadowRadius: 30, elevation: 8 },
+  formCard: { padding: 19, gap: 15 },
+  recoveryTitle: { fontSize: 18, lineHeight: 24, fontWeight: '700' },
   inputGroup: { gap: 6 },
   inputLabel: { fontSize: 14, fontWeight: '700' },
-  textInput: { minHeight: 48, borderRadius: 14, borderWidth: 1, paddingHorizontal: 16, fontSize: 16 },
-  fieldError: { fontSize: 13, lineHeight: 18 },
+  textInput: { minHeight: 52, borderRadius: 16, borderWidth: 1.5, paddingHorizontal: 16, fontSize: 16 },
+  submitButtonFrame: { minHeight: 54, borderRadius: 18, marginTop: 3, overflow: 'hidden', justifyContent: 'center', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.2, shadowRadius: 16, elevation: 4 },
+  submitButton: { flex: 1, minHeight: 54, borderRadius: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 18 },
+  submitButtonDisabled: { opacity: 0.52, elevation: 0, shadowOpacity: 0 },
+  submitButtonText: { fontSize: 15, fontWeight: '800', textAlign: 'center' },
+  fieldError: { fontSize: 13, lineHeight: 18, fontWeight: '600' },
   formError: { fontSize: 14, lineHeight: 20 },
-  signInNote: { fontSize: 14, lineHeight: 20, textAlign: 'center' },
+  signInNote: { fontSize: 12, lineHeight: 18, textAlign: 'center', paddingHorizontal: 6 },
 });
