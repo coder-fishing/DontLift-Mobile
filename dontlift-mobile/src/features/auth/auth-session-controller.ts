@@ -56,6 +56,8 @@ export function createAuthSessionController(
 ) {
   let state: AuthSessionState = { kind: 'loading' };
   let operation = 0;
+  let signInOperation: number | null = null;
+  let explicitlyHandledUid: string | null = null;
   const listeners = new Set<(next: AuthSessionState) => void>();
 
   function publish(next: AuthSessionState) {
@@ -117,11 +119,15 @@ export function createAuthSessionController(
     },
     async restoreSession(user: RegistrationUser | null): Promise<void> {
       if (user?.uid !== (auth.getCurrentUser()?.uid ?? null)) return;
-      const expectedOperation = operation;
+      if (signInOperation !== null) return;
       if (!user) {
+        explicitlyHandledUid = null;
         publish({ kind: 'signed-out' });
         return;
       }
+      if (user.uid === explicitlyHandledUid) return;
+
+      const expectedOperation = operation;
       if ((state.kind === 'authenticated' && state.profile.uid !== user.uid)
         || (state.kind === 'profile-recovery' && state.user.uid !== user.uid)) {
         publish({ kind: 'loading' });
@@ -142,9 +148,11 @@ export function createAuthSessionController(
     },
     async signIn(email: string, password: string): Promise<AuthSessionResult> {
       const expectedOperation = ++operation;
+      signInOperation = expectedOperation;
       try {
         const user = await auth.signIn(email.trim(), password);
         if (!isCurrent(expectedOperation, user)) return { kind: 'failed', message: PROFILE_UNAVAILABLE_MESSAGE };
+        explicitlyHandledUid = user.uid;
         return await loadServerProfile(user, expectedOperation);
       } catch (error) {
         if (operation !== expectedOperation) return { kind: 'failed', message: PROFILE_UNAVAILABLE_MESSAGE };
@@ -158,6 +166,8 @@ export function createAuthSessionController(
           return { kind: 'failed', message: INVALID_CREDENTIALS_MESSAGE };
         }
         return { kind: 'failed', message: INVALID_CREDENTIALS_MESSAGE };
+      } finally {
+        if (signInOperation === expectedOperation) signInOperation = null;
       }
     },
     async refreshProfile(): Promise<AuthSessionResult> {
@@ -172,6 +182,7 @@ export function createAuthSessionController(
       const expectedOperation = ++operation;
       try {
         await auth.signOut();
+        if (!auth.getCurrentUser()) explicitlyHandledUid = null;
         if (operation === expectedOperation && !auth.getCurrentUser()) publish({ kind: 'signed-out' });
         return { kind: 'signed-out' };
       } catch {

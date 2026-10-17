@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, ViewProps, StyleSheet, useColorScheme } from 'react-native';
+import { View, ViewProps, StyleSheet } from 'react-native';
 import { Colors } from '../constants/theme';
 
 interface GlassCardProps extends ViewProps {
@@ -8,8 +8,8 @@ interface GlassCardProps extends ViewProps {
 }
 
 export function GlassCard({ children, className = '', style, ...props }: GlassCardProps) {
-  const colorScheme = useColorScheme() ?? 'light';
-  const colors = colorScheme === 'dark' ? Colors.dark : Colors.light;
+  // Shared card consumers still use light foreground colors, including in dark mode.
+  const colors = Colors.light;
 
   return (
     <View

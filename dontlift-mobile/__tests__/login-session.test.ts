@@ -134,6 +134,35 @@ describe('login and auth session controller', () => {
     expect(state.controller.getState()).toEqual(result);
   });
 
+  it('does not let auth-state restoration publish a cached profile during or after explicit sign-in', async () => {
+    const state = setup();
+    const cached = profile('lift', 'Outdated cached name');
+    const remoteRead = deferred<RegistrationProfile | null>();
+    const remoteStarted = deferred<void>();
+    state.localProfiles.set(cached.uid, cached);
+    const controller = createAuthSessionController(state.auth, {
+      async get(uid: string) { return state.localProfiles.get(uid) ?? null; },
+      async upsert(value: RegistrationProfile) { state.localProfiles.set(value.uid, value); },
+    }, {
+      get() {
+        remoteStarted.resolve();
+        return remoteRead.promise;
+      },
+    });
+
+    const signingIn = controller.signIn('lift@example.com', 'password123');
+    await remoteStarted.promise;
+    await controller.restoreSession(state.auth.getCurrentUser());
+    expect(controller.getState()).toEqual({ kind: 'loading' });
+
+    remoteRead.resolve(null);
+    const result = await signingIn;
+    await controller.restoreSession(state.auth.getCurrentUser());
+
+    expect(result).toEqual({ kind: 'profile-recovery', reason: 'missing-profile', user: state.auth.getCurrentUser() });
+    expect(controller.getState()).toEqual(result);
+  });
+
   it('ignores an older restore failure after a different user logs in', async () => {
     const state = setup();
     const restoreRead = deferred<RegistrationProfile | null>();
