@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
+  ActivityIndicator,
   View,
   ScrollView,
   StyleSheet,
   StatusBar,
   Alert,
+  Text,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenId, Participant, BillParticipantShare } from '../types';
@@ -24,9 +26,60 @@ import { BillAllocationScreen } from '../screens/BillAllocationScreen';
 import { VietQRSettlementScreen } from '../screens/VietQRSettlementScreen';
 import { ActivationScreen } from '../screens/ActivationScreen';
 import { HardwareDiagnosticsScreen } from '../screens/HardwareDiagnosticsScreen';
+import { useAuthSession } from '../features/auth/auth-session';
+import type { RegistrationProfile, RegistrationUser } from '../features/auth/auth-controller';
+import type { AuthSessionState } from '../features/auth/auth-session-controller';
 
 export default function HomeScreen() {
+  const session = useAuthSession();
+
+  if (session.state.kind === 'loading') {
+    return (
+      <View style={styles.authLoading}>
+        <StatusBar barStyle="dark-content" backgroundColor="#EEF2FF" />
+        <ActivityIndicator accessibilityLabel="Restoring account session" size="large" color="#004AC6" />
+      </View>
+    );
+  }
+
+  if (session.state.kind === 'authenticated') {
+    return <AuthenticatedHome profile={session.state.profile} />;
+  }
+
+  const recoveryUser = session.state.kind === 'profile-recovery' && session.state.reason === 'missing-profile'
+    ? session.state.user
+    : undefined;
+  return <LoginGate state={session.state} recoveryUser={recoveryUser} />;
+}
+
+function LoginGate({ state, recoveryUser }: { state: AuthSessionState; recoveryUser?: RegistrationUser }) {
   const insets = useSafeAreaInsets();
+  const session = useAuthSession();
+  const formError = state.kind === 'profile-recovery' && state.reason === 'profile-unavailable'
+    ? 'Your account is signed in, but the profile service is unavailable. Try again when connected.'
+    : state.kind === 'unavailable' ? state.message : undefined;
+
+  return (
+    <View style={[styles.loginGate, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+      <StatusBar barStyle="dark-content" backgroundColor="#EEF2FF" />
+      <LoginScreenBackground />
+      <ScrollView contentContainerStyle={styles.loginGateContent} keyboardShouldPersistTaps="handled">
+        <LoginScreen
+          onAuthenticated={() => { void session.refreshProfile(); }}
+          onSignIn={session.signIn}
+          onSignOut={session.signOut}
+          recoveryUser={recoveryUser}
+          canSignOut={state.kind === 'profile-recovery'}
+          formError={formError}
+        />
+      </ScrollView>
+    </View>
+  );
+}
+
+function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
+  const insets = useSafeAreaInsets();
+  const session = useAuthSession();
   // Navigation & Drawer
   const [currentScreen, setCurrentScreen] = useState<ScreenId>('02-solo-select');
   const [drawerVisible, setDrawerVisible] = useState<boolean>(false);
@@ -168,7 +221,12 @@ export default function HomeScreen() {
           showsVerticalScrollIndicator={false}
         >
         {currentScreen === '01-login' && (
-          <LoginScreen onAuthenticated={() => setCurrentScreen('02-solo-select')} />
+          <LoginScreen
+            onAuthenticated={() => { void session.refreshProfile(); }}
+            onSignIn={session.signIn}
+            authenticatedProfile={profile}
+            onSignOut={session.signOut}
+          />
         )}
 
         {currentScreen === '02-solo-select' && (
@@ -264,6 +322,9 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
+  authLoading: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#EEF2FF' },
+  loginGate: { flex: 1, position: 'relative', backgroundColor: '#EEF2FF' },
+  loginGateContent: { flexGrow: 1, justifyContent: 'center', padding: 16 },
   container: {
     flex: 1,
     backgroundColor: '#EEF2FF',
