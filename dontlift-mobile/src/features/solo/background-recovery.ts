@@ -7,6 +7,13 @@ export const BACKGROUND_GRACE_PERIOD_MS = 3_000;
 // Các mốc được đọc liên tiếp nên lệch tối đa 1 giây vẫn được xem là sai số nhỏ.
 const MAX_CLOCK_DIVERGENCE_MS = 1_000;
 
+export type BackgroundTimestamp = { utcMs: number; monotonicMs: number };
+export type BackgroundRecoveryInput = {
+  sessionId: string;
+  userId: string;
+  observedAt?: BackgroundTimestamp;
+};
+
 type RecoveryDependencies = {
   createId: () => string;
   nowUtcMs: () => number;
@@ -50,12 +57,12 @@ const defaultDependencies: RecoveryDependencies = {
 
 export async function beginBackgroundCandidate(
   database: SQLite.SQLiteDatabase,
-  input: { sessionId: string; userId: string },
+  input: BackgroundRecoveryInput,
   dependencies: RecoveryDependencies = defaultDependencies,
 ): Promise<string | null> {
   let candidateId: string | null = null;
-  const transitionAtUtcMs = dependencies.nowUtcMs();
-  const transitionAtMonotonicMs = dependencies.nowMonotonicMs();
+  const transitionAtUtcMs = input.observedAt?.utcMs ?? dependencies.nowUtcMs();
+  const transitionAtMonotonicMs = input.observedAt?.monotonicMs ?? dependencies.nowMonotonicMs();
   await database.withExclusiveTransactionAsync(async (transaction) => {
     const session = await transaction.getFirstAsync<{ id: string }>(
       `SELECT id FROM sessions
@@ -64,6 +71,8 @@ export async function beginBackgroundCandidate(
       input.userId,
     );
     if (!session) return;
+    // Sensor queue có thể vừa commit violation trước transaction này dù snapshot UI chưa cập nhật.
+    if (await hasOpenViolation(transaction, input)) return;
 
     const pending = await transaction.getFirstAsync<{ id: string }>(
       `SELECT id FROM lifecycle_candidates
@@ -97,7 +106,7 @@ export async function beginBackgroundCandidate(
 
 export async function reconcileBackgroundCandidate(
   database: SQLite.SQLiteDatabase,
-  input: { sessionId: string; userId: string },
+  input: BackgroundRecoveryInput,
   dependencies: RecoveryDependencies = defaultDependencies,
 ): Promise<BackgroundRecoveryResult> {
   let result: BackgroundRecoveryResult = 'none';
@@ -112,7 +121,7 @@ export async function reconcileBackgroundCandidate(
     );
     if (!candidate) return;
 
-    const nowUtcMs = dependencies.nowUtcMs();
+    const nowUtcMs = input.observedAt?.utcMs ?? dependencies.nowUtcMs();
     const session = await transaction.getFirstAsync<SessionRow>(
       `SELECT id, user_id, mode, duration_seconds, started_at, status
        FROM sessions WHERE id = ? AND user_id = ?`,
@@ -120,6 +129,13 @@ export async function reconcileBackgroundCandidate(
       input.userId,
     );
     if (!session || session.status !== 'ACTIVE') {
+      await resolveCandidate(transaction, candidate.id, 'CANCELLED', nowUtcMs);
+      result = 'cancelled';
+      return;
+    }
+
+    // Một foreground lift đã mở bao phủ khoảng background; không thêm lift cho cùng một lần nhấc máy.
+    if (await hasOpenViolation(transaction, input)) {
       await resolveCandidate(transaction, candidate.id, 'CANCELLED', nowUtcMs);
       result = 'cancelled';
       return;
@@ -135,7 +151,7 @@ export async function reconcileBackgroundCandidate(
     }
 
     const elapsedUtcMs = nowUtcMs - candidate.transition_at_utc_ms;
-    const elapsedMonotonicMs = dependencies.nowMonotonicMs() - candidate.transition_at_monotonic_ms;
+    const elapsedMonotonicMs = (input.observedAt?.monotonicMs ?? dependencies.nowMonotonicMs()) - candidate.transition_at_monotonic_ms;
     if (
       !Number.isFinite(elapsedUtcMs)
       || elapsedUtcMs < 0
@@ -210,6 +226,18 @@ export async function reconcileBackgroundCandidate(
   return result;
 }
 
+async function hasOpenViolation(
+  transaction: SQLite.SQLiteDatabase,
+  input: BackgroundRecoveryInput,
+): Promise<boolean> {
+  const violation = await transaction.getFirstAsync<{ event_id: string }>(
+    'SELECT event_id FROM violation_logs WHERE session_id = ? AND user_id = ? AND ended_at IS NULL LIMIT 1',
+    input.sessionId,
+    input.userId,
+  );
+  return violation !== null;
+}
+
 async function resolveCandidate(
   transaction: SQLite.SQLiteDatabase,
   candidateId: string,
@@ -226,12 +254,16 @@ async function resolveCandidate(
   if (update.changes !== 1) throw new Error('Background lifecycle candidate changed before reconciliation completed.');
 }
 
-export function createAndroidBackgroundRecoveryRepository(dependencies?: RecoveryDependencies) {
+export function createBackgroundRecoveryRepository(dependencies: RecoveryDependencies = defaultDependencies) {
   return {
-    async begin(input: { sessionId: string; userId: string }) {
+    // Chụp mốc lúc AppState phát sự kiện, không dùng thời điểm SQLite xử lý xong queue.
+    captureTime(): BackgroundTimestamp {
+      return { utcMs: dependencies.nowUtcMs(), monotonicMs: dependencies.nowMonotonicMs() };
+    },
+    async begin(input: BackgroundRecoveryInput) {
       return beginBackgroundCandidate(await getLocalDatabase(), input, dependencies);
     },
-    async reconcile(input: { sessionId: string; userId: string }) {
+    async reconcile(input: BackgroundRecoveryInput) {
       return reconcileBackgroundCandidate(await getLocalDatabase(), input, dependencies);
     },
   };

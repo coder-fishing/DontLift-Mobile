@@ -41,7 +41,8 @@ import { createSoloSessionController, getSoloSessionTime, type SoloSession } fro
 import { createSoloSessionCompletionController } from '../features/solo/session-completion-controller';
 import { createSoloSummaryRepository, type SoloSessionSummary } from '../features/solo/summary-service';
 import { createViolationRepository } from '../features/solo/violation-repository';
-import { createAndroidBackgroundRecoveryRepository } from '../features/solo/android-background-recovery';
+import { createBackgroundRecoveryRepository } from '../features/solo/background-recovery';
+import { createSessionLifecycleController } from '../features/solo/session-lifecycle-controller';
 import {
   createForegroundDetectionController,
   type ForegroundDetectionController,
@@ -51,7 +52,7 @@ import {
 const soloSessionController = createSoloSessionController(createLocalSessionRepository());
 const soloCompletionController = createSoloSessionCompletionController(createSoloSummaryRepository());
 const violationRepository = createViolationRepository();
-const androidBackgroundRecovery = createAndroidBackgroundRecoveryRepository();
+const backgroundRecovery = createBackgroundRecoveryRepository();
 const INITIAL_DETECTION_STATE: ForegroundDetectionViewState = {
   orientation: 'UNKNOWN',
   isGraceActive: false,
@@ -158,76 +159,41 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     if (!activeSoloSession) return undefined;
     setSoloNow(Date.now());
     const timer = setInterval(() => setSoloNow(Date.now()), 1000);
-    let previousState = AppState.currentState;
-    let handledBackgroundTransition = false;
-    let backgroundTransition: Promise<void> = Promise.resolve();
+    const supportsRecovery = Platform.OS === 'android' || Platform.OS === 'ios';
+    const lifecycle = supportsRecovery ? createSessionLifecycleController({
+      session: { sessionId: activeSoloSession.id, userId: activeSoloSession.userId },
+      initialState: AppState.currentState,
+      repository: backgroundRecovery,
+      captureTime: backgroundRecovery.captureTime,
+      getDetector: () => foregroundDetectionController.current,
+      onPendingChange: (pending) => {
+        backgroundRecoveryPending.current = pending;
+        setIsRecoveringBackground(pending);
+      },
+      onRecovered: (recovery, detection) => {
+        if (detection) setForegroundDetection(detection);
+        setSoloNow(Date.now());
+        if (recovery === 'needs-review') {
+          Alert.alert(
+            'Session recovery needs review',
+            'Elapsed time could not be verified while DontLift was in the background. No violation was added; continue or cancel the session to resolve it.',
+          );
+        }
+      },
+      onError: (stage) => {
+        Alert.alert(
+          stage === 'begin' ? 'Background recovery unavailable' : 'Could not restore background state',
+          stage === 'begin'
+            ? 'Could not save this background transition. The Solo session is still active, but this transition may not be included in its result.'
+            : 'The session remains saved on this device. Leave and reopen DontLift to retry recovery before completing the session.',
+        );
+      },
+    }) : null;
     const appState = AppState.addEventListener('change', (nextState) => {
-      const wasActive = previousState === 'active';
-      previousState = nextState;
-      if (Platform.OS !== 'android') return;
-
-      if (wasActive && nextState !== 'active' && !handledBackgroundTransition) {
-        handledBackgroundTransition = true;
-        backgroundRecoveryPending.current = true;
-        setIsRecoveringBackground(true);
-        backgroundTransition = (async () => {
-          const detector = foregroundDetectionController.current;
-          const detection = detector?.getViewState(Date.now());
-          if (!detection?.isViolationActive) {
-            // Lưu candidate trước khi app bị treo; callback Expo Go vẫn có thể không chạy trước force-stop.
-            await androidBackgroundRecovery.begin({
-              sessionId: activeSoloSession.id,
-              userId: activeSoloSession.userId,
-            });
-            // Nếu đang trong grace của cảm biến, reset nó để không tính trùng với background candidate.
-            await detector?.observeOrientation('UNKNOWN', Date.now());
-          }
-        })().catch(() => {
-          Alert.alert(
-            'Background recovery unavailable',
-            'Could not save this background transition. The Solo session is still active, but this transition may not be included in its result.',
-          );
-        });
-      }
-
-      if (nextState === 'active' && !wasActive) {
-        handledBackgroundTransition = false;
-        backgroundRecoveryPending.current = true;
-        setIsRecoveringBackground(true);
-        void (async () => {
-          // Đợi candidate được lưu xong nếu người dùng quay lại rất nhanh.
-          await backgroundTransition;
-          // Xử lý candidate trước khi cập nhật timer để summary đọc được violation vừa phục hồi.
-          const recovery = await androidBackgroundRecovery.reconcile({
-            sessionId: activeSoloSession.id,
-            userId: activeSoloSession.userId,
-          });
-          const detection = await foregroundDetectionController.current?.initialize();
-          if (!isMounted.current) return;
-          if (detection) setForegroundDetection(detection);
-          // Chỉ mở khóa sau khi candidate và bộ dò đều đã phục hồi xong.
-          backgroundRecoveryPending.current = false;
-          setIsRecoveringBackground(false);
-          setSoloNow(Date.now());
-          if (recovery === 'needs-review') {
-            Alert.alert(
-              'Session recovery needs review',
-              'Elapsed time could not be verified while DontLift was in the background. No violation was added; continue or cancel the session to resolve it.',
-            );
-          }
-        })().catch(() => {
-          // Giữ completion khóa lại đến lần reconcile kế tiếp; không chốt summary khi candidate còn pending.
-          backgroundRecoveryPending.current = true;
-          setIsRecoveringBackground(true);
-          Alert.alert(
-            'Could not restore background state',
-            'The session remains saved on this device. Leave and reopen DontLift to retry recovery before completing the session.',
-          );
-          setSoloNow(Date.now());
-        });
-      }
+      void lifecycle?.handleChange(nextState);
     });
     return () => {
+      lifecycle?.dispose();
       clearInterval(timer);
       appState.remove();
     };
@@ -369,8 +335,8 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
         durationMinutes: mode === 'COUNTDOWN' ? mins : undefined,
         sensorReady: sensorAvailability.state.kind === 'ready',
       });
-      const recovery = Platform.OS === 'android'
-        ? await androidBackgroundRecovery.reconcile({ sessionId: result.session.id, userId: result.session.userId })
+      const recovery = Platform.OS === 'android' || Platform.OS === 'ios'
+        ? await backgroundRecovery.reconcile({ sessionId: result.session.id, userId: result.session.userId })
         : 'none';
       backgroundRecoveryPending.current = false;
       setIsRecoveringBackground(false);

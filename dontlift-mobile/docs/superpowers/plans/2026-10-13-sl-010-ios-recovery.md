@@ -8,8 +8,8 @@
 
 **Slice:** SL-010. **Ưu tiên đề xuất:** P0. **Release:** MVP + activation/Premium; post-MVP deferred. SL-036 chỉ được tính release sau D6.
 
-**Trạng thái kế hoạch:** DRAFT — chưa được human duyệt; bị chặn bởi E1.
-**Trạng thái implementation quan sát:** Không có native iOS lifecycle adapter. Chưa có evidence nghiệm thu slice.
+**Trạng thái kế hoạch:** Đang triển khai phần Expo Go theo yêu cầu human ngày 2026-10-19; phạm vi native trong draft gốc bên dưới được hoãn theo runtime hiện tại. Chưa nghiệm thu iOS thật.
+**Trạng thái implementation quan sát:** Baseline dcf51b2, nhánh feature/sl-010-ios-recovery. Dùng lại SQLite recovery từ SL-009; chưa có native iOS adapter và chưa có iPhone để nghiệm thu.
 **Baseline khảo sát:** docs/p6.0-implementation-slices tại 57ca1eb28a2952c66d01f89b9b89bf755ab4812a.
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Plan slug:** `2026-10-13-sl-010-ios-recovery`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-010-ios-recovery]`.
@@ -150,3 +150,60 @@ Ghi trong kết quả execution: baseline/commit mới, command, exit status, s�
 Human phải duyệt scope, non-goals, tasks, acceptance cases, dependencies và các quyết định còn mở của **SL-010** trước implementation. Duyệt một slice không duyệt tất cả 37; duyệt authoring batch không duyệt code.
 
 Sau approval, cập nhật trạng thái/date/decision evidence trong đúng plan; kế hoạch mới chỉ đủ execution-ready khi blocker đã được giải quyết và baseline được re-inspect. Dùng qskill-executing-plans khi user yêu cầu execute plan đã duyệt. Không tự bắt đầu P6.2 từ file draft hoặc từ prompt batch.
+
+## 9. Phạm vi thực hiện theo runtime hiện tại — 2026-10-19
+
+Human yêu cầu triển khai SL-010 trên nhánh feature/sl-010-ios-recovery. Tiếp tục lựa chọn Expo Go đã có trong phiên và ADR-010; không chuyển sang Development Build. Native background-task APIs của draft gốc chưa được triển khai hoặc nghiệm thu. Không commit/push cho đến khi human yêu cầu riêng.
+
+### Task A — Recovery dùng chung Android/iOS
+
+- [x] Đổi android-background-recovery.ts thành background-recovery.ts; tái sử dụng schema, candidate UUID, transaction violation/outbox, policy NEEDS_REVIEW sau process restart và clock anomaly.
+- [x] Tạo session-lifecycle-controller.ts để xử lý AppState bên ngoài màn hình. iOS inactive/background liên tiếp là cùng một lần rời foreground.
+- [x] Đóng dấu UTC/monotonic khi nhận sự kiện; queue SQLite chậm không được kéo dài thời gian background.
+- [x] Queue begin/reconcile theo thứ tự; chặn finalization ngay khi rời active, chỉ mở khóa sau reconcile và detector initialize.
+- [x] Callback từ recovery cũ không mở khóa nếu app đã background lần nữa; dispose không cập nhật UI.
+- [x] Tích hợp controller vào index.tsx cho Android/iOS; web giữ hành vi hiện tại. Resume session đã lưu cũng reconcile trên iOS.
+- [x] Kiểm tra inactive dưới 3 giây, đúng 3 giây, background lặp, quay lại khi begin còn bận, detector restore chậm/lỗi, background lại khi recovery chưa xong và dispose.
+
+### Task B — Verification và giới hạn
+
+- [x] Chạy focused lifecycle/SQLite tests và TypeScript; ghi actual result.
+- [x] Rà soát hồi quy Android bằng bộ recovery/foreground/completion tests có sẵn.
+- [x] Ghi rõ: iPhone background/suspend/kill/relaunch UNVERIFIED do không có thiết bị; native begin/end/expiration DEFERRED vì Expo Go.
+- [x] Chỉ ghi hoàn tất phần Expo Go đã kiểm tra bằng unit/SQLite; không ghi hoàn tất toàn bộ acceptance native của SL-010.
+
+Nguồn: React Native AppState https://reactnative.dev/docs/appstate ; Expo Go và Development Builds https://docs.expo.dev/develop/development-builds/introduction/ .
+### Files thực hiện
+
+| File | Kết quả |
+|---|---|
+| src/features/solo/background-recovery.ts | Đổi tên repository Android thành dùng chung; giữ schema v5; nhận timestamp của sự kiện và chặn trùng với violation đang mở trong cùng transaction. |
+| src/features/solo/session-lifecycle-controller.ts | Queue AppState có retry giữ thao tác/timestamp gốc; callback cũ không mở khóa khi app background lần nữa; giữ NEEDS_REVIEW nếu detector restore phải retry. |
+| src/app/index.tsx | Android/iOS dùng cùng controller; resume session đã lưu cũng reconcile trên iOS; ref và state giữ khóa finalization/countdown. |
+| __tests__/ios-recovery.test.ts | 11 unit cases cho iOS transitions, ordering, retry, detector restore và disposal. |
+| __tests__/android-recovery.test.ts | 11 SQLite cases, gồm 3 regression cases mới cho timestamp và foreground/background overlap. |
+
+### Evidence 2026-10-19
+
+- Node v24.14.1, baseline dcf51b2, nhánh feature/sl-010-ios-recovery.
+- node node_modules/typescript/bin/tsc --noEmit: exit 0.
+- node node_modules/jest/bin/jest.js --watchAll=false --runInBand --runTestsByPath __tests__/ios-recovery.test.ts __tests__/android-recovery.test.ts __tests__/foreground-detection.test.ts __tests__/solo-completion.test.ts: exit 0; 4 suites, 40 tests passed.
+- Test SQLite ban đầu tái hiện candidate bị tạo trùng khi foreground violation đã commit; sau bảo vệ trong transaction case đã pass.
+- SQLite dùng node:sqlite để kiểm tra transaction; các callback AppState/detector là controlled unit fixtures. Kết quả này không chứng minh hành vi iOS thật.
+- Lint không chạy: repository chưa có ESLint config; không thêm dependencies/config chỉ để chạy lint.
+- Không thay dependencies, cấu hình Firebase hoặc dữ liệu người dùng. Không commit/push trong implementation này.
+
+### Device checklist còn lại
+
+UNVERIFIED: chưa có iPhone. Khi có thiết bị, chạy Expo Go bằng pnpm run dev và kiểm tra:
+
+1. Start Stopwatch, rời app khoảng 2 giây rồi quay lại: không thêm lift.
+2. Rời app từ 3 giây trở lên rồi quay lại: một lift, thời gian vi phạm tính toàn bộ khoảng rời app.
+3. Chuỗi inactive/background (Notification Center, Home, khóa màn hình) không tạo hai candidate cho một lần rời foreground.
+4. Countdown hết giờ trong nền: quay lại phải reconcile trước rồi tự mở summary.
+5. Trong recovery, Finish/Retry/Cancel không được đổi trạng thái session.
+6. Violation foreground đang mở rồi chuyển app: không đếm thêm lift cho cùng một khoảng liên tục.
+7. Kill/relaunch sau khi candidate đã lưu: NEEDS_REVIEW, không tự tính phạt từ UTC không thể xác minh.
+8. Android hồi quy Start/Continue/Finish/Cancel và AppState: chưa được chạy lại trên thiết bị trong lượt này.
+
+DEFERRED: native beginBackgroundTask/endBackgroundTask/expiration và khả năng commit trước OS suspend. Expo Go không cung cấp module native riêng cho app; phải dùng Development Build để triển khai và nghiệm thu phần này theo ADR-008.
