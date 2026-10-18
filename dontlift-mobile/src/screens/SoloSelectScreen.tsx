@@ -1,15 +1,21 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, useColorScheme } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Colors } from '../constants/theme';
 import { GlassCard } from '../components/GlassCard';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { SensorAvailabilityPanel } from '../components/SensorAvailabilityPanel';
 import type { SensorAvailabilityState } from '../features/sensors/sensor-adapter';
+import type { SoloSession } from '../features/solo/session-controller';
 
 interface SoloSelectScreenProps {
   selectedDuration: number;
+  selectedMode: 'COUNTDOWN' | 'STOPWATCH';
   onSelectDuration: (mins: number) => void;
-  onStartSession: (mins: number) => void;
+  onSelectMode: (mode: 'COUNTDOWN' | 'STOPWATCH') => void;
+  onStartSession: (mode: 'COUNTDOWN' | 'STOPWATCH', mins: number) => void;
+  isStarting: boolean;
+  startError?: string;
+  activeSession?: SoloSession | null;
   sensorAvailability: SensorAvailabilityState;
   onRetrySensorCheck: () => void;
   onOpenSettings: () => void;
@@ -17,17 +23,23 @@ interface SoloSelectScreenProps {
 
 export function SoloSelectScreen({
   selectedDuration,
+  selectedMode,
   onSelectDuration,
+  onSelectMode,
   onStartSession,
+  isStarting,
+  startError,
+  activeSession,
   sensorAvailability,
   onRetrySensorCheck,
   onOpenSettings,
 }: SoloSelectScreenProps) {
-  const colorScheme = useColorScheme() ?? 'light';
-  const colors = colorScheme === 'dark' ? Colors.dark : Colors.light;
+  // Màn Solo đang dùng backdrop và GlassCard sáng; giữ foreground cùng palette để chữ luôn tương phản.
+  const colors = Colors.light;
   const [customMinutes, setCustomMinutes] = useState<number>(90);
   const [showCustomStepper, setShowCustomStepper] = useState<boolean>(false);
   const canStartSession = sensorAvailability.kind === 'ready';
+  const isCountdown = selectedMode === 'COUNTDOWN';
 
   return (
     <View style={styles.container}>
@@ -38,8 +50,39 @@ export function SoloSelectScreen({
         </Text>
       </View>
 
+      {activeSession ? (
+        <GlassCard style={styles.activeSessionCard}>
+          <Text style={[styles.activeSessionTitle, { color: colors.text }]}>Active session saved</Text>
+          <Text style={[styles.activeSessionBody, { color: colors.textSecondary }]}>
+            Start will continue your saved {activeSession.mode === 'COUNTDOWN'
+              ? `${activeSession.durationSeconds / 60}-minute Countdown`
+              : 'Stopwatch'} session.
+          </Text>
+        </GlassCard>
+      ) : null}
+
+      <View style={styles.modeSelector} accessibilityRole="tablist">
+        {([
+          { mode: 'COUNTDOWN' as const, title: 'Countdown Timer' },
+          { mode: 'STOPWATCH' as const, title: 'Open-ended Stopwatch' },
+        ]).map(({ mode, title }) => {
+          const selected = selectedMode === mode;
+          return (
+            <TouchableOpacity
+              key={mode}
+              accessibilityRole="tab"
+              accessibilityState={{ selected }}
+              onPress={() => onSelectMode(mode)}
+              style={[styles.modeOption, selected && styles.modeOptionActive]}
+            >
+              <Text style={[styles.modeText, selected && styles.modeTextActive]}>{title}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
       {/* 4 Interval Cards */}
-      <View style={styles.cardsGrid}>
+      <View style={[styles.cardsGrid, !isCountdown && styles.cardsGridDisabled]}>
         {[
           { duration: 25, title: 'Pomodoro Sprint', desc: 'Standard block', tag: 'Recommended' },
           { duration: 45, title: 'Deep Work Flow', desc: 'Cognitive peak', tag: 'Standard' },
@@ -55,6 +98,7 @@ export function SoloSelectScreen({
             <TouchableOpacity
               key={idx}
               activeOpacity={0.8}
+              disabled={!isCountdown}
               accessibilityRole="button"
               accessibilityState={{ selected: isSelected }}
               onPress={() => {
@@ -97,7 +141,7 @@ export function SoloSelectScreen({
       </View>
 
       {/* Stepper adjustment row if custom */}
-      {showCustomStepper && (
+      {isCountdown && showCustomStepper && (
         <GlassCard style={styles.stepperCard}>
           <Text style={[styles.stepperTitle, { color: colors.text }]}>Adjust Custom Interval</Text>
           <View style={styles.stepperControls}>
@@ -132,11 +176,19 @@ export function SoloSelectScreen({
         onOpenSettings={onOpenSettings}
       />
 
+      {startError ? <Text accessibilityRole="alert" style={styles.startError}>{startError}</Text> : null}
+
       <PrimaryButton
-        title={`Start ${selectedDuration}m Solo Focus Session`}
-        onPress={() => onStartSession(selectedDuration)}
-        disabled={!canStartSession}
-        accessibilityState={{ disabled: !canStartSession }}
+        title={isStarting
+          ? 'Saving session…'
+          : activeSession
+            ? `Continue ${activeSession.mode === 'COUNTDOWN' ? 'Countdown' : 'Stopwatch'}`
+            : isCountdown
+              ? `Start ${selectedDuration}m Solo Focus Session`
+              : 'Start Stopwatch'}
+        onPress={() => onStartSession(selectedMode, selectedDuration)}
+        disabled={!canStartSession || isStarting}
+        accessibilityState={{ disabled: !canStartSession || isStarting }}
         accessibilityHint={canStartSession ? undefined : 'The session starts after the accelerometer check is ready'}
         style={!canStartSession ? styles.startDisabled : undefined}
       />
@@ -150,6 +202,59 @@ const styles = StyleSheet.create({
   },
   startDisabled: {
     opacity: 0.55,
+  },
+  modeSelector: {
+    flexDirection: 'row',
+    gap: 4,
+    padding: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255, 255, 255, 0.56)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.84)',
+  },
+  modeOption: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  modeOptionActive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(37, 99, 235, 0.2)',
+  },
+  modeText: {
+    color: '#334155',
+    fontSize: 11,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  modeTextActive: {
+    color: '#004AC6',
+    fontWeight: '800',
+  },
+  cardsGridDisabled: {
+    opacity: 0.4,
+  },
+  startError: {
+    color: '#B91C1C',
+    fontSize: 12,
+    lineHeight: 18,
+    marginHorizontal: 4,
+  },
+  activeSessionCard: {
+    gap: 4,
+    padding: 14,
+  },
+  activeSessionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  activeSessionBody: {
+    fontSize: 11,
+    lineHeight: 16,
   },
   titleSection: {
     marginBottom: 4,

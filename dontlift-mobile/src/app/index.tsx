@@ -31,6 +31,10 @@ import { useAuthSession } from '../features/auth/auth-session';
 import { useSensorAvailability } from '../features/sensors/use-sensor-availability';
 import type { RegistrationProfile, RegistrationUser } from '../features/auth/auth-controller';
 import type { AuthSessionState } from '../features/auth/auth-session-controller';
+import { createLocalSessionRepository } from '../features/solo/local-session-repository';
+import { createSoloSessionController, getSoloSessionTime, type SoloSession } from '../features/solo/session-controller';
+
+const soloSessionController = createSoloSessionController(createLocalSessionRepository());
 
 export default function HomeScreen() {
   const session = useAuthSession();
@@ -91,8 +95,11 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
 
   // Solo State
   const [selectedDuration, setSelectedDuration] = useState<number>(25);
-  const [soloSecondsLeft, setSoloSecondsLeft] = useState<number>(25 * 60);
-  const [isSoloRunning, setIsSoloRunning] = useState<boolean>(false);
+  const [selectedMode, setSelectedMode] = useState<'COUNTDOWN' | 'STOPWATCH'>('COUNTDOWN');
+  const [activeSoloSession, setActiveSoloSession] = useState<SoloSession | null>(null);
+  const [soloNow, setSoloNow] = useState<number>(Date.now());
+  const [isStartingSolo, setIsStartingSolo] = useState<boolean>(false);
+  const [soloStartError, setSoloStartError] = useState<string | undefined>();
   const [isPhoneGrounded, setIsPhoneGrounded] = useState<boolean>(true);
   const [isGraceActive, setIsGraceActive] = useState<boolean>(false);
   const [graceSeconds, setGraceSeconds] = useState<number>(3);
@@ -109,25 +116,12 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const [totalBillAmount, setTotalBillAmount] = useState<number>(550000);
   const [hostOverrideMode, setHostOverrideMode] = useState<boolean>(false);
 
-  // Solo Timer effect
+  // Tính giờ từ started_at đã lưu để tiếp tục đúng thời điểm sau khi quay lại session.
   useEffect(() => {
-    let timer: ReturnType<typeof setInterval> | null = null;
-    if (isSoloRunning && soloSecondsLeft > 0) {
-      timer = setInterval(() => {
-        setSoloSecondsLeft((prev) => {
-          if (prev <= 1) {
-            setIsSoloRunning(false);
-            setCurrentScreen('04-solo-summary');
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
-    return () => {
-      if (timer) clearInterval(timer);
-    };
-  }, [isSoloRunning, soloSecondsLeft]);
+    if (currentScreen !== '03-solo-timer' || !activeSoloSession) return undefined;
+    const timer = setInterval(() => setSoloNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [currentScreen, activeSoloSession]);
 
   // Grace timer effect
   useEffect(() => {
@@ -173,18 +167,40 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   }, [participants, totalBillAmount]);
 
   // Solo handlers
-  const handleStartSolo = (mins: number) => {
-    if (sensorAvailability.state.kind !== 'ready') {
-      Alert.alert('Sensor check required', 'Wait for the accelerometer check to pass before starting focus.');
-      return;
+  const handleStartSolo = async (mode: 'COUNTDOWN' | 'STOPWATCH', mins: number) => {
+    setSoloStartError(undefined);
+    setIsStartingSolo(true);
+    try {
+      const result = await soloSessionController.start({
+        userId: profile.uid,
+        mode,
+        durationMinutes: mode === 'COUNTDOWN' ? mins : undefined,
+        sensorReady: sensorAvailability.state.kind === 'ready',
+      });
+      // Chỉ chuyển sang timer sau khi repository xác nhận session đã commit vào SQLite.
+      setActiveSoloSession(result.session);
+      setSelectedMode(result.session.mode);
+      if (result.session.mode === 'COUNTDOWN') {
+        setSelectedDuration(result.session.durationSeconds / 60);
+      }
+      setSoloNow(Date.now());
+      setIsPhoneGrounded(true);
+      setIsGraceActive(false);
+      setViolationsCount(0);
+      setCurrentScreen('03-solo-timer');
+      if (result.resumed) {
+        Alert.alert('Active session continued', 'Your existing Solo session was restored from this device.');
+      }
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      setSoloStartError(code === 'sensor-not-ready'
+        ? 'Accelerometer check must be ready before a focus session can start.'
+        : code === 'invalid-duration'
+          ? 'Choose a duration from 5 to 180 minutes in 5-minute steps.'
+          : 'Could not save this session on the device. Your choices are kept; retry when local storage is available.');
+    } finally {
+      setIsStartingSolo(false);
     }
-    setSelectedDuration(mins);
-    setSoloSecondsLeft(mins * 60);
-    setIsSoloRunning(true);
-    setIsPhoneGrounded(true);
-    setIsGraceActive(false);
-    setViolationsCount(0);
-    setCurrentScreen('03-solo-timer');
   };
 
   const handleTogglePhoneLift = () => {
@@ -202,11 +218,14 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   };
 
   const handleEndSoloSession = () => {
-    setIsSoloRunning(false);
     setIsPhoneGrounded(true);
     setIsGraceActive(false);
-    setCurrentScreen('04-solo-summary');
+    setCurrentScreen('02-solo-select');
   };
+
+  const soloSecondsLeft = activeSoloSession
+    ? getSoloSessionTime(activeSoloSession, soloNow).displayedSeconds
+    : 0;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -239,8 +258,13 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
         {currentScreen === '02-solo-select' && (
           <SoloSelectScreen
             selectedDuration={selectedDuration}
+            selectedMode={selectedMode}
             onSelectDuration={setSelectedDuration}
+            onSelectMode={setSelectedMode}
             onStartSession={handleStartSolo}
+            isStarting={isStartingSolo}
+            startError={soloStartError}
+            activeSession={activeSoloSession}
             sensorAvailability={sensorAvailability.state}
             onRetrySensorCheck={() => { void sensorAvailability.retry(); }}
             onOpenSettings={() => {
@@ -253,6 +277,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
 
         {currentScreen === '03-solo-timer' && (
           <SoloTimerScreen
+            mode={activeSoloSession?.mode ?? selectedMode}
             selectedDuration={selectedDuration}
             secondsLeft={soloSecondsLeft}
             isPhoneGrounded={isPhoneGrounded}

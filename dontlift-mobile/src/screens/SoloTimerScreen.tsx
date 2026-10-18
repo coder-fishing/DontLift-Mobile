@@ -5,6 +5,7 @@ import { PrimaryButton } from '../components/PrimaryButton';
 import { formatTime } from '../constants';
 
 interface SoloTimerScreenProps {
+  mode: 'COUNTDOWN' | 'STOPWATCH';
   selectedDuration: number;
   secondsLeft: number;
   isPhoneGrounded: boolean;
@@ -16,6 +17,7 @@ interface SoloTimerScreenProps {
 }
 
 export function SoloTimerScreen({
+  mode,
   selectedDuration,
   secondsLeft,
   isPhoneGrounded,
@@ -25,6 +27,7 @@ export function SoloTimerScreen({
   onTogglePhoneLift,
   onEndSession,
 }: SoloTimerScreenProps) {
+  const isCountdown = mode === 'COUNTDOWN';
   return (
     <View style={styles.container}>
       {/* Top Status Bar */}
@@ -72,7 +75,9 @@ export function SoloTimerScreen({
           ]}
         >
           <Text style={styles.timerNumber}>{formatTime(secondsLeft)}</Text>
-          <Text style={styles.intervalSub}>{selectedDuration}:00 SOLO INTERVAL</Text>
+          <Text style={styles.intervalSub}>
+            {isCountdown ? `${selectedDuration}:00 SOLO INTERVAL` : 'OPEN-ENDED SOLO SESSION'}
+          </Text>
         </View>
 
         <View style={styles.stillnessRow}>
@@ -107,8 +112,8 @@ export function SoloTimerScreen({
         />
 
         <PrimaryButton
-          title="End Session"
-          variant="danger"
+          title="Back to Solo Focus"
+          variant="secondary"
           onPress={onEndSession}
           style={{ marginTop: 8 }}
         />
