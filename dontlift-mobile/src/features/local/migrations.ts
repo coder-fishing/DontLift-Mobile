@@ -10,17 +10,18 @@ type ExpectedColumn = { type: 'TEXT' | 'INTEGER'; notnull: number; pk: number };
 
 async function validateExistingSchema(
   database: SQLite.SQLiteDatabase,
-  table: 'local_profiles' | 'sessions' | 'violation_logs' | 'sync_outbox',
+  table: 'local_profiles' | 'sessions' | 'violation_logs' | 'sync_outbox' | 'lifecycle_candidates',
   expected: Record<string, ExpectedColumn>,
 ): Promise<void> {
   const columns = await database.getAllAsync<{ name: string; type: string; notnull: number; pk: number }>(
     'PRAGMA table_info(' + table + ')',
   );
-  if (columns.length !== Object.keys(expected).length || columns.some((column) => {
-    const target = expected[column.name];
-    return !target || column.type.toUpperCase() !== target.type
+  const incompatible = Object.entries(expected).some(([name, target]) => {
+    const column = columns.find((candidate) => candidate.name === name);
+    return !column || column.type.toUpperCase() !== target.type
       || column.notnull !== target.notnull || column.pk !== target.pk;
-  })) {
+  });
+  if (incompatible) {
     throw new Error('Incompatible local schema for ' + table + '. Existing data was preserved.');
   }
 }
@@ -157,7 +158,10 @@ const migrations: LocalMigration[] = [
     version: 4,
     migrate: async (database) => {
       // Lưu riêng mốc xác nhận của cảm biến; created_at vẫn giữ nghĩa thời điểm ghi SQLite.
-      await database.execAsync('ALTER TABLE violation_logs ADD COLUMN confirmed_at TEXT');
+      const columns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(violation_logs)');
+      if (!columns.some((column) => column.name === 'confirmed_at')) {
+        await database.execAsync('ALTER TABLE violation_logs ADD COLUMN confirmed_at TEXT');
+      }
       await database.execAsync(`
         UPDATE violation_logs SET confirmed_at = created_at WHERE confirmed_at IS NULL;
       `);
@@ -173,6 +177,38 @@ const migrations: LocalMigration[] = [
         created_at: { type: 'TEXT', notnull: 1, pk: 0 },
         synced_at: { type: 'TEXT', notnull: 0, pk: 0 },
         confirmed_at: { type: 'TEXT', notnull: 0, pk: 0 },
+      });
+    },
+  },
+  {
+    version: 5,
+    migrate: async (database) => {
+      await database.execAsync(`
+      CREATE TABLE IF NOT EXISTS lifecycle_candidates (
+        id TEXT PRIMARY KEY NOT NULL,
+        session_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        transition_at_utc_ms INTEGER NOT NULL,
+        transition_at_monotonic_ms INTEGER NOT NULL,
+        process_instance_id TEXT NOT NULL,
+        state TEXT NOT NULL CHECK(state IN ('PENDING', 'CANCELLED', 'CONFIRMED', 'NEEDS_REVIEW')),
+        resolved_at_utc_ms INTEGER
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_one_pending_lifecycle_candidate_per_session
+        ON lifecycle_candidates(session_id) WHERE state = 'PENDING';
+      CREATE INDEX IF NOT EXISTS idx_lifecycle_candidates_user_state
+        ON lifecycle_candidates(user_id, state);
+    `);
+      await validateExistingSchema(database, 'lifecycle_candidates', {
+        id: { type: 'TEXT', notnull: 1, pk: 1 },
+        session_id: { type: 'TEXT', notnull: 1, pk: 0 },
+        user_id: { type: 'TEXT', notnull: 1, pk: 0 },
+        transition_at_utc_ms: { type: 'INTEGER', notnull: 1, pk: 0 },
+        transition_at_monotonic_ms: { type: 'INTEGER', notnull: 1, pk: 0 },
+        process_instance_id: { type: 'TEXT', notnull: 1, pk: 0 },
+        state: { type: 'TEXT', notnull: 1, pk: 0 },
+        resolved_at_utc_ms: { type: 'INTEGER', notnull: 0, pk: 0 },
       });
     },
   },

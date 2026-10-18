@@ -2,18 +2,19 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use the qskill-executing-plans skill to implement this plan task-by-task. Steps use checkbox tracking.
 > Kế hoạch chỉ mô tả file, unit, hành vi, quy tắc, đầu ra và test cases; không có implementation code hoặc signatures. Đọc source thật trước mỗi task.
-> **Gate:** Không execute kế hoạch khi trạng thái còn DRAFT hoặc khi blocker/dependency chưa giải quyết. Việc tạo file này không phê duyệt backlog hay P6.2.
+> **Gate:** Human duyệt triển khai giới hạn bằng Expo Go ngày 2026-10-18. Hành vi native đầy đủ vẫn UNVERIFIED và cần Development Build trước khi nghiệm thu SL-009 đầy đủ.
 
-**Mục tiêu:** Android background và restart recovery: Candidate cancelled hoặc confirmed một lần; active timer được phục hồi.
+**Mục tiêu:** Android background và restart recovery: Candidate trong cùng process được cancelled hoặc confirmed một lần; candidate qua process restart được chuyển sang review nếu không thể xác minh thời gian; active timer được phục hồi.
 
 **Slice:** SL-009. **Ưu tiên đề xuất:** P0. **Release:** MVP + activation/Premium; post-MVP deferred. SL-036 chỉ được tính release sau D6.
 
-**Trạng thái kế hoạch:** DRAFT — chưa được human duyệt; bị chặn bởi E1.
-**Trạng thái implementation quan sát:** Không có native lifecycle adapter. Chưa có evidence nghiệm thu slice.
+**Trạng thái kế hoạch:** APPROVED — Expo Go best-effort; native Android lifecycle/WorkManager deferred.
+**Trạng thái implementation quan sát:** Expo Go AppState/SQLite best-effort đã được thêm; chưa có evidence chạy trên Android thật. Native lifecycle adapter chưa có.
 **Baseline khảo sát:** docs/p6.0-implementation-slices tại 57ca1eb28a2952c66d01f89b9b89bf755ab4812a.
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Plan slug:** `2026-10-13-sl-009-android-recovery`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-009-android-recovery]`.
-**Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13, chưa được phê duyệt. User đã yêu cầu ghi draft P6.1 cho cả 37 slice; không suy thành approval thực thi.
+**Quyết định human:** Ưu tiên tiếp tục chạy Expo Go. Dùng React Native `AppState` + SQLite durable candidate và reconcile khi app resume/reopen; không thêm custom native module hoặc WorkManager trong phạm vi này. Nếu candidate thuộc process cũ, Expo Go không có monotonic reference để xác minh UTC; chuyển candidate sang `NEEDS_REVIEW` và không tự ghi điểm. Nếu Android dừng process trước khi callback JavaScript kịp commit candidate, không thể bảo đảm phục hồi. Native acceptance cần Development Build.
+**Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13; execution chỉ được duyệt theo phần giới hạn nêu trên.
 **Traceability:** US-04; ADR-008; ARCH §3.4; V03–V04.
 **Phụ thuộc bắt buộc:** [SL-007](./2026-10-13-sl-007-foreground-detection.md)
 **Ưu tiên mềm:** Theo thứ tự đề xuất trong [mục lục](../../implementation-plan.md); thứ tự không tạo thêm hard dependency.
@@ -26,13 +27,13 @@ V01–V10 chỉ các màn tương ứng tại `design/concepts/concept-final/scr
 
 **Kiến trúc:** Android lifecycle/recovery controller sở hữu hành vi của slice. Presentation đọc kết quả qua controller/repository; không tự trở thành nguồn authoritative. Units và đường dẫn mới bên dưới là đề xuất, chưa tồn tại trên baseline; nếu prerequisite đã tạo cùng trách nhiệm thì reuse, không thêm convention thứ hai.
 
-**Stack:** Expo SDK 57 / React Native / TypeScript. SQLite cho local-first khi slice có persistence; React Native Firebase Auth/Firestore Standard/Functions cho boundary có Firebase. Không bắt slice thuần local phải có network.
+**Stack:** Expo SDK 57 / React Native / TypeScript. Phạm vi được duyệt dùng `AppState` + SQLite để hoạt động trong Expo Go; không phụ thuộc Java, custom native module hay WorkManager. Không bắt slice thuần local phải có network.
 
-**Không gồm:** Giữ process sống vô hạn; policy clock anomaly chưa duyệt không được tự invent.
+**Không gồm:** Giữ process sống vô hạn; tự suy thời lượng candidate cross-process chỉ từ UTC.
 
 ## 2. Blocker, risk và quyết định cần duyệt
 
-- **E1:** Cần Development Build, Android/iOS physical devices, toolchains và Emulator Suite để có native/integration evidence.
+- **E1 (deferred):** Development Build và thiết bị Android cần cho native/integration evidence. Không chặn implementation best-effort Expo Go, nhưng slice không được tuyên bố nghiệm thu đầy đủ khi chưa có evidence này.
 
 **Rủi ro cụ thể:** Clock-anomaly outcome và battery restrictions cần review trước execution.
 
@@ -44,15 +45,12 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 | File dự kiến | Trách nhiệm |
 |---|---|
-| `src/features/lifecycle/android-lifecycle-adapter.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
-| `src/features/lifecycle/lifecycle-repository.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
-| `src/features/lifecycle/recovery-controller.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
-| `modules/lifecycle-recovery/` | SL-009 sở hữu scaffold của local Expo native module dùng chung; đăng ký và config plugin chỉ thêm khi runtime yêu cầu. |
-| `modules/lifecycle-recovery/android/` | SL-009 sở hữu Android lifecycle observer, WorkManager integration và native dependency/build configuration. |
-| `modules/lifecycle-recovery/ios/` | SL-009 tạo phần module/autolinking nền; SL-010 mở rộng bằng iOS background-task implementation. |
-| `src/features/local/migrations.ts` | SL-009 mở rộng runner SL-003 bằng versioned lifecycle-candidate schema theo ADR-008. |
-| `src/features/solo/session-controller.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
-| `__tests__/android-recovery.test.ts` | Kiểm thử behavior, lifecycle migration và recovery reconciliation; chưa tạo test source trong P6.1. |
+| `src/features/solo/android-background-recovery.ts` | Lưu candidate và reconcile idempotent trong SQLite; dùng monotonic cùng UTC khi còn cùng JS process, route candidate từ process cũ sang review. |
+| `src/features/solo/grace-period-engine.ts` | Khôi phục violation đang mở sau process restart để tiếp tục một lift, tránh ghi trùng. |
+| `src/features/solo/violation-repository.ts` | Đọc violation đang mở của đúng session và user. |
+| `src/features/local/migrations.ts` | Thêm schema lifecycle candidate theo versioned migration, giữ nguyên local data hiện tại. |
+| `src/app/index.tsx` | Gọi lưu/reconcile candidate qua `AppState` và trước khi khôi phục session Solo. |
+| `__tests__/android-recovery.test.ts` | Kiểm thử grace period, restart reconciliation, idempotency, clock anomaly và cutoff session. |
 
 **Unit:** Android lifecycle/recovery controller.
 **Nhận:** Foreground/background transitions, persisted candidate và clock markers.
@@ -82,24 +80,24 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 **Nhận/trả:** Nhận Foreground/background transitions, persisted candidate và clock markers; trả Candidate cancelled hoặc confirmed một lần; active timer được phục hồi. Với contract đang bị chặn, chưa có quyền thêm schema dù test outcome đã được nêu.
 
-- [ ] Đọc lại source/spec và xác nhận tất cả blocker cùng dependency cho task đã được giải quyết; nếu chưa, dừng execution và báo đúng blocker.
+- [x] Đọc lại source/spec và xác nhận dependency SL-007/008; native evidence được ghi rõ là deferred theo lựa chọn Expo Go.
 - [ ] Viết focused failing cases sau đây; runner không tìm thấy hoặc thiếu dependency không được tính là red nghiệp vụ.
 
-- [ ] Background 2 giây → cancel.
-- [ ] Background đủ 3 giây → confirm.
-- [ ] Process kill trước grace hết rồi restart → reconcile đúng, một event.
-- [ ] Fresh install/upgrade → lifecycle candidate schema được migrate trước khi native callback persist candidate.
-- [ ] Android Development Build → native module được load và bridge phản ánh ON_STOP/WorkManager behavior.
+- [x] Background 2 giây → cancel (SQLite unit test).
+- [x] Background đủ 3 giây → confirm một lần (SQLite unit test).
+- [ ] Process restart trước/sau grace → `NEEDS_REVIEW`, không tự ghi violation/outbox khi UTC không thể xác minh (SQLite unit test; assertion cập nhật, chưa chạy lại).
+- [x] Fresh install/upgrade → lifecycle candidate schema được migrate trước khi AppState persist candidate (SQLite migration test).
+- [ ] Expo Go Android → AppState callback lưu và reconcile candidate qua SQLite.
 
 - [ ] Chạy focused command trong mục 7; xác nhận failure đúng behavior đang thiếu, không từ toolchain lỗi.
 - [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
 
-1. Đăng ký local Expo native module và tạo lifecycle-candidate migration trước khi adapter ghi dữ liệu.
-2. Ghi candidate durable trước khi callback kết thúc; reuse UUID cho repeated transition.
-3. Foreground trước 3 giây cancel; đủ 3 giây confirm event/outbox một lần.
-4. Startup/resume xử lý pending candidate bằng monotonic marker, fallback UTC có anomaly guard; không coi WorkManager là exact timer.
+1. Tạo lifecycle-candidate migration trước khi adapter ghi dữ liệu.
+2. Ghi candidate durable từ AppState; repeated transition reuse cùng candidate.
+3. Resume trong cùng process: dưới 3 giây hủy candidate; từ 3 giây xác nhận violation và matching outbox atomically một lần nếu UTC/monotonic không lệch quá ngưỡng.
+4. Sau process restart không còn monotonic reference đáng tin trong Expo Go; chuyển candidate sang `NEEDS_REVIEW` thay vì tin UTC và tự cộng điểm.
 
-- [ ] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
+- [x] Chạy lại focused cases và đối chiếu output/invariants; native/integration không được tính PASS từ mock.
 - [ ] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-009-android-recovery]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-009-android-recovery.md` và `Task: 1`.
 
 ### Task 2 — Journey tích hợp và recovery
@@ -111,15 +109,16 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Viết các failing cases về integration/recovery sau; không viết tests chỉ mirror implementation.
 
 - [ ] Repeated ON_STOP → một candidate.
-- [ ] WorkManager chạy trễ → không tạo duplicate.
-- [ ] Clock marker không hợp lệ → không âm thầm tự chốt score.
+- [ ] AppState callback lặp → một candidate; cross-process recovery không tự tạo event khi elapsed time chưa xác minh (SQLite unit test; assertion cập nhật, chưa chạy lại).
+- [x] Clock bị lùi → không âm thầm tự chốt score (SQLite unit test).
 
 - [ ] Chạy focused checks, xác nhận failure đúng behavior; giữ fixtures tách khỏi device evidence.
-- [ ] Tích hợp theo thứ tự:
+- [x] Tích hợp theo thứ tự:
 
 1. Resume timer theo persisted start/duration; không reset session.
-2. WorkManager chỉ deferred reconciliation/sync theo native boundary được duyệt.
+2. Không có background worker trong Expo Go; chỉ reconcile khi app resume/reopen.
 3. Khi reboot/clock anomaly không thể suy elapsed an toàn, dùng policy được duyệt và hiển thị recovery cần xử lý thay đoán.
+4. Giữ violation foreground đang mở qua background/restart; không tạo thêm event cho cùng một lift.
 
 - [ ] Thực hiện các kịch bản nghiệm thu trực tiếp trong mục 6; thu logs an toàn/device timestamps khi cần.
 - [ ] Review kết quả; một branch fail hoặc thiếu required device/emulator evidence thì slice chưa hoàn thành.
@@ -127,17 +126,18 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 ## 6. Nghiệm thu và failure outcomes
 
-- [ ] Background 2 giây → cancel.
-- [ ] Background đủ 3 giây → confirm.
-- [ ] Process kill trước grace hết rồi restart → reconcile đúng, một event.
+- [x] Background 2 giây → cancel (unit test).
+- [x] Background đủ 3 giây → confirm một lần (unit test).
+- [ ] Restart trước/sau grace → candidate cần review, không ghi violation/outbox dựa vào UTC một mình (test assertion cập nhật, chưa chạy lại).
 - [ ] Repeated ON_STOP → một candidate.
-- [ ] WorkManager chạy trễ → không tạo duplicate.
-- [ ] Clock marker không hợp lệ → không âm thầm tự chốt score.
-- [ ] Android thật với battery optimization/kill/relaunch → records tồn tại.
-- [ ] Android Development Build thật → ON_STOP, delayed WorkManager và startup resume đi qua native bridge, không dựa JavaScript timer.
-- [ ] Đổi clock/reboot theo test protocol → anomaly outcome có evidence.
+- [x] AppState callback lặp → một candidate; retry reconciliation không tạo duplicate (unit test).
+- [x] Violation foreground đang mở → controller restore event sau restart và không tạo lift trùng (unit test).
+- [x] Clock bị lùi → không tự ghi violation; giữ trạng thái cần review (unit test).
+- [ ] Android thật với battery optimization/kill/relaunch → records tồn tại (UNVERIFIED trong Expo Go nếu process bị dừng trước callback JS).
+- [ ] Android Development Build/native ON_STOP/WorkManager → deferred, không thuộc implementation Expo Go hiện tại.
+- [ ] Clock bị lùi → không tự ghi violation; giữ trạng thái cần review.
 
-Mỗi case phải có actual result. Unit cases dùng controlled fixtures để chứng minh domain; Firebase boundary cần Rules/Functions emulator tests cho allowed/denied/replay/concurrency khi áp dụng. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.
+Mỗi case phải có actual result. Unit cases dùng controlled fixtures để chứng minh domain; Firebase boundary cần Rules/Functions emulator tests cho allowed/denied/replay/concurrency khi áp dụng. Expo Go AppState cần kiểm tra trên Android thật; process-kill trước khi callback JS commit và native ON_STOP/WorkManager vẫn UNVERIFIED. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.
 
 **Failure recovery bắt buộc:** không hiển thị successful save/transition khi commit/request chưa thành công; giữ dữ liệu/retry context theo hành vi cụ thể trong tasks. Không log email đầy đủ, token, activation code hoặc bank details. Case không áp dụng cho slice phải ghi lý do trong evidence, không bỏ im lặng.
 
@@ -147,10 +147,14 @@ App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 
-Ghi trong kết quả execution: baseline/commit mới, command, exit status, số cases, emulator/device/runtime version, date, actual outcomes và remaining gaps. Các checklist hiện đều chưa chạy.
+**Evidence 2026-10-19:** baseline `c815c7c` trên `feature/sl-009-android-recovery`; Node `v24.14.1`. `node node_modules/typescript/bin/tsc --noEmit` exit 0. Toàn bộ Jest suite chạy bằng `node node_modules/jest/bin/jest.js --watchAll=false --runInBand`: 12 suites, 100 tests passed. `git diff --check` exit 0. Lint chưa chạy: repo chưa có ESLint config; `expo lint` tự thêm dependency, thao tác đã dừng và ba file manifest/lock được hoàn nguyên. `adb devices -l` không thấy thiết bị; Expo Go AppState và Android process-kill vẫn UNVERIFIED. Chưa commit theo chỉ dẫn người dùng.
+
+**Review follow-up 2026-10-19:** Cùng-process recovery đối chiếu UTC với monotonic và đưa sai lệch trên 1 giây vào `NEEDS_REVIEW`. Cross-process candidates luôn cần review vì Expo Go không có clock reference bền để phát hiện wall-clock jump; các assertion SQLite liên quan đã cập nhật nhưng chưa chạy lại.
 
 ## 8. Human review và bàn giao P6.2
 
-Human phải duyệt scope, non-goals, tasks, acceptance cases, dependencies và các quyết định còn mở của **SL-009** trước implementation. Duyệt một slice không duyệt tất cả 37; duyệt authoring batch không duyệt code.
+Human đã duyệt phạm vi Expo Go best-effort ngày 2026-10-18. Phạm vi đó không nghiệm thu native ON_STOP/WorkManager; nếu muốn làm phần native sau này cần review scope và evidence riêng.
 
-Sau approval, cập nhật trạng thái/date/decision evidence trong đúng plan; kế hoạch mới chỉ đủ execution-ready khi blocker đã được giải quyết và baseline được re-inspect. Dùng qskill-executing-plans khi user yêu cầu execute plan đã duyệt. Không tự bắt đầu P6.2 từ file draft hoặc từ prompt batch.
+Implementation Expo Go được kiểm thử bằng unit/SQLite, nhưng Android thật và process-kill còn UNVERIFIED. Không tự bắt đầu P6.2 từ file draft hoặc từ prompt batch.
+
+**Review follow-up — recovery/finalization ordering 2026-10-19:** Recovery dùng state để countdown zero chạy lại sau reconciliation, kèm ref chặn đồng bộ mọi đường Finish/Retry/Cancel (bao gồm callback của hộp xác nhận đã mở). Khóa được mở sau khi reconcile và detector initialize thành công; sensor drain tạm dừng trong lúc phục hồi. Resume đợi thao tác lưu candidate đang chạy trước khi reconcile. TypeScript (node node_modules/typescript/bin/tsc --noEmit) exit 0. Chưa chạy lại test suite. Android thật còn UNVERIFIED: countdown hết giờ trong background phải mở summary khi resume; Finish/Cancel trong recovery phải bị khóa và chỉ hoạt động sau khi phục hồi xong.

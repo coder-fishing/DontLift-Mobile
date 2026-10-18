@@ -2,6 +2,7 @@ import * as Crypto from 'expo-crypto';
 import type * as SQLite from 'expo-sqlite';
 import { getLocalDatabase } from '../local/database';
 import { enqueueViolationRecorded, updateViolationRecordedEvent } from '../sync/outbox-repository';
+import type { ActiveViolation } from './grace-period-engine';
 
 export type ViolationRecord = {
   eventId: string;
@@ -125,6 +126,30 @@ export async function getViolationSummary(
   return { count: row?.count ?? 0, durationSeconds: row?.duration_seconds ?? 0 };
 }
 
+export async function getActiveViolation(
+  database: SQLite.SQLiteDatabase,
+  input: { sessionId: string; userId: string },
+): Promise<ActiveViolation | null> {
+  const row = await database.getFirstAsync<{
+    event_id: string;
+    started_at: string;
+    confirmed_at: string | null;
+  }>(
+    `SELECT event_id, started_at, confirmed_at
+     FROM violation_logs WHERE session_id = ? AND user_id = ? AND ended_at IS NULL
+     ORDER BY started_at ASC LIMIT 1`,
+    input.sessionId,
+    input.userId,
+  );
+  if (!row || !row.confirmed_at) return null;
+  const startedAtUtcMs = Date.parse(row.started_at);
+  const confirmedAtUtcMs = Date.parse(row.confirmed_at);
+  if (!Number.isFinite(startedAtUtcMs) || !Number.isFinite(confirmedAtUtcMs)) {
+    throw new Error('Open violation timestamps are invalid.');
+  }
+  return { eventId: row.event_id, startedAtUtcMs, confirmedAtUtcMs };
+}
+
 export function createViolationRepository(dependencies: ViolationRepositoryDependencies = defaultDependencies) {
   return {
     async start(input: { sessionId: string; userId: string; startedAtUtcMs: number; confirmedAtUtcMs: number }) {
@@ -135,6 +160,9 @@ export function createViolationRepository(dependencies: ViolationRepositoryDepen
     },
     async getSummary(sessionId: string) {
       return getViolationSummary(await getLocalDatabase(), sessionId);
+    },
+    async getActive(input: { sessionId: string; userId: string }) {
+      return getActiveViolation(await getLocalDatabase(), input);
     },
   };
 }

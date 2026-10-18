@@ -10,6 +10,7 @@ export type ForegroundViolationRepository = {
   start(input: { sessionId: string; userId: string; startedAtUtcMs: number; confirmedAtUtcMs: number }): Promise<ViolationRecord>;
   end(input: { eventId: string; endedAtUtcMs: number }): Promise<boolean>;
   getSummary(sessionId: string): Promise<ViolationSummary>;
+  getActive?: (input: { sessionId: string; userId: string }) => Promise<ActiveViolation | null>;
 };
 
 export type ForegroundDetectionViewState = {
@@ -42,6 +43,8 @@ export class ForegroundDetectionController {
   async initialize(): Promise<ForegroundDetectionViewState> {
     return this.serialize(async () => {
       this.summary = await this.repository.getSummary(this.session.id);
+      const activeViolation = await this.repository.getActive?.({ sessionId: this.session.id, userId: this.session.userId });
+      if (activeViolation) this.engine.restoreActiveViolation(activeViolation);
       return this.getViewState(Date.now());
     });
   }

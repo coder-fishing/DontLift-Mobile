@@ -11,6 +11,7 @@ import {
   Alert,
   Linking,
   Text,
+  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenId, Participant, BillParticipantShare } from '../types';
@@ -40,6 +41,7 @@ import { createSoloSessionController, getSoloSessionTime, type SoloSession } fro
 import { createSoloSessionCompletionController } from '../features/solo/session-completion-controller';
 import { createSoloSummaryRepository, type SoloSessionSummary } from '../features/solo/summary-service';
 import { createViolationRepository } from '../features/solo/violation-repository';
+import { createAndroidBackgroundRecoveryRepository } from '../features/solo/android-background-recovery';
 import {
   createForegroundDetectionController,
   type ForegroundDetectionController,
@@ -49,6 +51,7 @@ import {
 const soloSessionController = createSoloSessionController(createLocalSessionRepository());
 const soloCompletionController = createSoloSessionCompletionController(createSoloSummaryRepository());
 const violationRepository = createViolationRepository();
+const androidBackgroundRecovery = createAndroidBackgroundRecoveryRepository();
 const INITIAL_DETECTION_STATE: ForegroundDetectionViewState = {
   orientation: 'UNKNOWN',
   isGraceActive: false,
@@ -130,6 +133,9 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const foregroundDetectionController = useRef<ForegroundDetectionController | null>(null);
   const soloStartPending = useRef(false);
   const completionAttemptedSessionId = useRef<string | null>(null);
+  const backgroundRecoveryPending = useRef(false);
+  // State đánh thức effect countdown; ref khóa thao tác ngay trước lượt render tiếp theo.
+  const [isRecoveringBackground, setIsRecoveringBackground] = useState(false);
   const isMounted = useRef(false);
 
   useEffect(() => {
@@ -152,9 +158,74 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     if (!activeSoloSession) return undefined;
     setSoloNow(Date.now());
     const timer = setInterval(() => setSoloNow(Date.now()), 1000);
-    // Cập nhật ngay khi quay lại app; không chờ tick kế tiếp sau thời gian chạy nền.
+    let previousState = AppState.currentState;
+    let handledBackgroundTransition = false;
+    let backgroundTransition: Promise<void> = Promise.resolve();
     const appState = AppState.addEventListener('change', (nextState) => {
-      if (nextState === 'active') setSoloNow(Date.now());
+      const wasActive = previousState === 'active';
+      previousState = nextState;
+      if (Platform.OS !== 'android') return;
+
+      if (wasActive && nextState !== 'active' && !handledBackgroundTransition) {
+        handledBackgroundTransition = true;
+        backgroundRecoveryPending.current = true;
+        setIsRecoveringBackground(true);
+        backgroundTransition = (async () => {
+          const detector = foregroundDetectionController.current;
+          const detection = detector?.getViewState(Date.now());
+          if (!detection?.isViolationActive) {
+            // Lưu candidate trước khi app bị treo; callback Expo Go vẫn có thể không chạy trước force-stop.
+            await androidBackgroundRecovery.begin({
+              sessionId: activeSoloSession.id,
+              userId: activeSoloSession.userId,
+            });
+            // Nếu đang trong grace của cảm biến, reset nó để không tính trùng với background candidate.
+            await detector?.observeOrientation('UNKNOWN', Date.now());
+          }
+        })().catch(() => {
+          Alert.alert(
+            'Background recovery unavailable',
+            'Could not save this background transition. The Solo session is still active, but this transition may not be included in its result.',
+          );
+        });
+      }
+
+      if (nextState === 'active' && !wasActive) {
+        handledBackgroundTransition = false;
+        backgroundRecoveryPending.current = true;
+        setIsRecoveringBackground(true);
+        void (async () => {
+          // Đợi candidate được lưu xong nếu người dùng quay lại rất nhanh.
+          await backgroundTransition;
+          // Xử lý candidate trước khi cập nhật timer để summary đọc được violation vừa phục hồi.
+          const recovery = await androidBackgroundRecovery.reconcile({
+            sessionId: activeSoloSession.id,
+            userId: activeSoloSession.userId,
+          });
+          const detection = await foregroundDetectionController.current?.initialize();
+          if (!isMounted.current) return;
+          if (detection) setForegroundDetection(detection);
+          // Chỉ mở khóa sau khi candidate và bộ dò đều đã phục hồi xong.
+          backgroundRecoveryPending.current = false;
+          setIsRecoveringBackground(false);
+          setSoloNow(Date.now());
+          if (recovery === 'needs-review') {
+            Alert.alert(
+              'Session recovery needs review',
+              'Elapsed time could not be verified while DontLift was in the background. No violation was added; continue or cancel the session to resolve it.',
+            );
+          }
+        })().catch(() => {
+          // Giữ completion khóa lại đến lần reconcile kế tiếp; không chốt summary khi candidate còn pending.
+          backgroundRecoveryPending.current = true;
+          setIsRecoveringBackground(true);
+          Alert.alert(
+            'Could not restore background state',
+            'The session remains saved on this device. Leave and reopen DontLift to retry recovery before completing the session.',
+          );
+          setSoloNow(Date.now());
+        });
+      }
     });
     return () => {
       clearInterval(timer);
@@ -181,10 +252,10 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     let tickRequested = false;
 
     const drain = async () => {
-      if (disposed || processing || !initialized) return;
+      if (disposed || processing || !initialized || backgroundRecoveryPending.current || AppState.currentState !== 'active') return;
       processing = true;
       try {
-        while (!disposed && (latestMeasurement || tickRequested)) {
+        while (!disposed && !backgroundRecoveryPending.current && AppState.currentState === 'active' && (latestMeasurement || tickRequested)) {
           if (latestMeasurement) {
             const measurement = latestMeasurement;
             latestMeasurement = undefined;
@@ -205,7 +276,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
         }
       } finally {
         processing = false;
-        if (!disposed && (latestMeasurement || tickRequested)) void drain();
+        if (!disposed && !backgroundRecoveryPending.current && (latestMeasurement || tickRequested)) void drain();
       }
     };
 
@@ -298,6 +369,11 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
         durationMinutes: mode === 'COUNTDOWN' ? mins : undefined,
         sensorReady: sensorAvailability.state.kind === 'ready',
       });
+      const recovery = Platform.OS === 'android'
+        ? await androidBackgroundRecovery.reconcile({ sessionId: result.session.id, userId: result.session.userId })
+        : 'none';
+      backgroundRecoveryPending.current = false;
+      setIsRecoveringBackground(false);
       // Không cập nhật màn hình cũ nếu người dùng đã đăng xuất hoặc đổi tài khoản trong lúc lưu.
       if (!isMounted.current) return;
       // Chỉ chuyển sang timer sau khi repository xác nhận session đã commit vào SQLite.
@@ -312,7 +388,12 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       }
       setSoloNow(Date.now());
       setCurrentScreen('03-solo-timer');
-      if (result.resumed) {
+      if (recovery === 'needs-review') {
+        Alert.alert(
+          'Session recovery needs review',
+          'Elapsed time could not be verified while DontLift was away. No violation was added; continue or cancel the session to resolve it.',
+        );
+      } else if (result.resumed) {
         Alert.alert('Active session continued', 'Your existing Solo session was restored from this device.');
       }
     } catch (error) {
@@ -340,7 +421,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   };
 
   const performCancelSoloSession = async () => {
-    if (!activeSoloSession || soloStartPending.current) return;
+    if (!activeSoloSession || soloStartPending.current || backgroundRecoveryPending.current) return;
     soloStartPending.current = true;
     setIsCancellingSolo(true);
     const detector = foregroundDetectionController.current;
@@ -378,7 +459,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   };
 
   const confirmCancelSoloSession = () => {
-    if (!activeSoloSession || soloStartPending.current) return;
+    if (!activeSoloSession || soloStartPending.current || backgroundRecoveryPending.current) return;
     Alert.alert(
       'Cancel Solo session?',
       'This session will be canceled without a completion summary. This action cannot be undone.',
@@ -390,7 +471,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   };
 
   const completeActiveSoloSession = async (completedAtUtcMs = Date.now()) => {
-    if (!activeSoloSession || soloStartPending.current) return;
+    if (!activeSoloSession || soloStartPending.current || backgroundRecoveryPending.current) return;
     soloStartPending.current = true;
     completionAttemptedSessionId.current = activeSoloSession.id;
     setIsCompletingSolo(true);
@@ -428,7 +509,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   };
 
   const requestFinishSoloSession = () => {
-    if (!activeSoloSession || soloStartPending.current) return;
+    if (!activeSoloSession || soloStartPending.current || backgroundRecoveryPending.current) return;
     if (soloCompletionError) {
       completionAttemptedSessionId.current = null;
       void completeActiveSoloSession(Date.now());
@@ -458,11 +539,13 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       || soloSecondsLeft > 0
       || isCompletingSolo
       || completionAttemptedSessionId.current === activeSoloSession.id
+      || isRecoveringBackground
+      || backgroundRecoveryPending.current
     ) return;
 
     // Timer zero kết thúc theo cutoff dự kiến, không cộng thêm độ trễ của tick UI.
     void completeActiveSoloSession(Date.parse(activeSoloSession.startedAt) + activeSoloSession.durationSeconds * 1_000);
-  }, [activeSoloSession, currentScreen, isCompletingSolo, soloSecondsLeft]);
+  }, [activeSoloSession, currentScreen, isCompletingSolo, isRecoveringBackground, soloSecondsLeft]);
 
   const navigateToScreen = (screen: ScreenId) => {
     if (screen === '02-solo-select' && soloSummaryPendingView && soloSummary) {
@@ -510,7 +593,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
             onStartSession={handleStartSolo}
             onContinueSession={continueActiveSoloSession}
             onCancelSession={confirmCancelSoloSession}
-            isStarting={isStartingSolo}
+            isStarting={isStartingSolo || isRecoveringBackground}
             isCancelling={isCancellingSolo}
             startError={soloStartError}
             activeSession={activeSoloSession}
@@ -542,6 +625,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
             onCancelSession={confirmCancelSoloSession}
             isCancelling={isCancellingSolo}
             isCompletingSession={isCompletingSolo}
+            isRecoveringBackground={isRecoveringBackground}
           />
         )}
 
