@@ -200,7 +200,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
           if (recovery === 'needs-review') {
             Alert.alert(
               'Session recovery needs review',
-              'The device clock changed while DontLift was in the background. No violation was added; continue or cancel the session to resolve it.',
+              'Elapsed time could not be verified while DontLift was in the background. No violation was added; continue or cancel the session to resolve it.',
             );
           }
         })().catch(() => {
@@ -377,7 +377,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       if (recovery === 'needs-review') {
         Alert.alert(
           'Session recovery needs review',
-          'The device clock changed while DontLift was closed. No violation was added; continue or cancel the session to resolve it.',
+          'Elapsed time could not be verified while DontLift was away. No violation was added; continue or cancel the session to resolve it.',
         );
       } else if (result.resumed) {
         Alert.alert('Active session continued', 'Your existing Solo session was restored from this device.');

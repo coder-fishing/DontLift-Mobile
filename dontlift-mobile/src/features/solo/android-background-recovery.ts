@@ -4,6 +4,8 @@ import { getLocalDatabase } from '../local/database';
 import { enqueueViolationRecorded } from '../sync/outbox-repository';
 
 export const BACKGROUND_GRACE_PERIOD_MS = 3_000;
+// Các mốc được đọc liên tiếp nên lệch tối đa 1 giây vẫn được xem là sai số nhỏ.
+const MAX_CLOCK_DIVERGENCE_MS = 1_000;
 
 type RecoveryDependencies = {
   createId: () => string;
@@ -123,16 +125,26 @@ export async function reconcileBackgroundCandidate(
       return;
     }
 
-    // Cùng JS process thì dùng monotonic; sau restart chỉ còn UTC và clock anomaly sẽ cần xử lý thủ công.
+    // Monotonic đo thời gian thật trong process; so với UTC để phát hiện đồng hồ hệ thống bị chỉnh.
     const sameProcess = candidate.process_instance_id === dependencies.processInstanceId;
-    const elapsedMs = sameProcess
+    const elapsedUtcMs = nowUtcMs - candidate.transition_at_utc_ms;
+    const elapsedMonotonicMs = sameProcess
       ? dependencies.nowMonotonicMs() - candidate.transition_at_monotonic_ms
-      : nowUtcMs - candidate.transition_at_utc_ms;
-    if (!Number.isFinite(elapsedMs) || elapsedMs < 0 || nowUtcMs < candidate.transition_at_utc_ms) {
+      : null;
+    if (
+      !Number.isFinite(elapsedUtcMs)
+      || elapsedUtcMs < 0
+      || (elapsedMonotonicMs !== null && (
+        !Number.isFinite(elapsedMonotonicMs)
+        || elapsedMonotonicMs < 0
+        || Math.abs(elapsedUtcMs - elapsedMonotonicMs) > MAX_CLOCK_DIVERGENCE_MS
+      ))
+    ) {
       await resolveCandidate(transaction, candidate.id, 'NEEDS_REVIEW', nowUtcMs);
       result = 'needs-review';
       return;
     }
+    const elapsedMs = elapsedMonotonicMs ?? elapsedUtcMs;
     if (elapsedMs < BACKGROUND_GRACE_PERIOD_MS) {
       await resolveCandidate(transaction, candidate.id, 'CANCELLED', nowUtcMs);
       result = 'cancelled';
@@ -158,8 +170,7 @@ export async function reconcileBackgroundCandidate(
 
     const durationSeconds = Math.max(
       0,
-      Math.floor((endedAtUtcMs - candidate.transition_at_utc_ms) / 1_000)
-        - Math.floor((confirmedAtUtcMs - candidate.transition_at_utc_ms) / 1_000),
+      Math.floor((endedAtUtcMs - candidate.transition_at_utc_ms) / 1_000),
     );
     const createdAt = new Date(nowUtcMs).toISOString();
     const startedAt = new Date(candidate.transition_at_utc_ms).toISOString();

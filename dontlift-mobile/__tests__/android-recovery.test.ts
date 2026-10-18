@@ -144,7 +144,7 @@ describe('Expo Go Android background recovery', () => {
     await expect(reconcileBackgroundCandidate(database, input, dependencies)).resolves.toBe('confirmed');
     await expect(reconcileBackgroundCandidate(database, input, dependencies)).resolves.toBe('none');
     expect(await database.getFirstAsync('SELECT event_id, duration_seconds FROM violation_logs'))
-      .toEqual({ event_id: 'candidate-1', duration_seconds: 0 });
+      .toEqual({ event_id: 'candidate-1', duration_seconds: 3 });
     expect(await database.getFirstAsync("SELECT event_id, event_type FROM sync_outbox WHERE event_type = 'VIOLATION_RECORDED'"))
       .toEqual({ event_id: 'candidate-1', event_type: 'VIOLATION_RECORDED' });
   });
