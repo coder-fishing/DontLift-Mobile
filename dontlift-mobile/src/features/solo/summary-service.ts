@@ -35,6 +35,7 @@ const defaultDependencies: SummaryDependencies = { now: () => Date.now() };
 
 type ViolationSummaryRow = {
   started_at: string;
+  confirmed_at: string | null;
   ended_at: string | null;
   created_at: string;
 };
@@ -50,7 +51,7 @@ async function summarizeViolations(
   }
 
   const violations = await database.getAllAsync<ViolationSummaryRow>(
-    `SELECT started_at, ended_at, created_at FROM violation_logs
+    `SELECT started_at, confirmed_at, ended_at, created_at FROM violation_logs
      WHERE session_id = ? AND user_id = ?`,
     input.sessionId,
     input.userId,
@@ -60,17 +61,18 @@ async function summarizeViolations(
 
   for (const violation of violations) {
     const startedAtUtcMs = Date.parse(violation.started_at);
-    const createdAtUtcMs = Date.parse(violation.created_at);
+    // Legacy rows are backfilled from created_at; new rows store the sensor's confirmedAt timestamp.
+    const confirmedAtUtcMs = Date.parse(violation.confirmed_at ?? violation.created_at);
     const endedAtUtcMs = violation.ended_at === null
       ? completionCutoffUtcMs
       : Date.parse(violation.ended_at);
-    if (!Number.isFinite(startedAtUtcMs) || !Number.isFinite(createdAtUtcMs) || !Number.isFinite(endedAtUtcMs)) {
+    if (!Number.isFinite(startedAtUtcMs) || !Number.isFinite(confirmedAtUtcMs) || !Number.isFinite(endedAtUtcMs)) {
       throw new Error('Violation timestamps are invalid.');
     }
 
     // Chỉ tính vi phạm đã được xác nhận trong phiên và phần thời lượng nằm trước cutoff.
     if (
-      createdAtUtcMs > completionCutoffUtcMs
+      confirmedAtUtcMs > completionCutoffUtcMs
       || startedAtUtcMs >= completionCutoffUtcMs
       || endedAtUtcMs <= sessionStartedAtUtcMs
     ) continue;

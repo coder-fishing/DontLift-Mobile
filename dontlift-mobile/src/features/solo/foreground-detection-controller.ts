@@ -84,12 +84,7 @@ export class ForegroundDetectionController {
         await this.persistTransition(nowUtcMs);
         const state = this.engine.snapshot(nowUtcMs);
         if (state.shouldConfirm) throw new Error('A confirmed violation could not be saved before ending the session.');
-        if (state.activeViolation) {
-          const ended = await this.repository.end({ eventId: state.activeViolation.eventId, endedAtUtcMs: nowUtcMs });
-          if (!ended) throw new Error('The active violation could not be closed before ending the session.');
-          this.addActiveDuration(state.activeViolation, nowUtcMs);
-        }
-        this.engine.markEnded();
+        // Giữ violation đang mở để completion/cancellation đóng nó cùng transaction đổi trạng thái session.
       } catch (error) {
         this.sealed = wasSealed;
         throw error;
@@ -100,8 +95,7 @@ export class ForegroundDetectionController {
   async resumeAfterFinalizationFailure(nowUtcMs: number): Promise<ForegroundDetectionViewState> {
     return this.serialize(async () => {
       if (!this.sealed) return this.getViewState(nowUtcMs);
-      // Session vẫn ACTIVE nếu bước ghi COMPLETED/CANCELLED lỗi; khởi tạo lại cảm biến để tiếp tục ghi nhận.
-      this.engine.reset();
+      // Session vẫn ACTIVE nếu bước ghi COMPLETED/CANCELLED lỗi; giữ violation mở và tiếp tục cùng một lượt.
       this.lastSampleAtUtcMs = null;
       this.nextPersistenceAttemptAtUtcMs = 0;
       this.persistenceError = undefined;
