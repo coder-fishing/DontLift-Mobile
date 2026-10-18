@@ -8,8 +8,8 @@
 
 **Slice:** SL-007. **Ưu tiên đề xuất:** P0. **Release:** MVP + activation/Premium; post-MVP deferred. SL-036 chỉ được tính release sau D6.
 
-**Trạng thái kế hoạch:** DRAFT — chưa được human duyệt; bị chặn bởi E1.
-**Trạng thái implementation quan sát:** Lift được mô phỏng bằng nút, không có sensor engine. Chưa có evidence nghiệm thu slice.
+**Trạng thái kế hoạch:** Human đã duyệt scope foreground ngày 2026-10-18; implementation được phép với Expo Go. Hiệu chuẩn thiết bị thật vẫn cần nghiệm thu.
+**Trạng thái implementation quan sát:** Foreground accelerometer, grace engine và ghi SQLite/outbox đã được triển khai; nghiệm thu cảm biến trên máy thật còn chờ.
 **Baseline khảo sát:** docs/p6.0-implementation-slices tại 57ca1eb28a2952c66d01f89b9b89bf755ab4812a.
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Plan slug:** `2026-10-13-sl-007-foreground-detection`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-007-foreground-detection]`.
@@ -32,9 +32,11 @@ V01–V10 chỉ các màn tương ứng tại `design/concepts/concept-final/scr
 
 ## 2. Blocker, risk và quyết định cần duyệt
 
-- **E1:** Cần Development Build, Android/iOS physical devices, toolchains và Emulator Suite để có native/integration evidence.
+- **E1 (điều chỉnh theo scope đã duyệt):** Foreground capture dùng `expo-sensors` đã có trong Expo Go; không cần Development Build hoặc Firebase Emulator vì slice này chỉ ghi SQLite/outbox và không upload. Nghiệm thu cảm biến vẫn cần máy Android thật; iOS và hiệu chuẩn trên nhiều thiết bị tiếp tục UNVERIFIED cho đến khi có evidence.
 
-**Rủi ro cụ thể:** Threshold/filter phải đo trên thiết bị; payload đang kéo dài chưa đủ contract cloud.
+**Rủi ro cụ thể:** Threshold/filter hiện là baseline kỹ thuật và chưa được calibration trên thiết bị thật. Outbox giữ payload local; sync worker thuộc slice sau và chỉ được gửi event sau khi violation đã đóng.
+
+**Quyết định implementation đã ghi nhận:** Lấy mẫu accelerometer ở 50Hz. Chuẩn hóa vector trọng lực; `FACE_DOWN` khi độ lớn vector nằm trong 0.65–1.35g và `z / magnitude <= -0.85`; mẫu ngoài dải là `INVALID`, tư thế hợp lệ còn lại là `LIFTED`. Nếu không có mẫu mới quá 1 giây, engine chuyển sang `UNKNOWN` và hủy grace chưa xác nhận để không biến mất sensor thành violation. Các ngưỡng là baseline để bắt đầu kiểm tra, chưa được xem là đã hiệu chuẩn. `VIOLATION_RECORDED` dùng payload schema version 1 theo `docs/api-contracts.md`; outbox giữ bản ghi local và payload cập nhật khi violation đóng. Sync/upload vẫn ngoài SL-007.
 
 Nếu một contract chỉ có responsibility mà chưa có schema, task đầu là trình bày missing decision với nguồn; không tự tạo endpoint/field mới. Các hành vi test bên dưới mô tả outcome cần đạt, không thay thế wire approval. Ngưỡng/range/default chưa được spec xác định phải có quyết định ghi lại trước khi implement.
 
@@ -80,7 +82,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 **Nhận/trả:** Nhận Orientation samples, active session và timestamp; trả Một violation local/outbox sau grace; lift count/duration/preview đúng. Với contract đang bị chặn, chưa có quyền thêm schema dù test outcome đã được nêu.
 
-- [ ] Đọc lại source/spec và xác nhận tất cả blocker cùng dependency cho task đã được giải quyết; nếu chưa, dừng execution và báo đúng blocker.
+- [x] Đọc lại source/spec và xác nhận dependency SL-003/SL-006; Expo Go được dùng cho foreground sensor flow, còn kiểm tra máy thật được giữ làm acceptance pending.
 - [ ] Viết focused failing cases sau đây; runner không tìm thấy hoặc thiếu dependency không được tính là red nghiệp vụ.
 
 - [ ] LIFTED 2,9 giây rồi FACE_DOWN → không violation.
@@ -90,14 +92,14 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Upgrade từ profile/session schema → violation/outbox migration chạy, dữ liệu cũ được giữ.
 
 - [ ] Chạy focused command trong mục 7; xác nhận failure đúng behavior đang thiếu, không từ toolchain lỗi.
-- [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
+- [x] Xây hành vi theo thứ tự sau, sau human approval:
 
 1. Phân biệt UNKNOWN, FACE_DOWN, INVALID, LIFTED; transition invalid/lifted mở grace 3 giây.
 2. Database readiness áp dụng versioned violation/outbox migrations sau profile/session schemas; transaction tables tồn tại trước repository writes.
 3. Re-ground trước 3 giây hủy candidate; condition đủ 3 giây confirm một lần.
 4. Ghi violation và outbox atomically; re-ground đóng duration; raw samples không vào payload sync.
 
-- [ ] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
+- [x] Chạy focused tests và type-check; không tuyên bố physical-device/native calibration PASS từ mock.
 - [ ] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-007-foreground-detection]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-007-foreground-detection.md` và `Task: 1`.
 
 ### Task 2 — Journey tích hợp và recovery
@@ -108,17 +110,17 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 - [ ] Viết các failing cases về integration/recovery sau; không viết tests chỉ mirror implementation.
 
-- [ ] Re-ground sau confirmed → duration kết thúc đúng.
-- [ ] Local transaction fail → không báo violation đã commit.
-- [ ] UNKNOWN khi chưa có dữ liệu → không tự tính clean hoặc violation.
-- [ ] Fresh install và upgrade từ profile/session schema → migration tạo violation/outbox tables mà không mất dữ liệu cũ.
+- [x] Re-ground sau confirmed → duration kết thúc đúng.
+- [x] Local transaction fail → không báo violation đã commit.
+- [x] UNKNOWN khi chưa có dữ liệu → không tự tính clean hoặc violation.
+- [x] Fresh install và upgrade từ profile/session schema → migration tạo violation/outbox tables mà không mất dữ liệu cũ.
 
 - [ ] Chạy focused checks, xác nhận failure đúng behavior; giữ fixtures tách khỏi device evidence.
-- [ ] Tích hợp theo thứ tự:
+- [x] Tích hợp theo thứ tự:
 
 1. Timer/grace/violation indicator phản ánh engine; haptic chỉ khi confirmed và capability hỗ trợ.
 2. Loại nút simulation khỏi production journey; test fixtures không được xem là device evidence.
-3. Thu evidence stationary-table false positives dưới 2%; threshold/filter cần calibration có measurement.
+3. Thu evidence stationary-table false positives dưới 2%; **chưa thực hiện**, ngưỡng/filter cần calibration bằng máy thật.
 
 - [ ] Thực hiện các kịch bản nghiệm thu trực tiếp trong mục 6; thu logs an toàn/device timestamps khi cần.
 - [ ] Review kết quả; một branch fail hoặc thiếu required device/emulator evidence thì slice chưa hoàn thành.
@@ -126,14 +128,14 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 ## 6. Nghiệm thu và failure outcomes
 
-- [ ] LIFTED 2,9 giây rồi FACE_DOWN → không violation.
-- [ ] LIFTED đủ 3 giây → một violation.
-- [ ] Repeated sensor samples sau confirm → không tăng count trùng.
-- [ ] Re-ground sau confirmed → duration kết thúc đúng.
-- [ ] Local transaction fail → không báo violation đã commit.
-- [ ] UNKNOWN khi chưa có dữ liệu → không tự tính clean hoặc violation.
-- [ ] Device đặt yên/table bump/lift thật → grace cancel/confirm đúng.
-- [ ] Kiểm tra network payload → không chứa raw sensor stream.
+- [x] LIFTED 2,9 giây rồi FACE_DOWN → không violation.
+- [x] LIFTED đủ 3 giây → một violation.
+- [x] Repeated sensor samples sau confirm → không tăng count trùng.
+- [x] Re-ground sau confirmed → duration kết thúc đúng.
+- [x] Local transaction fail → không báo violation đã commit.
+- [x] UNKNOWN khi chưa có dữ liệu → không tự tính clean hoặc violation.
+- [ ] Device đặt yên/table bump/lift thật → grace cancel/confirm đúng; cần evidence trên máy Android thật.
+- [x] Kiểm tra payload local chỉ có timestamps/duration, không chứa raw sensor stream; event chỉ được upload sau khi violation đóng.
 
 Mỗi case phải có actual result. Unit cases dùng controlled fixtures để chứng minh domain; Firebase boundary cần Rules/Functions emulator tests cho allowed/denied/replay/concurrency khi áp dụng. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.
 
@@ -141,7 +143,7 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 
 ## 7. Verification và ghi nhận evidence
 
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/foreground-detection.test.ts`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+App focused tests: `pnpm test --runTestsByPath __tests__/foreground-detection.test.ts __tests__/local-database.test.ts __tests__/sensor-availability.test.ts --runInBand` — 3 suites, 28 tests PASS. Full suite `pnpm test -- --runInBand` — 10 suites, 82 tests PASS. TypeScript: `pnpm exec tsc --noEmit` PASS. `pnpm run lint` không chạy được vì repository chưa có ESLint config; Expo CLI tự khởi tạo cài package, đã dừng và khôi phục `package.json`. Máy thật/iOS chưa kiểm chứng.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 

@@ -16,7 +16,7 @@ function setup() {
   let requestedPermission = permission;
   let initializeSensor: () => void = () => {};
   let initializationError: unknown;
-  let listener: (() => void) | null = null;
+  let listener: ((measurement: { x: number; y: number; z: number; timestamp: number }) => void) | null = null;
   let removeCount = 0;
   let resolveSubscribed!: () => void;
   const subscribed = new Promise<void>((resolve) => { resolveSubscribed = resolve; });
@@ -25,6 +25,7 @@ function setup() {
     async isAvailableAsync() { return available; },
     async getPermissionAsync() { return permission; },
     async requestPermissionAsync() { return requestedPermission; },
+    setUpdateInterval() {},
     subscribe(onMeasurement) {
       if (initializationError) throw initializationError;
       listener = onMeasurement;
@@ -47,7 +48,7 @@ function setup() {
     setRequestedPermission(value: typeof permission) { requestedPermission = value; },
     setInitializationError(value: unknown) { initializationError = value; },
     setInitializeSensor(action: () => void) { initializeSensor = action; },
-    emitMeasurement() { listener?.(); },
+    emitMeasurement() { listener?.({ x: 0, y: 0, z: -1, timestamp: 1 }); },
     getRemoveCount() { return removeCount; },
     waitForSubscription() { return subscribed; },
   };

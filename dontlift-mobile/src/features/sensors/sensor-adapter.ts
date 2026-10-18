@@ -1,4 +1,4 @@
-import { Accelerometer } from 'expo-sensors';
+import { Accelerometer, type AccelerometerMeasurement } from 'expo-sensors';
 
 export interface SensorPermission {
   granted: boolean;
@@ -9,7 +9,8 @@ export interface AccelerometerAdapter {
   isAvailableAsync(): Promise<boolean>;
   getPermissionAsync(): Promise<SensorPermission>;
   requestPermissionAsync(): Promise<SensorPermission>;
-  subscribe(onMeasurement: () => void): { remove(): void };
+  setUpdateInterval(intervalMs: number): void;
+  subscribe(onMeasurement: (measurement: AccelerometerMeasurement) => void): { remove(): void };
 }
 
 export type SensorAvailabilityState =
@@ -29,7 +30,8 @@ export const accelerometerAdapter: AccelerometerAdapter = {
     const permission = await Accelerometer.requestPermissionsAsync();
     return { granted: permission.granted, canAskAgain: permission.canAskAgain };
   },
+  setUpdateInterval: (intervalMs) => Accelerometer.setUpdateInterval(intervalMs),
   subscribe(onMeasurement) {
-    return Accelerometer.addListener(() => onMeasurement());
+    return Accelerometer.addListener(onMeasurement);
   },
 };
