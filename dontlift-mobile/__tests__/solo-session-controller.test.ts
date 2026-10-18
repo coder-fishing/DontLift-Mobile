@@ -2,9 +2,10 @@ import { createSoloSessionController, getSoloSessionTime } from '../src/features
 
 describe('solo session controller', () => {
   const startOrResume = jest.fn();
-  const controller = createSoloSessionController({ startOrResume });
+  const cancelActive = jest.fn();
+  const controller = createSoloSessionController({ startOrResume, cancelActive });
 
-  beforeEach(() => startOrResume.mockReset());
+  beforeEach(() => { startOrResume.mockReset(); cancelActive.mockReset(); });
 
   test('requires a ready sensor before writing a session', async () => {
     await expect(controller.start({
@@ -53,6 +54,17 @@ describe('solo session controller', () => {
     })).resolves.toEqual({ session, resumed: false });
 
     expect(startOrResume).toHaveBeenCalledWith({ userId: 'user-1', mode: 'STOPWATCH', durationSeconds: 0 });
+  });
+
+  test('cancels only the selected session for the authenticated UID', async () => {
+    cancelActive.mockResolvedValue(true);
+    await expect(controller.cancel({ userId: 'user-1', sessionId: 'session-1' })).resolves.toBe(true);
+    expect(cancelActive).toHaveBeenCalledWith({ userId: 'user-1', sessionId: 'session-1' });
+  });
+
+  test('does not call the repository when cancel input is incomplete', async () => {
+    await expect(controller.cancel({ userId: '', sessionId: 'session-1' })).resolves.toBe(false);
+    expect(cancelActive).not.toHaveBeenCalled();
   });
 
   test('does not create a session without an authenticated owner UID', async () => {

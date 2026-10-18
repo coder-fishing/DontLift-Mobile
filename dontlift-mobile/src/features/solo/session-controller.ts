@@ -37,6 +37,7 @@ export type SoloSessionRepositoryPort = {
     mode: SoloSessionMode;
     durationSeconds: number;
   }): Promise<SoloSessionStartResult>;
+  cancelActive?: (input: { userId: string; sessionId: string }) => Promise<boolean>;
 };
 
 export type SoloSessionStartErrorCode = 'sensor-not-ready' | 'invalid-user' | 'invalid-duration';
@@ -70,6 +71,10 @@ export function createSoloSessionController(repository: SoloSessionRepositoryPor
         mode: input.mode,
         durationSeconds,
       });
+    },
+    async cancel(input: { userId: string; sessionId: string }): Promise<boolean> {
+      if (!input.userId.trim() || !input.sessionId.trim()) return false;
+      return repository.cancelActive ? repository.cancelActive(input) : false;
     },
   };
 }

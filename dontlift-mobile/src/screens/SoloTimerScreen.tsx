@@ -14,6 +14,8 @@ interface SoloTimerScreenProps {
   violationsCount: number;
   onTogglePhoneLift: () => void;
   onEndSession: () => void;
+  onCancelSession: () => void;
+  isCancelling: boolean;
 }
 
 export function SoloTimerScreen({
@@ -26,6 +28,8 @@ export function SoloTimerScreen({
   violationsCount,
   onTogglePhoneLift,
   onEndSession,
+  onCancelSession,
+  isCancelling,
 }: SoloTimerScreenProps) {
   const isCountdown = mode === 'COUNTDOWN';
   return (
@@ -109,6 +113,14 @@ export function SoloTimerScreen({
           title={isPhoneGrounded ? 'Elevator Simulation (Simulate Lift)' : 'Put Phone Face-Down'}
           variant={isPhoneGrounded ? 'secondary' : 'danger'}
           onPress={onTogglePhoneLift}
+        />
+
+        <PrimaryButton
+          title="Cancel session"
+          variant="danger"
+          onPress={onCancelSession}
+          disabled={isCancelling}
+          style={{ marginTop: 8 }}
         />
 
         <PrimaryButton

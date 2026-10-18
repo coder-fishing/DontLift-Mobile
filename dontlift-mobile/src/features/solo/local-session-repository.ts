@@ -91,11 +91,35 @@ export async function startOrResumeLocalSession(
   return result;
 }
 
+export async function cancelActiveLocalSession(
+  database: SQLite.SQLiteDatabase,
+  input: { userId: string; sessionId: string },
+): Promise<boolean> {
+  let cancelled = false;
+  await database.withExclusiveTransactionAsync(async (transaction) => {
+    // UID và ID cùng ràng buộc câu UPDATE để không hủy nhầm phiên của tài khoản khác.
+    const result = await transaction.runAsync(
+      `UPDATE sessions
+       SET status = 'CANCELLED', completed_at = ?
+       WHERE id = ? AND user_id = ? AND mode IN ('COUNTDOWN', 'STOPWATCH') AND status = 'ACTIVE'`,
+      new Date().toISOString(),
+      input.sessionId,
+      input.userId,
+    );
+    cancelled = result.changes === 1;
+  });
+  return cancelled;
+}
+
 export function createLocalSessionRepository(): SoloSessionRepositoryPort {
   return {
     async startOrResume(input) {
       const database = await getLocalDatabase();
       return startOrResumeLocalSession(database, input);
+    },
+    async cancelActive(input) {
+      const database = await getLocalDatabase();
+      return cancelActiveLocalSession(database, input);
     },
   };
 }

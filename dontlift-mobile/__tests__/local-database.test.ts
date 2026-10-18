@@ -206,6 +206,23 @@ describe('local database initialization', () => {
     await reopened.closeAsync();
   });
 
+  test('cancels only the active session owned by the UID and permits a new mode', async () => {
+    const { getLocalDatabase } = await loadDatabaseModule();
+    const database = await getLocalDatabase();
+    const { startOrResumeLocalSession, cancelActiveLocalSession } = require('../src/features/solo/local-session-repository') as typeof import('../src/features/solo/local-session-repository');
+    const first = await startOrResumeLocalSession(database, { userId: 'owner-1', mode: 'COUNTDOWN', durationSeconds: 1500 }, { createId: () => 'session-old', now: () => new Date('2026-10-18T01:02:03.000Z') });
+    const wrongOwner = await cancelActiveLocalSession(database, { userId: 'owner-2', sessionId: first.session.id });
+    expect(wrongOwner).toBe(false);
+    expect(await database.getFirstAsync("SELECT status FROM sessions WHERE id = 'session-old'")).toEqual({ status: 'ACTIVE' });
+    const cancelled = await cancelActiveLocalSession(database, { userId: 'owner-1', sessionId: first.session.id });
+    expect(cancelled).toBe(true);
+    expect(await database.getFirstAsync("SELECT status, completed_at FROM sessions WHERE id = 'session-old'")).toMatchObject({ status: 'CANCELLED' });
+    const next = await startOrResumeLocalSession(database, { userId: 'owner-1', mode: 'STOPWATCH', durationSeconds: 0 }, { createId: () => 'session-new', now: () => new Date('2026-10-18T01:10:00.000Z') });
+    expect(next).toMatchObject({ resumed: false, session: { id: 'session-new', mode: 'STOPWATCH', userId: 'owner-1' } });
+    expect(await database.getFirstAsync("SELECT COUNT(*) AS count FROM sessions WHERE user_id = 'owner-1' AND status = 'ACTIVE'")).toEqual({ count: 1 });
+    await database.closeAsync();
+  });
+
   test('does not return a started session when the local insert fails', async () => {
     const currentHarness = harness;
     if (!currentHarness) throw new Error('SQLite test harness was not initialized.');
