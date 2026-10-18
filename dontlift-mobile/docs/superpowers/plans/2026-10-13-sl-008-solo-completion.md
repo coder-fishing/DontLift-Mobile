@@ -8,8 +8,8 @@
 
 **Slice:** SL-008. **Ưu tiên đề xuất:** P0. **Release:** MVP + activation/Premium; post-MVP deferred. SL-036 chỉ được tính release sau D6.
 
-**Trạng thái kế hoạch:** DRAFT — chưa được human duyệt.
-**Trạng thái implementation quan sát:** Summary dùng số liệu hardcoded/memory. Chưa có evidence nghiệm thu slice.
+**Trạng thái kế hoạch:** Human đã duyệt phạm vi SL-008 ngày 2026-10-18; implementation đang thực hiện trên nhánh riêng.
+**Trạng thái implementation quan sát:** Completion, SQLite summary/outbox, màn tổng kết và test tự động đã triển khai. Test tương tác trực tiếp trên Expo Go còn chờ.
 **Baseline khảo sát:** docs/p6.0-implementation-slices tại 57ca1eb28a2952c66d01f89b9b89bf755ab4812a.
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Plan slug:** `2026-10-13-sl-008-solo-completion`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-008-solo-completion]`.
@@ -33,6 +33,8 @@ V01–V10 chỉ các màn tương ứng tại `design/concepts/concept-final/scr
 ## 2. Blocker, risk và quyết định cần duyệt
 
 - Không có blocker riêng được xác nhận trong draft; dependency và quyền/runtime vẫn phải đạt gate trước thực thi.
+
+**Quyết định UX được human duyệt ngày 2026-10-18:** Kết thúc sớm hoàn tất session và lưu summary; `Cancel session` là hủy riêng, không tạo summary/thành tích. Session completed có thể chúc mừng khi không ghi nhận violation; so sánh tiến bộ với các session cũ và lời khen dựa trên tiến bộ thuộc history/progress scope sau này.
 
 **Rủi ro cụ thể:** Completion cutoff và duration units phải đồng nhất engine/repository.
 
@@ -79,21 +81,21 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 **Nhận/trả:** Nhận Active session, violations committed và completion time; trả COMPLETED session cùng summary outbox; summary offline từ repository. Với contract đang bị chặn, chưa có quyền thêm schema dù test outcome đã được nêu.
 
-- [ ] Đọc lại source/spec và xác nhận tất cả blocker cùng dependency cho task đã được giải quyết; nếu chưa, dừng execution và báo đúng blocker.
-- [ ] Viết focused failing cases sau đây; runner không tìm thấy hoặc thiếu dependency không được tính là red nghiệp vụ.
+- [x] Đọc lại source/spec và xác nhận dependency SL-007 cùng contract summary đã có.
+- [x] Viết focused cases cho completion, cutoff, idempotency, rollback và summary offline.
 
-- [ ] Countdown hết giờ → complete một lần.
-- [ ] Stopwatch user Stop → elapsed được lưu.
-- [ ] Stop và timer-zero đồng thời → một summary/outbox.
+- [x] Countdown hết giờ → complete một lần ở repository; Expo timer integration đã bundle.
+- [x] Stopwatch user Stop → elapsed được lưu.
+- [x] Stop và timer-zero cùng session → controller gộp request và repository idempotent.
 
-- [ ] Chạy focused command trong mục 7; xác nhận failure đúng behavior đang thiếu, không từ toolchain lỗi.
-- [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
+- [x] Chạy test SL008 cùng full app suite.
+- [x] Xây hành vi theo thứ tự sau:
 
 1. Countdown zero hoặc user Stop mở completion; clamp thời lượng và đóng violation tại completion cutoff.
 2. Tính duration, lift count, violation duration, Penalty Score từ persisted records.
 3. Trong một transaction complete session và queue SOLO_SESSION_COMPLETED dùng session ID; duplicate completion trả cùng summary.
 
-- [ ] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
+- [x] Chạy lại cases; kiểm tra Android bundle. Nghiệm thu tương tác Expo Go còn pending.
 - [ ] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-008-solo-completion]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-008-solo-completion.md` và `Task: 1`.
 
 ### Task 2 — Journey tích hợp và recovery
@@ -102,33 +104,34 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 **Nhận:** Output task 1 đã kiểm chứng. **Trả:** Journey/bằng chứng có thể nghiệm thu; error/offline không false-success.
 
-- [ ] Viết các failing cases về integration/recovery sau; không viết tests chỉ mirror implementation.
+- [x] Viết cases integration/recovery cho các outcome bên dưới.
 
-- [ ] Violation đang mở → kết thúc đúng cutoff.
-- [ ] Transaction fail → không có half-written summary.
-- [ ] Không violation → score bằng không, summary vẫn đầy đủ.
+- [x] Violation đang mở → kết thúc đúng cutoff.
+- [x] Transaction fail → rollback cả completion và violation close trong repository transaction.
+- [x] Không violation → score bằng không, summary vẫn đầy đủ.
 
-- [ ] Chạy focused checks, xác nhận failure đúng behavior; giữ fixtures tách khỏi device evidence.
-- [ ] Tích hợp theo thứ tự:
+- [x] Chạy focused checks; fixtures tách khỏi device evidence.
+- [x] Tích hợp theo thứ tự:
 
-1. Summary đọc repository thay mock streak/log; loading/local error không công bố success giả.
-2. Stopwatch chỉ complete do user Stop; Countdown hết giờ complete một lần.
-3. Mở lại summary offline và bắt đầu session mới không mất record cũ.
+1. Summary dùng số liệu SQLite thật, bỏ streak/log hardcoded; lỗi lưu không chuyển sang summary.
+2. Stopwatch hoàn tất do user; Countdown tự hoàn tất tại zero; hủy riêng không tạo summary.
+3. Summary đọc lại offline sau khi SQLite mở lại; session mới không xóa record completed.
 
-- [ ] Thực hiện các kịch bản nghiệm thu trực tiếp trong mục 6; thu logs an toàn/device timestamps khi cần.
+- [ ] Thử trên Expo Go: finish sớm tạo summary, countdown zero tạo summary, cancel không tạo summary.
 - [ ] Review kết quả; một branch fail hoặc thiếu required device/emulator evidence thì slice chưa hoàn thành.
 - [ ] Commit task sau review nếu execution được phép. Subject dùng `[2026-10-13-sl-008-solo-completion]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-008-solo-completion.md` và `Task: 2`.
 
 ## 6. Nghiệm thu và failure outcomes
 
-- [ ] Countdown hết giờ → complete một lần.
-- [ ] Stopwatch user Stop → elapsed được lưu.
-- [ ] Stop và timer-zero đồng thời → một summary/outbox.
-- [ ] Violation đang mở → kết thúc đúng cutoff.
-- [ ] Transaction fail → không có half-written summary.
-- [ ] Không violation → score bằng không, summary vẫn đầy đủ.
-- [ ] Offline hoàn tất → summary có ngay từ SQLite.
-- [ ] Restart sau completed → summary vẫn giống record đã commit.
+- [x] Countdown hết giờ → completion idempotent.
+- [x] Stopwatch user Stop → elapsed được lưu.
+- [x] Stop và timer-zero cùng lúc → một summary/outbox.
+- [x] Violation đang mở → kết thúc đúng cutoff.
+- [x] Transaction fail → không có half-written summary.
+- [x] Không violation → score bằng không, summary vẫn đầy đủ.
+- [x] Offline hoàn tất → summary đọc từ SQLite ngay.
+- [x] Mở SQLite lại sau completed/outbox cleanup → summary vẫn dựng lại giống.
+- [ ] Expo Go trên Android: xác minh tương tác finish/cancel/auto-complete.
 
 Mỗi case phải có actual result. Unit cases dùng controlled fixtures để chứng minh domain; Firebase boundary cần Rules/Functions emulator tests cho allowed/denied/replay/concurrency khi áp dụng. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.
 
@@ -136,14 +139,16 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 
 ## 7. Verification và ghi nhận evidence
 
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/solo-completion.test.ts`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+App test: `pnpm test -- --runInBand` → 11 suites, 91 tests PASS. Android bundle: `pnpm exec expo export --platform android --output-dir .expo/sl008-verify-final` → PASS. `git diff --check` → PASS.
+
+TypeScript app/test source check bằng config tạm loại `.expo/types`: PASS. Lệnh chuẩn `pnpm exec tsc --noEmit` bị chặn bởi cú pháp không hợp lệ trong Expo-generated, git-ignored `.expo/types/router.d.ts`; không sửa file generated. Kiểm thử tương tác Expo Go còn UNVERIFIED. Không tạo commit theo yêu cầu human.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 
-Ghi trong kết quả execution: baseline/commit mới, command, exit status, số cases, emulator/device/runtime version, date, actual outcomes và remaining gaps. Các checklist hiện đều chưa chạy.
+Ghi trong kết quả execution: baseline `10d43b2`, command, exit status, số cases, runtime version, date, actual outcomes và remaining gaps. TypeScript default và kiểm thử thiết bị còn gap như trên.
 
 ## 8. Human review và bàn giao P6.2
 
-Human phải duyệt scope, non-goals, tasks, acceptance cases, dependencies và các quyết định còn mở của **SL-008** trước implementation. Duyệt một slice không duyệt tất cả 37; duyệt authoring batch không duyệt code.
+Human đã duyệt scope, non-goals, tasks và các quyết định UX của **SL-008** ngày 2026-10-18. Duyệt một slice không duyệt tất cả 37; duyệt authoring batch không duyệt code.
 
 Sau approval, cập nhật trạng thái/date/decision evidence trong đúng plan; kế hoạch mới chỉ đủ execution-ready khi blocker đã được giải quyết và baseline được re-inspect. Dùng qskill-executing-plans khi user yêu cầu execute plan đã duyệt. Không tự bắt đầu P6.2 từ file draft hoặc từ prompt batch.

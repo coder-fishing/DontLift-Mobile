@@ -1,102 +1,53 @@
 import React from 'react';
-import { View, Text, StyleSheet, Alert } from 'react-native';
+import { Text, View, StyleSheet } from 'react-native';
 import { GlassCard } from '../components/GlassCard';
 import { PrimaryButton } from '../components/PrimaryButton';
+import { formatTime } from '../constants';
+import { Colors } from '../constants/theme';
+import type { SoloSessionSummary } from '../features/solo/summary-service';
 
 interface SoloSummaryScreenProps {
-  selectedDuration: number;
-  streakDays: number;
+  summary: SoloSessionSummary;
   onNewFocus: () => void;
 }
 
-export function SoloSummaryScreen({
-  selectedDuration,
-  streakDays,
-  onNewFocus,
-}: SoloSummaryScreenProps) {
+function SummaryMetric({ label, value, detail }: { label: string; value: string; detail?: string }) {
+  return (
+    <GlassCard style={styles.metricCard}>
+      <Text style={styles.metricLabel}>{label}</Text>
+      <Text style={styles.metricValue}>{value}</Text>
+      {detail ? <Text style={styles.metricDetail}>{detail}</Text> : null}
+    </GlassCard>
+  );
+}
+
+export function SoloSummaryScreen({ summary, onNewFocus }: SoloSummaryScreenProps) {
+  const hasNoConfirmedViolations = summary.liftCount === 0 && summary.violationDurationSeconds === 0;
+  const completedAt = new Date(summary.completedAt).toLocaleString();
+
   return (
     <View style={styles.container}>
-      {/* Success Banner */}
-      <GlassCard style={styles.successCard}>
-        <View style={styles.trophyCircle}>
-          <Text style={styles.trophyEmoji}>🏆</Text>
-        </View>
-        <Text style={styles.successTitle}>Session Completed!</Text>
-        <Text style={styles.successSub}>
-          {selectedDuration}m 00s Focus Interval • Flawless discipline maintained
+      <GlassCard style={styles.summaryCard}>
+        <Text style={[styles.eyebrow, hasNoConfirmedViolations && styles.cleanEyebrow]}>
+          {hasNoConfirmedViolations ? 'NO CONFIRMED LIFTS' : 'SESSION COMPLETE'}
         </Text>
+        <Text style={styles.title}>Session complete</Text>
+        <Text style={styles.subtitle}>
+          {hasNoConfirmedViolations
+            ? 'No phone lifts were confirmed during this session.'
+            : 'Good work finishing your focus session.'}
+        </Text>
+        <Text style={styles.completedAt}>{completedAt}</Text>
       </GlassCard>
 
-      {/* Metrics Grid */}
       <View style={styles.metricsGrid}>
-        <GlassCard style={styles.metricCard}>
-          <Text style={styles.metricLabel}>Discipline Rate</Text>
-          <Text style={styles.metricValueBlue}>100%</Text>
-          <Text style={styles.metricSub}>Full compliance</Text>
-        </GlassCard>
-
-        <GlassCard style={styles.metricCard}>
-          <Text style={styles.metricLabel}>Streak Status</Text>
-          <Text style={styles.metricValueSlate}>{streakDays} Days</Text>
-          <Text style={styles.metricSub}>Next badge in 24h</Text>
-        </GlassCard>
-
-        <GlassCard style={styles.metricCard}>
-          <Text style={styles.metricLabel}>Violations</Text>
-          <Text style={styles.metricValueGreen}>0 Lifts</Text>
-          <Text style={styles.metricSub}>Clean Run</Text>
-        </GlassCard>
-
-        <GlassCard style={styles.metricCard}>
-          <Text style={styles.metricLabel}>Penalty Score</Text>
-          <Text style={styles.metricValueSlate}>0 pts</Text>
-          <Text style={styles.metricSub}>Full deposit safe</Text>
-        </GlassCard>
+        <SummaryMetric label="Focus time" value={formatTime(summary.durationSeconds)} detail={summary.mode === 'COUNTDOWN' ? 'Countdown' : 'Stopwatch'} />
+        <SummaryMetric label="Confirmed lifts" value={String(summary.liftCount)} detail="After the 3-second grace period" />
+        <SummaryMetric label="Away time" value={formatTime(summary.violationDurationSeconds)} detail="Total confirmed violation time" />
+        <SummaryMetric label="Penalty score" value={`${summary.penaltyScore} pts`} detail="10 points per lift + seconds away" />
       </View>
 
-      {/* SQLite Telemetry Log */}
-      <GlassCard style={styles.logCard}>
-        <View style={styles.logHeader}>
-          <Text style={styles.logTitle}>SQLite Movement Telemetry Log</Text>
-          <View style={styles.eventsBadge}>
-            <Text style={styles.eventsBadgeText}>2 Events</Text>
-          </View>
-        </View>
-
-        <View style={styles.logList}>
-          <View style={styles.logItem}>
-            <Text style={styles.logTime}>17:40</Text>
-            <View style={{ flex: 1, marginHorizontal: 8 }}>
-              <Text style={styles.logItemTitle}>Micro-adjustment • Permitted</Text>
-              <Text style={styles.logItemSub}>Within 3.0s grace window (1.8s)</Text>
-            </View>
-            <Text style={styles.logPts}>0 pts</Text>
-          </View>
-
-          <View style={styles.logItem}>
-            <Text style={styles.logTime}>25:00</Text>
-            <View style={{ flex: 1, marginHorizontal: 8 }}>
-              <Text style={styles.logItemTitle}>Completed • Grounded</Text>
-              <Text style={styles.logItemSub}>Continuous flat sensor lock</Text>
-            </View>
-            <Text style={styles.logPts}>Valid</Text>
-          </View>
-        </View>
-      </GlassCard>
-
-      {/* Actions */}
-      <View style={styles.actions}>
-        <PrimaryButton
-          title="Share Discipline Card"
-          variant="secondary"
-          onPress={() => Alert.alert('Share', 'Discipline card summary copied!')}
-        />
-        <PrimaryButton
-          title="Done / New Focus"
-          onPress={onNewFocus}
-          style={{ marginTop: 8 }}
-        />
-      </View>
+      <PrimaryButton title="Start another session" onPress={onNewFocus} />
     </View>
   );
 }
@@ -105,128 +56,56 @@ const styles = StyleSheet.create({
   container: {
     gap: 14,
   },
-  successCard: {
-    alignItems: 'center',
-    paddingVertical: 20,
-    gap: 6,
+  summaryCard: {
+    alignItems: 'flex-start',
+    padding: 20,
+    gap: 7,
   },
-  trophyCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 4,
-  },
-  trophyEmoji: {
-    fontSize: 24,
-  },
-  successTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: '#0F172A',
-  },
-  successSub: {
+  eyebrow: {
+    color: Colors.light.authAccent,
     fontSize: 11,
-    color: '#64748B',
-    textAlign: 'center',
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  cleanEyebrow: {
+    color: Colors.light.primary,
+  },
+  title: {
+    color: Colors.light.text,
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  subtitle: {
+    color: Colors.light.textSecondary,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  completedAt: {
+    color: Colors.light.textSecondary,
+    fontSize: 12,
+    marginTop: 4,
   },
   metricsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
     gap: 10,
   },
   metricCard: {
-    width: '48%',
     padding: 14,
-    gap: 2,
+    gap: 3,
   },
   metricLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#64748B',
+    color: Colors.light.textSecondary,
+    fontSize: 11,
+    fontWeight: '700',
     textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  metricValueBlue: {
-    fontSize: 26,
-    fontWeight: '900',
-    color: '#2563EB',
+  metricValue: {
+    color: Colors.light.text,
+    fontSize: 24,
+    fontWeight: '800',
   },
-  metricValueSlate: {
-    fontSize: 26,
-    fontWeight: '900',
-    color: '#0F172A',
-  },
-  metricValueGreen: {
-    fontSize: 26,
-    fontWeight: '900',
-    color: '#10B981',
-  },
-  metricSub: {
-    fontSize: 10,
-    color: '#64748B',
-  },
-  logCard: {
-    padding: 16,
-    gap: 12,
-  },
-  logHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,0,0.05)',
-  },
-  logTitle: {
+  metricDetail: {
+    color: Colors.light.textSecondary,
     fontSize: 12,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  eventsBadge: {
-    backgroundColor: 'rgba(255,255,255,0.8)',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  eventsBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#64748B',
-  },
-  logList: {
-    gap: 10,
-  },
-  logItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.6)',
-    padding: 10,
-    borderRadius: 12,
-  },
-  logTime: {
-    fontSize: 11,
-    fontWeight: '900',
-    color: '#2563EB',
-    fontFamily: 'monospace',
-  },
-  logItemTitle: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  logItemSub: {
-    fontSize: 10,
-    color: '#64748B',
-  },
-  logPts: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#065F46',
-  },
-  actions: {
-    width: '100%',
   },
 });

@@ -83,6 +83,27 @@ describe('foreground grace period', () => {
 });
 
 describe('foreground detection persistence', () => {
+  test('seals sensor transitions after a session is ended', async () => {
+    const repository = {
+      start: jest.fn(async (input) => ({
+        eventId: 'event-sealed', sessionId: input.sessionId,
+        startedAtUtcMs: input.startedAtUtcMs, endedAtUtcMs: null, durationSeconds: 3,
+      })),
+      end: jest.fn(async () => true),
+      getSummary: jest.fn(async () => ({ count: 0, durationSeconds: 0 })),
+    };
+    const controller = createForegroundDetectionController({ id: 'session-1', userId: 'owner-1' }, repository);
+    await controller.initialize();
+    await controller.observeOrientation('LIFTED', 1_000);
+    await controller.observeOrientation('LIFTED', 4_000);
+    await controller.endCurrentViolation(5_000);
+
+    const afterEnd = await controller.observeOrientation('LIFTED', 6_000);
+    expect(repository.start).toHaveBeenCalledTimes(1);
+    expect(repository.end).toHaveBeenCalledWith({ eventId: 'event-sealed', endedAtUtcMs: 5_000 });
+    expect(afterEnd).toMatchObject({ isViolationActive: false, violationsCount: 1 });
+  });
+
   test('persists only after the grace deadline and closes duration on re-ground', async () => {
     const repository = {
       start: jest.fn(async (input) => ({
