@@ -149,12 +149,12 @@ describe('Expo Go Android background recovery', () => {
       .toEqual({ event_id: 'candidate-1', event_type: 'VIOLATION_RECORDED' });
   });
 
-  test('reconciles a persisted candidate after a JavaScript process restart using UTC', async () => {
+  test('routes a forward wall-clock jump after process restart to manual review', async () => {
     await seedSession();
     const firstProcess = createClock();
     await beginBackgroundCandidate(database, { sessionId: 'session-1', userId: 'user-1' }, firstProcess.dependencies);
     const restartedProcess = createClock({
-      utc: firstProcess.clock.utc + 4_000,
+      utc: firstProcess.clock.utc + 60 * 60 * 1_000,
       monotonic: 500,
       processId: 'process-2',
       id: 'unused-candidate',
@@ -164,11 +164,13 @@ describe('Expo Go Android background recovery', () => {
       database,
       { sessionId: 'session-1', userId: 'user-1' },
       restartedProcess.dependencies,
-    )).resolves.toBe('confirmed');
-    expect(await database.getFirstAsync('SELECT COUNT(*) AS count FROM violation_logs')).toEqual({ count: 1 });
+    )).resolves.toBe('needs-review');
+    expect(await database.getFirstAsync('SELECT state FROM lifecycle_candidates')).toEqual({ state: 'NEEDS_REVIEW' });
+    expect(await database.getFirstAsync('SELECT COUNT(*) AS count FROM violation_logs')).toEqual({ count: 0 });
+    expect(await database.getFirstAsync('SELECT COUNT(*) AS count FROM sync_outbox')).toEqual({ count: 0 });
   });
 
-  test('cancels a candidate when the app restarts before the grace period expires', async () => {
+  test('routes a short cross-process candidate to review instead of trusting UTC', async () => {
     await seedSession();
     const firstProcess = createClock();
     const input = { sessionId: 'session-1', userId: 'user-1' };
@@ -179,8 +181,8 @@ describe('Expo Go Android background recovery', () => {
       processId: 'process-2',
     });
 
-    await expect(reconcileBackgroundCandidate(database, input, restartedProcess.dependencies)).resolves.toBe('cancelled');
-    expect(await database.getFirstAsync('SELECT state FROM lifecycle_candidates')).toEqual({ state: 'CANCELLED' });
+    await expect(reconcileBackgroundCandidate(database, input, restartedProcess.dependencies)).resolves.toBe('needs-review');
+    expect(await database.getFirstAsync('SELECT state FROM lifecycle_candidates')).toEqual({ state: 'NEEDS_REVIEW' });
     expect(await database.getFirstAsync('SELECT COUNT(*) AS count FROM violation_logs')).toEqual({ count: 0 });
   });
 

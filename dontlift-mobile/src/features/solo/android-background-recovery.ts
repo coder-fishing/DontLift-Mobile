@@ -127,24 +127,27 @@ export async function reconcileBackgroundCandidate(
 
     // Monotonic đo thời gian thật trong process; so với UTC để phát hiện đồng hồ hệ thống bị chỉnh.
     const sameProcess = candidate.process_instance_id === dependencies.processInstanceId;
+    if (!sameProcess) {
+      // Sau khi process khởi động lại, Expo Go không còn mốc monotonic cũ để xác minh UTC.
+      await resolveCandidate(transaction, candidate.id, 'NEEDS_REVIEW', nowUtcMs);
+      result = 'needs-review';
+      return;
+    }
+
     const elapsedUtcMs = nowUtcMs - candidate.transition_at_utc_ms;
-    const elapsedMonotonicMs = sameProcess
-      ? dependencies.nowMonotonicMs() - candidate.transition_at_monotonic_ms
-      : null;
+    const elapsedMonotonicMs = dependencies.nowMonotonicMs() - candidate.transition_at_monotonic_ms;
     if (
       !Number.isFinite(elapsedUtcMs)
       || elapsedUtcMs < 0
-      || (elapsedMonotonicMs !== null && (
-        !Number.isFinite(elapsedMonotonicMs)
-        || elapsedMonotonicMs < 0
-        || Math.abs(elapsedUtcMs - elapsedMonotonicMs) > MAX_CLOCK_DIVERGENCE_MS
-      ))
+      || !Number.isFinite(elapsedMonotonicMs)
+      || elapsedMonotonicMs < 0
+      || Math.abs(elapsedUtcMs - elapsedMonotonicMs) > MAX_CLOCK_DIVERGENCE_MS
     ) {
       await resolveCandidate(transaction, candidate.id, 'NEEDS_REVIEW', nowUtcMs);
       result = 'needs-review';
       return;
     }
-    const elapsedMs = elapsedMonotonicMs ?? elapsedUtcMs;
+    const elapsedMs = elapsedMonotonicMs;
     if (elapsedMs < BACKGROUND_GRACE_PERIOD_MS) {
       await resolveCandidate(transaction, candidate.id, 'CANCELLED', nowUtcMs);
       result = 'cancelled';

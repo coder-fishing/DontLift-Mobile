@@ -4,7 +4,7 @@
 > Kế hoạch chỉ mô tả file, unit, hành vi, quy tắc, đầu ra và test cases; không có implementation code hoặc signatures. Đọc source thật trước mỗi task.
 > **Gate:** Human duyệt triển khai giới hạn bằng Expo Go ngày 2026-10-18. Hành vi native đầy đủ vẫn UNVERIFIED và cần Development Build trước khi nghiệm thu SL-009 đầy đủ.
 
-**Mục tiêu:** Android background và restart recovery: Candidate cancelled hoặc confirmed một lần; active timer được phục hồi.
+**Mục tiêu:** Android background và restart recovery: Candidate trong cùng process được cancelled hoặc confirmed một lần; candidate qua process restart được chuyển sang review nếu không thể xác minh thời gian; active timer được phục hồi.
 
 **Slice:** SL-009. **Ưu tiên đề xuất:** P0. **Release:** MVP + activation/Premium; post-MVP deferred. SL-036 chỉ được tính release sau D6.
 
@@ -13,7 +13,7 @@
 **Baseline khảo sát:** docs/p6.0-implementation-slices tại 57ca1eb28a2952c66d01f89b9b89bf755ab4812a.
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Plan slug:** `2026-10-13-sl-009-android-recovery`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-009-android-recovery]`.
-**Quyết định human:** Ưu tiên tiếp tục chạy Expo Go. Dùng React Native `AppState` + SQLite durable candidate và reconcile khi app resume/reopen; không thêm custom native module hoặc WorkManager trong phạm vi này. Giới hạn: nếu Android dừng process trước khi callback JavaScript kịp commit candidate, không thể bảo đảm phục hồi. Native acceptance cần Development Build.
+**Quyết định human:** Ưu tiên tiếp tục chạy Expo Go. Dùng React Native `AppState` + SQLite durable candidate và reconcile khi app resume/reopen; không thêm custom native module hoặc WorkManager trong phạm vi này. Nếu candidate thuộc process cũ, Expo Go không có monotonic reference để xác minh UTC; chuyển candidate sang `NEEDS_REVIEW` và không tự ghi điểm. Nếu Android dừng process trước khi callback JavaScript kịp commit candidate, không thể bảo đảm phục hồi. Native acceptance cần Development Build.
 **Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13; execution chỉ được duyệt theo phần giới hạn nêu trên.
 **Traceability:** US-04; ADR-008; ARCH §3.4; V03–V04.
 **Phụ thuộc bắt buộc:** [SL-007](./2026-10-13-sl-007-foreground-detection.md)
@@ -29,7 +29,7 @@ V01–V10 chỉ các màn tương ứng tại `design/concepts/concept-final/scr
 
 **Stack:** Expo SDK 57 / React Native / TypeScript. Phạm vi được duyệt dùng `AppState` + SQLite để hoạt động trong Expo Go; không phụ thuộc Java, custom native module hay WorkManager. Không bắt slice thuần local phải có network.
 
-**Không gồm:** Giữ process sống vô hạn; policy clock anomaly chưa duyệt không được tự invent.
+**Không gồm:** Giữ process sống vô hạn; tự suy thời lượng candidate cross-process chỉ từ UTC.
 
 ## 2. Blocker, risk và quyết định cần duyệt
 
@@ -45,7 +45,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 | File dự kiến | Trách nhiệm |
 |---|---|
-| `src/features/solo/android-background-recovery.ts` | Lưu candidate và reconcile idempotent trong SQLite; dùng UTC sau restart, monotonic clock trong cùng JS process. |
+| `src/features/solo/android-background-recovery.ts` | Lưu candidate và reconcile idempotent trong SQLite; dùng monotonic cùng UTC khi còn cùng JS process, route candidate từ process cũ sang review. |
 | `src/features/solo/grace-period-engine.ts` | Khôi phục violation đang mở sau process restart để tiếp tục một lift, tránh ghi trùng. |
 | `src/features/solo/violation-repository.ts` | Đọc violation đang mở của đúng session và user. |
 | `src/features/local/migrations.ts` | Thêm schema lifecycle candidate theo versioned migration, giữ nguyên local data hiện tại. |
@@ -85,7 +85,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 - [x] Background 2 giây → cancel (SQLite unit test).
 - [x] Background đủ 3 giây → confirm một lần (SQLite unit test).
-- [x] Process restart ở trước/sau grace → cancel/confirm đúng theo UTC (SQLite unit test).
+- [ ] Process restart trước/sau grace → `NEEDS_REVIEW`, không tự ghi violation/outbox khi UTC không thể xác minh (SQLite unit test; assertion cập nhật, chưa chạy lại).
 - [x] Fresh install/upgrade → lifecycle candidate schema được migrate trước khi AppState persist candidate (SQLite migration test).
 - [ ] Expo Go Android → AppState callback lưu và reconcile candidate qua SQLite.
 
@@ -94,8 +94,8 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 1. Tạo lifecycle-candidate migration trước khi adapter ghi dữ liệu.
 2. Ghi candidate durable từ AppState; repeated transition reuse cùng candidate.
-3. Resume/reopen trước 3 giây hủy candidate; từ 3 giây xác nhận violation và matching outbox atomically một lần.
-4. Dùng monotonic marker trong process hiện tại và UTC sau restart; clock lùi/không hợp lệ thì không tự cộng điểm.
+3. Resume trong cùng process: dưới 3 giây hủy candidate; từ 3 giây xác nhận violation và matching outbox atomically một lần nếu UTC/monotonic không lệch quá ngưỡng.
+4. Sau process restart không còn monotonic reference đáng tin trong Expo Go; chuyển candidate sang `NEEDS_REVIEW` thay vì tin UTC và tự cộng điểm.
 
 - [x] Chạy lại focused cases và đối chiếu output/invariants; native/integration không được tính PASS từ mock.
 - [ ] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-009-android-recovery]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-009-android-recovery.md` và `Task: 1`.
@@ -109,7 +109,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 - [ ] Viết các failing cases về integration/recovery sau; không viết tests chỉ mirror implementation.
 
 - [ ] Repeated ON_STOP → một candidate.
-- [x] AppState callback lặp → một candidate; restart reconciliation tạo tối đa một event (SQLite unit test).
+- [ ] AppState callback lặp → một candidate; cross-process recovery không tự tạo event khi elapsed time chưa xác minh (SQLite unit test; assertion cập nhật, chưa chạy lại).
 - [x] Clock bị lùi → không âm thầm tự chốt score (SQLite unit test).
 
 - [ ] Chạy focused checks, xác nhận failure đúng behavior; giữ fixtures tách khỏi device evidence.
@@ -128,7 +128,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 - [x] Background 2 giây → cancel (unit test).
 - [x] Background đủ 3 giây → confirm một lần (unit test).
-- [x] Restart trước grace hết hủy candidate; restart sau grace xác nhận đúng một event (unit test).
+- [ ] Restart trước/sau grace → candidate cần review, không ghi violation/outbox dựa vào UTC một mình (test assertion cập nhật, chưa chạy lại).
 - [ ] Repeated ON_STOP → một candidate.
 - [x] AppState callback lặp → một candidate; retry reconciliation không tạo duplicate (unit test).
 - [x] Violation foreground đang mở → controller restore event sau restart và không tạo lift trùng (unit test).
@@ -148,6 +148,8 @@ App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 
 **Evidence 2026-10-19:** baseline `c815c7c` trên `feature/sl-009-android-recovery`; Node `v24.14.1`. `node node_modules/typescript/bin/tsc --noEmit` exit 0. Toàn bộ Jest suite chạy bằng `node node_modules/jest/bin/jest.js --watchAll=false --runInBand`: 12 suites, 100 tests passed. `git diff --check` exit 0. Lint chưa chạy: repo chưa có ESLint config; `expo lint` tự thêm dependency, thao tác đã dừng và ba file manifest/lock được hoàn nguyên. `adb devices -l` không thấy thiết bị; Expo Go AppState và Android process-kill vẫn UNVERIFIED. Chưa commit theo chỉ dẫn người dùng.
+
+**Review follow-up 2026-10-19:** Cùng-process recovery đối chiếu UTC với monotonic và đưa sai lệch trên 1 giây vào `NEEDS_REVIEW`. Cross-process candidates luôn cần review vì Expo Go không có clock reference bền để phát hiện wall-clock jump; các assertion SQLite liên quan đã cập nhật nhưng chưa chạy lại.
 
 ## 8. Human review và bàn giao P6.2
 
