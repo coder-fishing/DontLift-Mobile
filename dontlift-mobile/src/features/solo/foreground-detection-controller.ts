@@ -97,6 +97,19 @@ export class ForegroundDetectionController {
     });
   }
 
+  async resumeAfterFinalizationFailure(nowUtcMs: number): Promise<ForegroundDetectionViewState> {
+    return this.serialize(async () => {
+      if (!this.sealed) return this.getViewState(nowUtcMs);
+      // Session vẫn ACTIVE nếu bước ghi COMPLETED/CANCELLED lỗi; khởi tạo lại cảm biến để tiếp tục ghi nhận.
+      this.engine.reset();
+      this.lastSampleAtUtcMs = null;
+      this.nextPersistenceAttemptAtUtcMs = 0;
+      this.persistenceError = undefined;
+      this.sealed = false;
+      return this.getViewState(nowUtcMs);
+    });
+  }
+
   getViewState(nowUtcMs: number): ForegroundDetectionViewState {
     const state = this.engine.snapshot(nowUtcMs);
     const activeDurationSeconds = state.activeViolation

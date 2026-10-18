@@ -33,6 +33,58 @@ type SummaryDependencies = {
 
 const defaultDependencies: SummaryDependencies = { now: () => Date.now() };
 
+type ViolationSummaryRow = {
+  started_at: string;
+  ended_at: string | null;
+  created_at: string;
+};
+
+async function summarizeViolations(
+  database: SQLite.SQLiteDatabase,
+  input: { sessionId: string; userId: string; startedAt: string; completedAt: string },
+): Promise<{ count: number; durationSeconds: number }> {
+  const sessionStartedAtUtcMs = Date.parse(input.startedAt);
+  const completionCutoffUtcMs = Date.parse(input.completedAt);
+  if (!Number.isFinite(sessionStartedAtUtcMs) || !Number.isFinite(completionCutoffUtcMs)) {
+    throw new Error('Solo session timestamps are invalid.');
+  }
+
+  const violations = await database.getAllAsync<ViolationSummaryRow>(
+    `SELECT started_at, ended_at, created_at FROM violation_logs
+     WHERE session_id = ? AND user_id = ?`,
+    input.sessionId,
+    input.userId,
+  );
+  let count = 0;
+  let durationSeconds = 0;
+
+  for (const violation of violations) {
+    const startedAtUtcMs = Date.parse(violation.started_at);
+    const createdAtUtcMs = Date.parse(violation.created_at);
+    const endedAtUtcMs = violation.ended_at === null
+      ? completionCutoffUtcMs
+      : Date.parse(violation.ended_at);
+    if (!Number.isFinite(startedAtUtcMs) || !Number.isFinite(createdAtUtcMs) || !Number.isFinite(endedAtUtcMs)) {
+      throw new Error('Violation timestamps are invalid.');
+    }
+
+    // Chỉ tính vi phạm đã được xác nhận trong phiên và phần thời lượng nằm trước cutoff.
+    if (
+      createdAtUtcMs > completionCutoffUtcMs
+      || startedAtUtcMs >= completionCutoffUtcMs
+      || endedAtUtcMs <= sessionStartedAtUtcMs
+    ) continue;
+
+    const overlapStartedAtUtcMs = Math.max(startedAtUtcMs, sessionStartedAtUtcMs);
+    const overlapEndedAtUtcMs = Math.min(endedAtUtcMs, completionCutoffUtcMs);
+    if (overlapEndedAtUtcMs <= overlapStartedAtUtcMs) continue;
+    count += 1;
+    durationSeconds += Math.floor((overlapEndedAtUtcMs - overlapStartedAtUtcMs) / 1_000);
+  }
+
+  return { count, durationSeconds };
+}
+
 async function readSummary(
   database: SQLite.SQLiteDatabase,
   input: { userId: string; sessionId: string },
@@ -45,14 +97,14 @@ async function readSummary(
   );
   if (!session || session.status !== 'COMPLETED' || !session.completed_at) return null;
 
-  const violations = await database.getFirstAsync<{ count: number; duration_seconds: number | null }>(
-    `SELECT COUNT(*) AS count, COALESCE(SUM(duration_seconds), 0) AS duration_seconds
-     FROM violation_logs WHERE session_id = ? AND user_id = ?`,
-    session.id,
-    session.user_id,
-  );
-  const liftCount = violations?.count ?? 0;
-  const violationDurationSeconds = violations?.duration_seconds ?? 0;
+  const violations = await summarizeViolations(database, {
+    sessionId: session.id,
+    userId: session.user_id,
+    startedAt: session.started_at,
+    completedAt: session.completed_at,
+  });
+  const liftCount = violations.count;
+  const violationDurationSeconds = violations.durationSeconds;
 
   return {
     sessionId: session.id,
@@ -129,14 +181,14 @@ export async function completeSoloSession(
       });
     }
 
-    const violations = await transaction.getFirstAsync<{ count: number; duration_seconds: number | null }>(
-      `SELECT COUNT(*) AS count, COALESCE(SUM(duration_seconds), 0) AS duration_seconds
-       FROM violation_logs WHERE session_id = ? AND user_id = ?`,
-      session.id,
-      session.user_id,
-    );
-    const liftCount = violations?.count ?? 0;
-    const violationDurationSeconds = violations?.duration_seconds ?? 0;
+    const violations = await summarizeViolations(transaction, {
+      sessionId: session.id,
+      userId: session.user_id,
+      startedAt: session.started_at,
+      completedAt,
+    });
+    const liftCount = violations.count;
+    const violationDurationSeconds = violations.durationSeconds;
     const penaltyScore = liftCount * 10 + violationDurationSeconds;
     const createdAt = new Date(dependencies.now()).toISOString();
 

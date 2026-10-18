@@ -343,14 +343,20 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     if (!activeSoloSession || soloStartPending.current) return;
     soloStartPending.current = true;
     setIsCancellingSolo(true);
+    const detector = foregroundDetectionController.current;
+    let detectionSealed = false;
     try {
-      await foregroundDetectionController.current?.endCurrentViolation(Date.now());
+      await detector?.endCurrentViolation(Date.now());
+      detectionSealed = detector !== null;
       const cancelled = await soloSessionController.cancel({
         userId: profile.uid,
         sessionId: activeSoloSession.id,
       });
       if (!isMounted.current) return;
       if (!cancelled) {
+        // Session không còn ACTIVE; bỏ giao diện cũ để không tiếp tục hiển thị timer sai trạng thái.
+        setActiveSoloSession(null);
+        setCurrentScreen('02-solo-select');
         Alert.alert('Session already changed', 'This session is no longer active. Return to Solo Focus and try again.');
         return;
       }
@@ -358,6 +364,10 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       setSoloStartError(undefined);
       setCurrentScreen('02-solo-select');
     } catch {
+      if (detectionSealed && detector) {
+        const detectionState = await detector.resumeAfterFinalizationFailure(Date.now()).catch(() => null);
+        if (detectionState && isMounted.current) setForegroundDetection(detectionState);
+      }
       if (isMounted.current) {
         Alert.alert('Could not cancel session', 'The session is still saved. Check device storage and try again.');
       }
@@ -385,9 +395,12 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     completionAttemptedSessionId.current = activeSoloSession.id;
     setIsCompletingSolo(true);
     setSoloCompletionError(undefined);
+    const detector = foregroundDetectionController.current;
+    let detectionSealed = false;
     try {
       // Đợi sensor queue đóng violation và khóa controller trước khi chốt summary.
-      await foregroundDetectionController.current?.endCurrentViolation(completedAtUtcMs);
+      await detector?.endCurrentViolation(completedAtUtcMs);
+      detectionSealed = detector !== null;
       // Session, violations đã mở và summary outbox được chốt trong cùng transaction local.
       const summary = await soloCompletionController.complete({
         userId: profile.uid,
@@ -401,6 +414,10 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       setSoloSummaryPendingView(!shouldShowSummaryNow);
       if (shouldShowSummaryNow) setCurrentScreen('04-solo-summary');
     } catch {
+      if (detectionSealed && detector) {
+        const detectionState = await detector.resumeAfterFinalizationFailure(Date.now()).catch(() => null);
+        if (detectionState && isMounted.current) setForegroundDetection(detectionState);
+      }
       if (isMounted.current) {
         setSoloCompletionError('Could not save this session summary. Your session is still active; retry when device storage is available.');
       }

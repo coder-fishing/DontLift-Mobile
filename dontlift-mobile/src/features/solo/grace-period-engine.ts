@@ -64,6 +64,12 @@ export class GracePeriodEngine {
     this.candidateStartedAtUtcMs = null;
   }
 
+  reset(): void {
+    this.orientation = 'UNKNOWN';
+    this.activeViolation = null;
+    this.candidateStartedAtUtcMs = null;
+  }
+
   snapshot(nowUtcMs: number): GracePeriodSnapshot {
     const elapsedMs = this.candidateStartedAtUtcMs === null
       ? 0
