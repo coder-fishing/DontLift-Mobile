@@ -1,15 +1,8 @@
 {
-  "functions": {
-    "source": "functions",
-    "runtime": "nodejs22"
-  },
   "firestore": {
-    "rules": "firestore.emulator.rules"
+    "rules": "firestore.rules"
   },
   "emulators": {
-    "functions": {
-      "port": 5001
-    },
     "auth": {
       "port": 9099
     },

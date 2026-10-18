@@ -1,5 +1,7 @@
 # Kiến trúc phần mềm DontLift
 
+> Runtime update 2026-10-18: [ADR-010](decisions/ADR-010-expo-go-firebase-js.md) replaces native Firebase with Firebase JS SDK / Expo Go and replaces callable registration bootstrap with create-only Firestore Rules. Other planned authoritative commands below remain future work.
+
 > **Trạng thái:** APPROVED  
 > **Ngày phê duyệt:** 2026-09-23
 > **Phạm vi:** Expo SDK 57, Android/iOS, Firebase Authentication, Cloud Firestore, Cloud Functions, SQLite, VietQR P2P  

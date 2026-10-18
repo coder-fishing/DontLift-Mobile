@@ -1,0 +1,15 @@
+{
+  "score": 5,
+  "summary": "Create-only owner profile bootstrap; no client entitlement or unrelated collection writes.",
+  "findings": [],
+  "checks": [
+    "Owner identity from request.auth.uid",
+    "Email equals Auth token email",
+    "Exact field whitelist and required fields",
+    "Bounded nonblank name; email/string and timestamp types",
+    "isPremium=false enforced on create",
+    "Server timestamp transforms equal request.time",
+    "Client update/delete/list and commandReceipts denied",
+    "Unimplemented room/sync/entitlement paths denied by default"
+  ]
+}

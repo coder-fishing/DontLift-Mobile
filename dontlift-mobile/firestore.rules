@@ -1,0 +1,31 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid} {
+      function isOwner() {
+        return request.auth != null && request.auth.uid == uid;
+      }
+      // Hồ sơ chỉ được tạo một lần; client không thể tự cấp Premium hay sửa hồ sơ người khác.
+      allow get: if isOwner();
+      allow create: if isOwner()
+        && request.resource.data.keys().hasAll(['displayName', 'email', 'isPremium', 'createdAt', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['displayName', 'email', 'isPremium', 'createdAt', 'updatedAt'])
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() >= 1
+        && request.resource.data.displayName.size() <= 40
+        && !request.resource.data.displayName.matches('^\\s*$')
+        && request.resource.data.email is string
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.isPremium == false
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt is timestamp
+        && request.resource.data.updatedAt == request.time;
+      allow list, update, delete: if false;
+    }
+    // Các slice room, sync và entitlement chưa triển khai không được mở quyền theo migration này.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

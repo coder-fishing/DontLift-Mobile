@@ -21,6 +21,7 @@ function setup() {
   let failUpsert = false;
   let failCreateAccount = false;
   const events: string[] = [];
+  const failureStages: string[] = [];
   const requests: Array<{ version: 1; requestId: string; displayName: string }> = [];
   const auth: RegistrationAuthPort = {
     getCurrentUser: () => currentUser,
@@ -38,7 +39,7 @@ function setup() {
     async completeProfile(request): Promise<RegistrationResponse> {
       events.push('bootstrap');
       requests.push(request);
-      if (failBootstrap) throw new Error('Functions unavailable');
+      if (failBootstrap) throw new Error('Firestore unavailable');
       return { version: 1, requestId: request.requestId, profile };
     },
   };
@@ -51,7 +52,8 @@ function setup() {
   };
 
   return {
-    controller: createAuthController(auth, profiles, () => '00000000-0000-4000-8000-000000000001'),
+    controller: createAuthController(auth, profiles, () => '00000000-0000-4000-8000-000000000001', (stage) => failureStages.push(stage)),
+    failureStages,
     events,
     requests,
     setFailBootstrap(value: boolean) { failBootstrap = value; },
@@ -131,4 +133,16 @@ describe('registration profile controller', () => {
     expect(result).toEqual({ kind: 'needs-name' });
     expect(state.events).toEqual([]);
   });
+});
+
+
+test('identifies remote profile failure separately from local persistence failure', async () => {
+  const remote = setup();
+  remote.setFailBootstrap(true);
+  await remote.controller.register(validInput);
+  expect(remote.failureStages).toEqual(['firestore-profile']);
+  const local = setup();
+  local.setFailUpsert(true);
+  await local.controller.register(validInput);
+  expect(local.failureStages).toEqual(['local-profile']);
 });

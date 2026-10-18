@@ -1,5 +1,7 @@
 # DontLift Callable API Contracts
 
+> Runtime update 2026-10-18: [ADR-010](decisions/ADR-010-expo-go-firebase-js.md) replaces native Firebase with Firebase JS SDK / Expo Go and replaces callable registration bootstrap with create-only Firestore Rules. Other planned authoritative commands below remain future work.
+
 > **Owner:** Software architecture package  
 > **Status:** APPROVED  
 > **Wire version:** `1`  

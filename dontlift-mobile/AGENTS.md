@@ -21,7 +21,7 @@ When documents conflict, use this precedence:
 
 Current architectural overrides:
 
-- React Native Firebase owns Firebase token persistence. Do not copy ID or refresh tokens into SQLite, AsyncStorage, or Expo SecureStore.
+- ADR-010 supersedes the native runtime: Firebase JS SDK owns Auth persistence through its AsyncStorage adapter in Expo Go. Do not manually copy ID/refresh tokens into app tables or implement token refresh. Profile bootstrap is create-only through Firestore Rules; other authoritative commands remain server-owned.
 - Offline-capable events sync through `syncEvents`. Do not write authoritative violation or Solo summary documents directly from the client.
 - `rooms/{roomId}/members/{uid}` is the room membership authority; do not use an unbounded `participantIds` array.
 - ADR-008 governs Android/iOS background transitions and the 3-Second Grace Period.
@@ -47,13 +47,14 @@ Current architectural overrides:
 ## Development Commands
 
 - Install: `npm install` or `pnpm install`
-- Start Metro: `npm start` or `pnpm start`
+- Start Expo Go with Firebase Cloud: `pnpm run dev`
+- Optional Auth/Firestore emulators (Java required): `pnpm run dev:emulator`
 - Open Android development target: `npm run android` or `pnpm run android`
 - Open iOS development target on macOS: `npm run ios` or `pnpm run ios`
 - Open web target: `npm run web` or `pnpm run web`
 - Lint: `npm run lint` or `pnpm run lint`
 - Type-check: `npx tsc --noEmit` or `pnpm exec tsc --noEmit`
-- Tests: no test script is currently configured
+- Tests: `pnpm test -- --runInBand`; Rules/integration: `pnpm --dir functions run test:emulators`
 - Native EAS builds: not configured until the deferred Firebase/EAS provisioning prerequisites are available
 
 Both npm and pnpm are supported. Use one package manager consistently for a command sequence. When dependencies change, keep `package-lock.json` and `pnpm-lock.yaml` synchronized and include both lockfile updates.
