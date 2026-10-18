@@ -38,6 +38,7 @@ type SQLiteHarness = {
   failOnProfileMigration: boolean;
   failOnSessionsMigration: boolean;
   failOnSessionInsert: boolean;
+  failOnOutboxInsert: boolean;
   databases: TestDatabase[];
   open: () => TestDatabase;
 };
@@ -51,6 +52,7 @@ function createSQLiteHarness(databaseFile: string): SQLiteHarness {
     failOnProfileMigration: false,
     failOnSessionsMigration: false,
     failOnSessionInsert: false,
+    failOnOutboxInsert: false,
     databases: [],
     open: () => {
       const { DatabaseSync } = require('node:sqlite') as { DatabaseSync: new (path: string) => NativeDatabase };
@@ -74,6 +76,9 @@ function createSQLiteHarness(databaseFile: string): SQLiteHarness {
         async runAsync(sql: string, ...params: unknown[]) {
           if (fixture.failOnSessionInsert && sql.includes('INSERT INTO sessions')) {
             throw new Error('Injected session insert failure');
+          }
+          if (fixture.failOnOutboxInsert && sql.includes('INSERT INTO sync_outbox')) {
+            throw new Error('Injected outbox insert failure');
           }
           return database.prepare(sql).run(...params);
         },
@@ -126,7 +131,7 @@ afterEach(async () => {
 });
 
 describe('local database initialization', () => {
-  test('creates profile and Solo session schemas on a fresh database', async () => {
+  test('creates profile, Solo session, violation and outbox schemas on a fresh database', async () => {
     const { getLocalDatabase } = await loadDatabaseModule();
     const database = await getLocalDatabase();
 
@@ -136,21 +141,102 @@ describe('local database initialization', () => {
     const sessionsTable = await database.getFirstAsync<{ name: string }>(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sessions'",
     );
+    const violationsTable = await database.getFirstAsync<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'violation_logs'",
+    );
+    const outboxTable = await database.getFirstAsync<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sync_outbox'",
+    );
     const sessionColumns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(sessions)');
     const version = await database.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
     const columns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(local_profiles)');
 
     expect(profileTable?.name).toBe('local_profiles');
     expect(sessionsTable?.name).toBe('sessions');
+    expect(violationsTable?.name).toBe('violation_logs');
+    expect(outboxTable?.name).toBe('sync_outbox');
     expect(sessionColumns.map(({ name }) => name)).toContain('user_id');
     expect(sessionColumns.map(({ name }) => name)).toContain('duration_seconds');
-    expect(version?.user_version).toBe(2);
+    expect(version?.user_version).toBe(3);
     expect(columns?.map(({ name }) => name)).toEqual([
       'uid',
       'email',
       'display_name',
       'created_at_utc_ms',
     ]);
+  });
+
+  test('upgrades a version 2 database and preserves existing profile and session data', async () => {
+    const { getLocalDatabase } = await loadDatabaseModule();
+    const database = await getLocalDatabase();
+    await database.runAsync(
+      `INSERT INTO local_profiles (uid, email, display_name, created_at_utc_ms) VALUES (?, ?, ?, ?)`,
+      'owner-1', 'owner@example.test', 'Owner', 1,
+    );
+    await database.runAsync(
+      `INSERT INTO sessions (id, user_id, mode, status, duration_seconds, started_at)
+       VALUES (?, ?, 'STOPWATCH', 'ACTIVE', 0, ?)`,
+      'session-1', 'owner-1', '2026-10-18T01:02:03.000Z',
+    );
+    await database.execAsync('DROP TABLE sync_outbox; DROP TABLE violation_logs; PRAGMA user_version = 2;');
+    await database.closeAsync();
+
+    const reopened = await (await loadDatabaseModule()).getLocalDatabase();
+    expect(await reopened.getFirstAsync('SELECT uid, display_name FROM local_profiles WHERE uid = ?', 'owner-1'))
+      .toEqual({ uid: 'owner-1', display_name: 'Owner' });
+    expect(await reopened.getFirstAsync('SELECT id, user_id FROM sessions WHERE id = ?', 'session-1'))
+      .toEqual({ id: 'session-1', user_id: 'owner-1' });
+    expect(await reopened.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 3 });
+    expect(await reopened.getFirstAsync("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sync_outbox'"))
+      .toEqual({ name: 'sync_outbox' });
+    await reopened.closeAsync();
+  });
+
+  test('records a violation and its outbox event in one local transaction', async () => {
+    const { getLocalDatabase } = await loadDatabaseModule();
+    const database = await getLocalDatabase();
+    const { recordViolationStart, endViolation } = require('../src/features/solo/violation-repository') as typeof import('../src/features/solo/violation-repository');
+    const startedAtUtcMs = Date.parse('2026-10-18T01:00:00.000Z');
+    const record = await recordViolationStart(database, {
+      sessionId: 'session-1', userId: 'owner-1', startedAtUtcMs, confirmedAtUtcMs: startedAtUtcMs + 3_000,
+    }, { createId: () => 'violation-1', now: () => startedAtUtcMs + 3_000 });
+
+    expect(record).toMatchObject({ eventId: 'violation-1', endedAtUtcMs: null, durationSeconds: 3 });
+    expect(await database.getFirstAsync('SELECT event_id, session_id, duration_seconds FROM violation_logs'))
+      .toEqual({ event_id: 'violation-1', session_id: 'session-1', duration_seconds: 3 });
+    expect(await database.getFirstAsync('SELECT event_id, event_type, sync_status FROM sync_outbox'))
+      .toEqual({ event_id: 'violation-1', event_type: 'VIOLATION_RECORDED', sync_status: 'PENDING' });
+
+    const endedAtUtcMs = startedAtUtcMs + 7_250;
+    expect(await endViolation(database, { eventId: 'violation-1', endedAtUtcMs })).toBe(true);
+    expect(await endViolation(database, { eventId: 'violation-1', endedAtUtcMs: endedAtUtcMs + 5_000 })).toBe(false);
+    const updatedViolation = await database.getFirstAsync('SELECT ended_at, duration_seconds FROM violation_logs');
+    const updatedEvent = await database.getFirstAsync<{ payload_json: string }>('SELECT payload_json FROM sync_outbox');
+    expect(updatedViolation).toEqual({ ended_at: new Date(endedAtUtcMs).toISOString(), duration_seconds: 7 });
+    expect(JSON.parse(updatedEvent?.payload_json ?? '{}')).toEqual({
+      startedAtUtcMs,
+      endedAtUtcMs,
+      durationSeconds: 7,
+    });
+    await database.closeAsync();
+  });
+
+  test('rolls back the violation row when its outbox insert fails', async () => {
+    const currentHarness = harness;
+    if (!currentHarness) throw new Error('SQLite test harness was not initialized.');
+    const database = await (await loadDatabaseModule()).getLocalDatabase();
+    const { recordViolationStart } = require('../src/features/solo/violation-repository') as typeof import('../src/features/solo/violation-repository');
+    currentHarness.failOnOutboxInsert = true;
+
+    await expect(recordViolationStart(database, {
+      sessionId: 'session-1',
+      userId: 'owner-1',
+      startedAtUtcMs: 10_000,
+      confirmedAtUtcMs: 13_000,
+    }, { createId: () => 'violation-failed', now: () => 13_000 })).rejects.toThrow('Injected outbox insert failure');
+    expect(await database.getFirstAsync('SELECT COUNT(*) AS count FROM violation_logs')).toEqual({ count: 0 });
+    expect(await database.getFirstAsync('SELECT COUNT(*) AS count FROM sync_outbox')).toEqual({ count: 0 });
+    await database.closeAsync();
   });
 
   test('starts or resumes one ACTIVE Solo session per owner UID', async () => {
@@ -265,7 +351,7 @@ describe('local database initialization', () => {
     const version = await reopened.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
 
     expect(profile).toEqual({ uid: 'owner-1', display_name: 'Owner' });
-    expect(version?.user_version).toBe(2);
+    expect(version?.user_version).toBe(3);
     await reopened.closeAsync();
   });
 
@@ -297,7 +383,7 @@ describe('local database initialization', () => {
 
     expect(profile).toEqual({ uid: 'owner-1', display_name: 'Owner' });
     expect(sessionsTable?.name).toBe('sessions');
-    expect(version?.user_version).toBe(2);
+    expect(version?.user_version).toBe(3);
     await upgraded.closeAsync();
   });
 
@@ -354,7 +440,7 @@ test('adopts an existing profile table with a missing schema version without del
   const { getLocalDatabase } = await loadDatabaseModule();
   const database = await getLocalDatabase();
   expect(await database.getFirstAsync('SELECT uid, display_name FROM local_profiles')).toEqual({ uid: 'legacy-owner', display_name: 'Legacy Name' });
-  expect(await database.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 2 });
+  expect(await database.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 3 });
 });
 
 test('adopts existing profile and session tables if schema version metadata was reset', async () => {
@@ -366,7 +452,7 @@ test('adopts existing profile and session tables if schema version metadata was 
   const next = await loadDatabaseModule();
   const reopened = await next.getLocalDatabase();
   expect(await reopened.getFirstAsync('SELECT id FROM sessions')).toEqual({ id: 'saved-session' });
-  expect(await reopened.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 2 });
+  expect(await reopened.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 3 });
 });
 
 test('rejects an incompatible existing profile table without marking it migrated or dropping data', async () => {

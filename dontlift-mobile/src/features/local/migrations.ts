@@ -10,7 +10,7 @@ type ExpectedColumn = { type: 'TEXT' | 'INTEGER'; notnull: number; pk: number };
 
 async function validateExistingSchema(
   database: SQLite.SQLiteDatabase,
-  table: 'local_profiles' | 'sessions',
+  table: 'local_profiles' | 'sessions' | 'violation_logs' | 'sync_outbox',
   expected: Record<string, ExpectedColumn>,
 ): Promise<void> {
   const columns = await database.getAllAsync<{ name: string; type: string; notnull: number; pk: number }>(
@@ -78,6 +78,79 @@ const migrations: LocalMigration[] = [
         ON sessions(user_id)
         WHERE mode IN ('COUNTDOWN', 'STOPWATCH') AND status = 'ACTIVE';
     `);
+    },
+  },
+  {
+    version: 3,
+    migrate: async (database) => {
+      await database.execAsync(`
+      CREATE TABLE IF NOT EXISTS violation_logs (
+        event_id TEXT PRIMARY KEY NOT NULL,
+        session_id TEXT NOT NULL,
+        room_id TEXT,
+        user_id TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        ended_at TEXT,
+        duration_seconds INTEGER NOT NULL DEFAULT 0 CHECK(duration_seconds >= 0),
+        sync_status TEXT NOT NULL CHECK(sync_status IN ('PENDING', 'SYNCED', 'FAILED')),
+        created_at TEXT NOT NULL,
+        synced_at TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS sync_outbox (
+        event_id TEXT PRIMARY KEY NOT NULL,
+        event_type TEXT NOT NULL CHECK(event_type IN ('VIOLATION_RECORDED', 'SOLO_SESSION_COMPLETED', 'GROUP_SESSION_LOCAL_SUMMARY')),
+        schema_version INTEGER NOT NULL CHECK(schema_version > 0),
+        aggregate_type TEXT NOT NULL CHECK(aggregate_type IN ('SOLO_SESSION', 'GROUP_SESSION', 'ROOM')),
+        aggregate_id TEXT NOT NULL,
+        session_id TEXT,
+        actor_uid TEXT NOT NULL,
+        occurred_at_utc_ms INTEGER NOT NULL,
+        payload_json TEXT NOT NULL,
+        sync_status TEXT NOT NULL CHECK(sync_status IN ('PENDING', 'SYNCED', 'FAILED')),
+        attempt_count INTEGER NOT NULL DEFAULT 0 CHECK(attempt_count >= 0),
+        next_attempt_at INTEGER,
+        lease_expires_at INTEGER,
+        last_error_code TEXT,
+        created_at TEXT NOT NULL,
+        synced_at TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_violation_logs_session_started
+        ON violation_logs(session_id, started_at);
+      CREATE INDEX IF NOT EXISTS idx_sync_outbox_pending_order
+        ON sync_outbox(sync_status, occurred_at_utc_ms, aggregate_id);
+    `);
+      await validateExistingSchema(database, 'violation_logs', {
+        event_id: { type: 'TEXT', notnull: 1, pk: 1 },
+        session_id: { type: 'TEXT', notnull: 1, pk: 0 },
+        room_id: { type: 'TEXT', notnull: 0, pk: 0 },
+        user_id: { type: 'TEXT', notnull: 1, pk: 0 },
+        started_at: { type: 'TEXT', notnull: 1, pk: 0 },
+        ended_at: { type: 'TEXT', notnull: 0, pk: 0 },
+        duration_seconds: { type: 'INTEGER', notnull: 1, pk: 0 },
+        sync_status: { type: 'TEXT', notnull: 1, pk: 0 },
+        created_at: { type: 'TEXT', notnull: 1, pk: 0 },
+        synced_at: { type: 'TEXT', notnull: 0, pk: 0 },
+      });
+      await validateExistingSchema(database, 'sync_outbox', {
+        event_id: { type: 'TEXT', notnull: 1, pk: 1 },
+        event_type: { type: 'TEXT', notnull: 1, pk: 0 },
+        schema_version: { type: 'INTEGER', notnull: 1, pk: 0 },
+        aggregate_type: { type: 'TEXT', notnull: 1, pk: 0 },
+        aggregate_id: { type: 'TEXT', notnull: 1, pk: 0 },
+        session_id: { type: 'TEXT', notnull: 0, pk: 0 },
+        actor_uid: { type: 'TEXT', notnull: 1, pk: 0 },
+        occurred_at_utc_ms: { type: 'INTEGER', notnull: 1, pk: 0 },
+        payload_json: { type: 'TEXT', notnull: 1, pk: 0 },
+        sync_status: { type: 'TEXT', notnull: 1, pk: 0 },
+        attempt_count: { type: 'INTEGER', notnull: 1, pk: 0 },
+        next_attempt_at: { type: 'INTEGER', notnull: 0, pk: 0 },
+        lease_expires_at: { type: 'INTEGER', notnull: 0, pk: 0 },
+        last_error_code: { type: 'TEXT', notnull: 0, pk: 0 },
+        created_at: { type: 'TEXT', notnull: 1, pk: 0 },
+        synced_at: { type: 'TEXT', notnull: 0, pk: 0 },
+      });
     },
   },
 ];

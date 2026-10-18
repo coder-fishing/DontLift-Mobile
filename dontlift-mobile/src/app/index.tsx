@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import type { AccelerometerMeasurement } from 'expo-sensors';
 import {
   ActivityIndicator,
   AppState,
@@ -31,12 +32,28 @@ import { ActivationScreen } from '../screens/ActivationScreen';
 import { HardwareDiagnosticsScreen } from '../screens/HardwareDiagnosticsScreen';
 import { useAuthSession } from '../features/auth/auth-session';
 import { useSensorAvailability } from '../features/sensors/use-sensor-availability';
+import { accelerometerAdapter } from '../features/sensors/sensor-adapter';
 import type { RegistrationProfile, RegistrationUser } from '../features/auth/auth-controller';
 import type { AuthSessionState } from '../features/auth/auth-session-controller';
 import { createLocalSessionRepository } from '../features/solo/local-session-repository';
 import { createSoloSessionController, getSoloSessionTime, type SoloSession } from '../features/solo/session-controller';
+import { createViolationRepository } from '../features/solo/violation-repository';
+import {
+  createForegroundDetectionController,
+  type ForegroundDetectionController,
+  type ForegroundDetectionViewState,
+} from '../features/solo/foreground-detection-controller';
 
 const soloSessionController = createSoloSessionController(createLocalSessionRepository());
+const violationRepository = createViolationRepository();
+const INITIAL_DETECTION_STATE: ForegroundDetectionViewState = {
+  orientation: 'UNKNOWN',
+  isGraceActive: false,
+  isViolationActive: false,
+  graceSeconds: 0,
+  violationsCount: 0,
+  violationDurationSeconds: 0,
+};
 
 export default function HomeScreen() {
   const session = useAuthSession();
@@ -102,6 +119,8 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const [soloNow, setSoloNow] = useState<number>(Date.now());
   const [isStartingSolo, setIsStartingSolo] = useState<boolean>(false);
   const [isCancellingSolo, setIsCancellingSolo] = useState<boolean>(false);
+  const [foregroundDetection, setForegroundDetection] = useState<ForegroundDetectionViewState>(INITIAL_DETECTION_STATE);
+  const foregroundDetectionController = useRef<ForegroundDetectionController | null>(null);
   const soloStartPending = useRef(false);
   const isMounted = useRef(false);
 
@@ -110,10 +129,6 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     return () => { isMounted.current = false; };
   }, []);
   const [soloStartError, setSoloStartError] = useState<string | undefined>();
-  const [isPhoneGrounded, setIsPhoneGrounded] = useState<boolean>(true);
-  const [isGraceActive, setIsGraceActive] = useState<boolean>(false);
-  const [graceSeconds, setGraceSeconds] = useState<number>(3);
-  const [violationsCount, setViolationsCount] = useState<number>(0);
   const [streakDays, setStreakDays] = useState<number>(6);
 
   // Group State
@@ -142,37 +157,104 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   }, [currentScreen, activeSoloSession]);
 
   useEffect(() => {
+    if (!activeSoloSession) {
+      foregroundDetectionController.current = null;
+      setForegroundDetection(INITIAL_DETECTION_STATE);
+      return undefined;
+    }
+
+    const controller = createForegroundDetectionController(
+      { id: activeSoloSession.id, userId: activeSoloSession.userId },
+      violationRepository,
+    );
+    foregroundDetectionController.current = controller;
+    let disposed = false;
+    let initialized = false;
+    let processing = false;
+    let latestMeasurement: AccelerometerMeasurement | undefined;
+    let tickRequested = false;
+
+    const drain = async () => {
+      if (disposed || processing || !initialized) return;
+      processing = true;
+      try {
+        while (!disposed && (latestMeasurement || tickRequested)) {
+          if (latestMeasurement) {
+            const measurement = latestMeasurement;
+            latestMeasurement = undefined;
+            const nextState = await controller.observeSample(measurement, Date.now());
+            if (!disposed) setForegroundDetection(nextState);
+          } else {
+            tickRequested = false;
+            const nextState = await controller.tick(Date.now());
+            if (!disposed) setForegroundDetection(nextState);
+          }
+        }
+      } catch {
+        if (!disposed) {
+          setForegroundDetection((state) => ({
+            ...state,
+            persistenceError: 'Phone-down detection is temporarily unavailable. Check device sensors and retry.',
+          }));
+        }
+      } finally {
+        processing = false;
+        if (!disposed && (latestMeasurement || tickRequested)) void drain();
+      }
+    };
+
+    void controller.initialize().then((state) => {
+      if (disposed) return;
+      setForegroundDetection(state);
+      initialized = true;
+      void drain();
+    }).catch(() => {
+      if (!disposed) {
+        setForegroundDetection((state) => ({
+          ...state,
+          persistenceError: 'Could not load this session’s violation history from the device.',
+        }));
+      }
+    });
+
+    try {
+      accelerometerAdapter.setUpdateInterval(20);
+      const subscription = accelerometerAdapter.subscribe((measurement) => {
+        latestMeasurement = measurement;
+        void drain();
+      });
+      const timer = setInterval(() => {
+        tickRequested = true;
+        void drain();
+      }, 200);
+
+      return () => {
+        disposed = true;
+        subscription.remove();
+        clearInterval(timer);
+        if (foregroundDetectionController.current === controller) foregroundDetectionController.current = null;
+      };
+    } catch {
+      disposed = true;
+      setForegroundDetection((state) => ({
+        ...state,
+        persistenceError: 'Could not start the accelerometer. Check sensor availability and retry.',
+      }));
+      return () => {
+        if (foregroundDetectionController.current === controller) foregroundDetectionController.current = null;
+      };
+    }
+  }, [activeSoloSession]);
+
+  useEffect(() => {
     if (currentScreen !== '03-solo-timer') return undefined;
     const back = BackHandler.addEventListener('hardwareBackPress', () => {
       // Quay về màn chọn không kết thúc hay xóa session ACTIVE đã lưu.
-      setIsPhoneGrounded(true);
-      setIsGraceActive(false);
       setCurrentScreen('02-solo-select');
       return true;
     });
     return () => back.remove();
   }, [currentScreen]);
-
-  // Grace timer effect
-  useEffect(() => {
-    let graceTimer: ReturnType<typeof setInterval> | null = null;
-    if (isGraceActive && graceSeconds > 0) {
-      graceTimer = setInterval(() => {
-        setGraceSeconds((prev) => {
-          if (prev <= 1) {
-            setIsGraceActive(false);
-            setViolationsCount((v) => v + 1);
-            Alert.alert('⚠️ Violation Recorded', 'Grace window elapsed. +10 penalty points logged.');
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
-    return () => {
-      if (graceTimer) clearInterval(graceTimer);
-    };
-  }, [isGraceActive, graceSeconds]);
 
   // 40/60 Bill Split calculation
   const billBreakdown: BillParticipantShare[] = useMemo(() => {
@@ -219,9 +301,6 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
         setSelectedDuration(result.session.durationSeconds / 60);
       }
       setSoloNow(Date.now());
-      setIsPhoneGrounded(true);
-      setIsGraceActive(false);
-      setViolationsCount(0);
       setCurrentScreen('03-solo-timer');
       if (result.resumed) {
         Alert.alert('Active session continued', 'Your existing Solo session was restored from this device.');
@@ -240,20 +319,6 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     }
   };
 
-  const handleTogglePhoneLift = () => {
-    if (isPhoneGrounded) {
-      setIsPhoneGrounded(false);
-      setIsGraceActive(true);
-      setGraceSeconds(3);
-    } else {
-      setIsPhoneGrounded(true);
-      if (isGraceActive) {
-        setIsGraceActive(false);
-        Alert.alert('✅ Re-grounded', 'Phone placed back face-down in time. 0 penalty points.');
-      }
-    }
-  };
-
   const continueActiveSoloSession = () => {
     if (!activeSoloSession || isCancellingSolo) return;
     setSelectedMode(activeSoloSession.mode);
@@ -261,8 +326,6 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       setSelectedDuration(activeSoloSession.durationSeconds / 60);
     }
     setSoloNow(Date.now());
-    setIsPhoneGrounded(true);
-    setIsGraceActive(false);
     setCurrentScreen('03-solo-timer');
   };
 
@@ -271,6 +334,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     soloStartPending.current = true;
     setIsCancellingSolo(true);
     try {
+      await foregroundDetectionController.current?.endCurrentViolation(Date.now());
       const cancelled = await soloSessionController.cancel({
         userId: profile.uid,
         sessionId: activeSoloSession.id,
@@ -282,8 +346,6 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       }
       setActiveSoloSession(null);
       setSoloStartError(undefined);
-      setIsPhoneGrounded(true);
-      setIsGraceActive(false);
       setCurrentScreen('02-solo-select');
     } catch {
       if (isMounted.current) {
@@ -308,8 +370,6 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   };
 
   const handleEndSoloSession = () => {
-    setIsPhoneGrounded(true);
-    setIsGraceActive(false);
     setCurrentScreen('02-solo-select');
   };
 
@@ -373,11 +433,13 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
             mode={activeSoloSession?.mode ?? selectedMode}
             selectedDuration={selectedDuration}
             secondsLeft={soloSecondsLeft}
-            isPhoneGrounded={isPhoneGrounded}
-            isGraceActive={isGraceActive}
-            graceSeconds={graceSeconds}
-            violationsCount={violationsCount}
-            onTogglePhoneLift={handleTogglePhoneLift}
+            orientation={foregroundDetection.orientation}
+            isGraceActive={foregroundDetection.isGraceActive}
+            isViolationActive={foregroundDetection.isViolationActive}
+            graceSeconds={foregroundDetection.graceSeconds}
+            violationsCount={foregroundDetection.violationsCount}
+            violationDurationSeconds={foregroundDetection.violationDurationSeconds}
+            detectionError={foregroundDetection.persistenceError}
             onEndSession={handleEndSoloSession}
             onCancelSession={confirmCancelSoloSession}
             isCancelling={isCancellingSolo}

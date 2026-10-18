@@ -3,16 +3,19 @@ import { View, Text, StyleSheet, Platform } from 'react-native';
 import { GlassCard } from '../components/GlassCard';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { formatTime } from '../constants';
+import type { PhoneOrientation } from '../features/sensors/phone-down-engine';
 
 interface SoloTimerScreenProps {
   mode: 'COUNTDOWN' | 'STOPWATCH';
   selectedDuration: number;
   secondsLeft: number;
-  isPhoneGrounded: boolean;
+  orientation: PhoneOrientation;
   isGraceActive: boolean;
+  isViolationActive: boolean;
   graceSeconds: number;
   violationsCount: number;
-  onTogglePhoneLift: () => void;
+  violationDurationSeconds: number;
+  detectionError?: string;
   onEndSession: () => void;
   onCancelSession: () => void;
   isCancelling: boolean;
@@ -22,16 +25,27 @@ export function SoloTimerScreen({
   mode,
   selectedDuration,
   secondsLeft,
-  isPhoneGrounded,
+  orientation,
   isGraceActive,
+  isViolationActive,
   graceSeconds,
   violationsCount,
-  onTogglePhoneLift,
+  violationDurationSeconds,
+  detectionError,
   onEndSession,
   onCancelSession,
   isCancelling,
 }: SoloTimerScreenProps) {
   const isCountdown = mode === 'COUNTDOWN';
+  const isFaceDown = orientation === 'FACE_DOWN';
+  const isAwayFromFaceDown = orientation === 'LIFTED' || orientation === 'INVALID';
+  const orientationLabel = orientation === 'FACE_DOWN'
+    ? 'Face down'
+    : orientation === 'LIFTED'
+      ? 'Lifted'
+      : orientation === 'INVALID'
+        ? 'Unstable sensor'
+        : 'Checking position';
   return (
     <View style={styles.container}>
       {/* Top Status Bar */}
@@ -41,26 +55,34 @@ export function SoloTimerScreen({
             <View
               style={[
                 styles.pulseDot,
-                { backgroundColor: isPhoneGrounded ? '#2563EB' : '#DC2626' },
+                { backgroundColor: isAwayFromFaceDown ? '#DC2626' : isFaceDown ? '#2563EB' : '#94A3B8' },
               ]}
             />
             <View>
               <Text style={styles.statusTitle}>
-                {isPhoneGrounded ? 'Phone-Down Detection: Active' : 'Phone Lifted!'}
+                {isViolationActive
+                  ? 'Violation recorded'
+                  : isGraceActive
+                    ? 'Phone lift detected'
+                    : isFaceDown
+                      ? 'Phone-down detection active'
+                      : orientation === 'UNKNOWN'
+                        ? 'Reading phone position'
+                        : 'Phone is not face-down'}
               </Text>
               <Text
                 style={[
                   styles.statusSub,
-                  { color: isPhoneGrounded ? '#2563EB' : '#DC2626' },
+                  { color: isAwayFromFaceDown ? '#DC2626' : isFaceDown ? '#2563EB' : '#64748B' },
                 ]}
               >
-                {isPhoneGrounded ? 'AMBIENT GYRO LOCKED' : 'BREACH IN PROGRESS'}
+                {isViolationActive ? 'VIOLATION ACTIVE' : isGraceActive ? 'GRACE PERIOD' : orientationLabel.toUpperCase()}
               </Text>
             </View>
           </View>
           <View style={styles.orientationBadge}>
             <Text style={styles.orientationText}>
-              {isPhoneGrounded ? 'Flat Surface' : 'Off Table'}
+              {orientationLabel}
             </Text>
           </View>
         </View>
@@ -75,7 +97,7 @@ export function SoloTimerScreen({
         <View
           style={[
             styles.timerRing,
-            isGraceActive && { borderColor: '#EF4444', shadowColor: '#EF4444' },
+            (isGraceActive || isViolationActive) && { borderColor: '#EF4444', shadowColor: '#EF4444' },
           ]}
         >
           <Text style={styles.timerNumber}>{formatTime(secondsLeft)}</Text>
@@ -95,25 +117,22 @@ export function SoloTimerScreen({
       </GlassCard>
 
       {/* Grace Alert if Lifted */}
-      {isGraceActive && (
+      {(isGraceActive || isViolationActive) && (
         <View style={styles.graceBox}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.graceTitle}>🚨 Lift Detected!</Text>
-            <Text style={styles.graceSub}>Place phone face-down immediately</Text>
+            <Text style={styles.graceTitle}>{isViolationActive ? 'Violation recorded' : 'Lift detected'}</Text>
+            <Text style={styles.graceSub}>
+              {isViolationActive ? 'Place the phone face-down to end the violation' : 'Place the phone face-down within 3 seconds'}
+            </Text>
           </View>
-          <View style={styles.graceCircle}>
+          {isGraceActive && <View style={styles.graceCircle}>
             <Text style={styles.graceCircleText}>{graceSeconds}s</Text>
-          </View>
+          </View>}
         </View>
       )}
 
-      {/* Simulation Button */}
       <View style={styles.actions}>
-        <PrimaryButton
-          title={isPhoneGrounded ? 'Elevator Simulation (Simulate Lift)' : 'Put Phone Face-Down'}
-          variant={isPhoneGrounded ? 'secondary' : 'danger'}
-          onPress={onTogglePhoneLift}
-        />
+        {detectionError && <Text accessibilityRole="alert" style={styles.detectionError}>{detectionError}</Text>}
 
         <PrimaryButton
           title="Cancel session"
@@ -136,13 +155,13 @@ export function SoloTimerScreen({
         <View style={styles.violationHeader}>
           <Text style={styles.violationTitle}>Violations Logged ({violationsCount})</Text>
           <Text style={styles.violationStatus}>
-            {violationsCount === 0 ? '✓ Clean Session' : `⚠️ ${violationsCount * 10} Pts`}
+            {violationsCount === 0 ? 'Clean session' : `${violationsCount * 10 + violationDurationSeconds} points`}
           </Text>
         </View>
         <Text style={styles.violationNote}>
           {violationsCount === 0
-            ? 'No penalties recorded yet • Streak protected'
-            : `${violationsCount} lift breaches recorded in SQLite log`}
+            ? 'No violations recorded yet'
+            : `${violationsCount} violations · ${formatTime(violationDurationSeconds)} total`}
         </Text>
       </GlassCard>
     </View>
@@ -288,6 +307,11 @@ const styles = StyleSheet.create({
   },
   actions: {
     width: '100%',
+  },
+  detectionError: {
+    color: '#991B1B',
+    fontSize: 12,
+    marginBottom: 8,
   },
   violationsCard: {
     padding: 14,
