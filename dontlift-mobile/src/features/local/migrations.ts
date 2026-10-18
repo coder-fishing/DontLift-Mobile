@@ -10,7 +10,7 @@ type ExpectedColumn = { type: 'TEXT' | 'INTEGER'; notnull: number; pk: number };
 
 async function validateExistingSchema(
   database: SQLite.SQLiteDatabase,
-  table: 'local_profiles',
+  table: 'local_profiles' | 'sessions',
   expected: Record<string, ExpectedColumn>,
 ): Promise<void> {
   const columns = await database.getAllAsync<{ name: string; type: string; notnull: number; pk: number }>(
@@ -46,7 +46,40 @@ const migrations: LocalMigration[] = [
       });
     },
   },
+  {
+    version: 2,
+    migrate: async (database) => {
+      await database.execAsync(`
+      CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY NOT NULL,
+        user_id TEXT NOT NULL,
+        mode TEXT CHECK(mode IN ('COUNTDOWN', 'STOPWATCH', 'GROUP')) NOT NULL,
+        status TEXT CHECK(status IN ('CREATED', 'ACTIVE', 'COMPLETED', 'CANCELLED')) NOT NULL,
+        duration_seconds INTEGER NOT NULL DEFAULT 0,
+        started_at TEXT NOT NULL,
+        completed_at TEXT,
+        synced_at TEXT
+      );
 
+    `);
+      await validateExistingSchema(database, 'sessions', {
+        id: { type: 'TEXT', notnull: 1, pk: 1 },
+        user_id: { type: 'TEXT', notnull: 1, pk: 0 },
+        mode: { type: 'TEXT', notnull: 1, pk: 0 },
+        status: { type: 'TEXT', notnull: 1, pk: 0 },
+        duration_seconds: { type: 'INTEGER', notnull: 1, pk: 0 },
+        started_at: { type: 'TEXT', notnull: 1, pk: 0 },
+        completed_at: { type: 'TEXT', notnull: 0, pk: 0 },
+        synced_at: { type: 'TEXT', notnull: 0, pk: 0 },
+      });
+      await database.execAsync(`
+      -- Mỗi tài khoản chỉ có một session Solo đang chạy để lần Start sau có thể tiếp tục đúng session.
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_solo_session_per_user
+        ON sessions(user_id)
+        WHERE mode IN ('COUNTDOWN', 'STOPWATCH') AND status = 'ACTIVE';
+    `);
+    },
+  },
 ];
 
 const latestSchemaVersion = migrations.at(-1)?.version ?? 0;

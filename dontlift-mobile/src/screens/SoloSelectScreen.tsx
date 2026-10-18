@@ -1,15 +1,24 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, useColorScheme } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Platform } from 'react-native';
 import { Colors } from '../constants/theme';
 import { GlassCard } from '../components/GlassCard';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { SensorAvailabilityPanel } from '../components/SensorAvailabilityPanel';
 import type { SensorAvailabilityState } from '../features/sensors/sensor-adapter';
+import type { SoloSession } from '../features/solo/session-controller';
 
 interface SoloSelectScreenProps {
   selectedDuration: number;
+  selectedMode: 'COUNTDOWN' | 'STOPWATCH';
   onSelectDuration: (mins: number) => void;
-  onStartSession: (mins: number) => void;
+  onSelectMode: (mode: 'COUNTDOWN' | 'STOPWATCH') => void;
+  onStartSession: (mode: 'COUNTDOWN' | 'STOPWATCH', mins: number) => void;
+  onContinueSession: () => void;
+  onCancelSession: () => void;
+  isStarting: boolean;
+  isCancelling: boolean;
+  startError?: string;
+  activeSession?: SoloSession | null;
   sensorAvailability: SensorAvailabilityState;
   onRetrySensorCheck: () => void;
   onOpenSettings: () => void;
@@ -17,17 +26,30 @@ interface SoloSelectScreenProps {
 
 export function SoloSelectScreen({
   selectedDuration,
+  selectedMode,
   onSelectDuration,
+  onSelectMode,
   onStartSession,
+  onContinueSession,
+  onCancelSession,
+  isStarting,
+  isCancelling,
+  startError,
+  activeSession,
   sensorAvailability,
   onRetrySensorCheck,
   onOpenSettings,
 }: SoloSelectScreenProps) {
-  const colorScheme = useColorScheme() ?? 'light';
-  const colors = colorScheme === 'dark' ? Colors.dark : Colors.light;
-  const [customMinutes, setCustomMinutes] = useState<number>(90);
-  const [showCustomStepper, setShowCustomStepper] = useState<boolean>(false);
+  // Màn Solo đang dùng backdrop và GlassCard sáng; giữ foreground cùng palette để chữ luôn tương phản.
+  const colors = Colors.light;
+  // Màn chọn có thể được mở lại sau timer; khôi phục custom từ lựa chọn đang giữ ở màn cha.
+  const [customMinutes, setCustomMinutes] = useState<number>(() =>
+    [25, 45, 60].includes(selectedDuration) ? 90 : selectedDuration);
+  const [showCustomStepper, setShowCustomStepper] = useState<boolean>(() =>
+    ![25, 45, 60].includes(selectedDuration));
   const canStartSession = sensorAvailability.kind === 'ready';
+  const choicesLocked = isStarting || isCancelling || Boolean(activeSession);
+  const isCountdown = selectedMode === 'COUNTDOWN';
 
   return (
     <View style={styles.container}>
@@ -38,8 +60,54 @@ export function SoloSelectScreen({
         </Text>
       </View>
 
+      {activeSession ? (
+        <GlassCard style={styles.activeSessionCard}>
+          <Text style={[styles.activeSessionTitle, { color: colors.text }]}>Active session saved</Text>
+          <Text style={[styles.activeSessionBody, { color: colors.textSecondary }]}>
+            Continue your saved {activeSession.mode === 'COUNTDOWN'
+              ? `${activeSession.durationSeconds / 60}-minute Countdown`
+              : 'Stopwatch'} session from its current time.
+          </Text>
+          <PrimaryButton
+            title={`Continue ${activeSession.mode === 'COUNTDOWN' ? 'Countdown' : 'Stopwatch'}`}
+            onPress={onContinueSession}
+            disabled={isStarting || isCancelling}
+            accessibilityHint="Return to the active Solo timer"
+            style={styles.cancelSessionButton}
+          />
+          <PrimaryButton
+            title="Cancel session"
+            variant="danger"
+            onPress={onCancelSession}
+            disabled={isStarting}
+            style={styles.cancelSessionButton}
+          />
+        </GlassCard>
+      ) : null}
+
+      <View style={styles.modeSelector} accessibilityRole="tablist">
+        {([
+          { mode: 'COUNTDOWN' as const, title: 'Countdown Timer' },
+          { mode: 'STOPWATCH' as const, title: 'Open-ended Stopwatch' },
+        ]).map(({ mode, title }) => {
+          const selected = selectedMode === mode;
+          return (
+            <Pressable
+              key={mode}
+              accessibilityRole="tab"
+              disabled={choicesLocked}
+              accessibilityState={{ selected, disabled: choicesLocked }}
+              onPress={() => onSelectMode(mode)}
+              style={[styles.modeOption, selected && styles.modeOptionActive]}
+            >
+              <Text style={[styles.modeText, selected && styles.modeTextActive]}>{title}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
       {/* 4 Interval Cards */}
-      <View style={styles.cardsGrid}>
+      <View style={[styles.cardsGrid, !isCountdown && styles.cardsGridDisabled]}>
         {[
           { duration: 25, title: 'Pomodoro Sprint', desc: 'Standard block', tag: 'Recommended' },
           { duration: 45, title: 'Deep Work Flow', desc: 'Cognitive peak', tag: 'Standard' },
@@ -52,11 +120,11 @@ export function SoloSelectScreen({
             : selectedDuration === item.duration && !showCustomStepper;
 
           return (
-            <TouchableOpacity
+            <Pressable
               key={idx}
-              activeOpacity={0.8}
+              disabled={!isCountdown || choicesLocked}
               accessibilityRole="button"
-              accessibilityState={{ selected: isSelected }}
+              accessibilityState={{ selected: isSelected, disabled: !isCountdown || choicesLocked }}
               onPress={() => {
                 if (isCustom) {
                   setShowCustomStepper(true);
@@ -91,17 +159,22 @@ export function SoloSelectScreen({
               </Text>
               <Text style={[styles.cardTitle, { color: colors.text }]}>{item.title}</Text>
               <Text style={[styles.cardDesc, { color: colors.textSecondary }]}>{item.desc}</Text>
-            </TouchableOpacity>
+            </Pressable>
           );
         })}
       </View>
 
       {/* Stepper adjustment row if custom */}
-      {showCustomStepper && (
+      {isCountdown && showCustomStepper && (
         <GlassCard style={styles.stepperCard}>
           <Text style={[styles.stepperTitle, { color: colors.text }]}>Adjust Custom Interval</Text>
           <View style={styles.stepperControls}>
-            <TouchableOpacity
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Decrease duration by 5 minutes"
+              disabled={choicesLocked || customMinutes <= 5}
+              accessibilityState={{ disabled: choicesLocked || customMinutes <= 5 }}
+              hitSlop={8}
               onPress={() => {
                 const next = Math.max(5, customMinutes - 5);
                 setCustomMinutes(next);
@@ -110,9 +183,14 @@ export function SoloSelectScreen({
               style={styles.stepperBtn}
             >
               <Text style={styles.stepperBtnText}>−</Text>
-            </TouchableOpacity>
+            </Pressable>
             <Text style={styles.stepperValText}>{customMinutes}m</Text>
-            <TouchableOpacity
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Increase duration by 5 minutes"
+              disabled={choicesLocked || customMinutes >= 180}
+              accessibilityState={{ disabled: choicesLocked || customMinutes >= 180 }}
+              hitSlop={8}
               onPress={() => {
                 const next = Math.min(180, customMinutes + 5);
                 setCustomMinutes(next);
@@ -121,7 +199,7 @@ export function SoloSelectScreen({
               style={styles.stepperBtn}
             >
               <Text style={styles.stepperBtnText}>+</Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
         </GlassCard>
       )}
@@ -132,11 +210,21 @@ export function SoloSelectScreen({
         onOpenSettings={onOpenSettings}
       />
 
+      {startError ? <Text accessibilityRole="alert" style={styles.startError}>{startError}</Text> : null}
+
       <PrimaryButton
-        title={`Start ${selectedDuration}m Solo Focus Session`}
-        onPress={() => onStartSession(selectedDuration)}
-        disabled={!canStartSession}
-        accessibilityState={{ disabled: !canStartSession }}
+        title={isStarting
+          ? 'Saving session…'
+          : isCancelling
+            ? 'Cancelling session…'
+          : activeSession
+            ? `Continue ${activeSession.mode === 'COUNTDOWN' ? 'Countdown' : 'Stopwatch'}`
+            : isCountdown
+              ? `Start ${selectedDuration}m Solo Focus Session`
+              : 'Start Stopwatch'}
+        onPress={() => onStartSession(selectedMode, selectedDuration)}
+        disabled={!canStartSession || isStarting || isCancelling}
+        accessibilityState={{ disabled: !canStartSession || isStarting || isCancelling, busy: isStarting || isCancelling }}
         accessibilityHint={canStartSession ? undefined : 'The session starts after the accelerometer check is ready'}
         style={!canStartSession ? styles.startDisabled : undefined}
       />
@@ -150,6 +238,62 @@ const styles = StyleSheet.create({
   },
   startDisabled: {
     opacity: 0.55,
+  },
+  modeSelector: {
+    flexDirection: 'row',
+    gap: 4,
+    padding: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255, 255, 255, 0.56)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.84)',
+  },
+  modeOption: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  modeOptionActive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(37, 99, 235, 0.2)',
+  },
+  modeText: {
+    color: '#334155',
+    fontSize: 11,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  modeTextActive: {
+    color: '#004AC6',
+    fontWeight: '800',
+  },
+  cardsGridDisabled: {
+    opacity: 0.4,
+  },
+  startError: {
+    color: '#B91C1C',
+    fontSize: 12,
+    lineHeight: 18,
+    marginHorizontal: 4,
+  },
+  activeSessionCard: {
+    gap: 4,
+    padding: 14,
+  },
+  activeSessionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  activeSessionBody: {
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  cancelSessionButton: {
+    marginTop: 8,
   },
   titleSection: {
     marginBottom: 4,

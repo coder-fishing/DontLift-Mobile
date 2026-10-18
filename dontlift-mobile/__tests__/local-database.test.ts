@@ -36,6 +36,8 @@ type SQLiteHarness = {
   path: string;
   directory: string;
   failOnProfileMigration: boolean;
+  failOnSessionsMigration: boolean;
+  failOnSessionInsert: boolean;
   databases: TestDatabase[];
   open: () => TestDatabase;
 };
@@ -47,6 +49,8 @@ function createSQLiteHarness(databaseFile: string): SQLiteHarness {
     path: databaseFile,
     directory: path.join(databaseFile, '..'),
     failOnProfileMigration: false,
+    failOnSessionsMigration: false,
+    failOnSessionInsert: false,
     databases: [],
     open: () => {
       const { DatabaseSync } = require('node:sqlite') as { DatabaseSync: new (path: string) => NativeDatabase };
@@ -55,6 +59,9 @@ function createSQLiteHarness(databaseFile: string): SQLiteHarness {
         async execAsync(sql: string) {
           if (fixture.failOnProfileMigration && /CREATE TABLE (?:IF NOT EXISTS )?local_profiles/.test(sql)) {
             throw new Error('Injected profile migration failure');
+          }
+          if (fixture.failOnSessionsMigration && /CREATE TABLE (?:IF NOT EXISTS )?sessions/.test(sql)) {
+            throw new Error('Injected sessions migration failure');
           }
           database.exec(sql);
         },
@@ -65,6 +72,9 @@ function createSQLiteHarness(databaseFile: string): SQLiteHarness {
           return database.prepare(sql).all(...params) as T[];
         },
         async runAsync(sql: string, ...params: unknown[]) {
+          if (fixture.failOnSessionInsert && sql.includes('INSERT INTO sessions')) {
+            throw new Error('Injected session insert failure');
+          }
           return database.prepare(sql).run(...params);
         },
         async withExclusiveTransactionAsync(task) {
@@ -116,24 +126,122 @@ afterEach(async () => {
 });
 
 describe('local database initialization', () => {
-  test('creates the profile schema and records its migration version on a fresh database', async () => {
+  test('creates profile and Solo session schemas on a fresh database', async () => {
     const { getLocalDatabase } = await loadDatabaseModule();
     const database = await getLocalDatabase();
 
     const profileTable = await database.getFirstAsync<{ name: string }>(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'local_profiles'",
     );
+    const sessionsTable = await database.getFirstAsync<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sessions'",
+    );
+    const sessionColumns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(sessions)');
     const version = await database.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
     const columns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(local_profiles)');
 
     expect(profileTable?.name).toBe('local_profiles');
-    expect(version?.user_version).toBe(1);
+    expect(sessionsTable?.name).toBe('sessions');
+    expect(sessionColumns.map(({ name }) => name)).toContain('user_id');
+    expect(sessionColumns.map(({ name }) => name)).toContain('duration_seconds');
+    expect(version?.user_version).toBe(2);
     expect(columns?.map(({ name }) => name)).toEqual([
       'uid',
       'email',
       'display_name',
       'created_at_utc_ms',
     ]);
+  });
+
+  test('starts or resumes one ACTIVE Solo session per owner UID', async () => {
+    const { getLocalDatabase } = await loadDatabaseModule();
+    const database = await getLocalDatabase();
+    const { startOrResumeLocalSession } = require('../src/features/solo/local-session-repository') as typeof import('../src/features/solo/local-session-repository');
+    const startedAt = new Date('2026-10-18T01:02:03.000Z');
+
+    const first = await startOrResumeLocalSession(database, {
+      userId: 'owner-1',
+      mode: 'COUNTDOWN',
+      durationSeconds: 1500,
+    }, { createId: () => 'session-1', now: () => startedAt });
+    await database.closeAsync();
+
+    const reopenedModule = await loadDatabaseModule();
+    const reopened = await reopenedModule.getLocalDatabase();
+    const resumed = await startOrResumeLocalSession(reopened, {
+      userId: 'owner-1',
+      mode: 'STOPWATCH',
+      durationSeconds: 0,
+    }, { createId: () => 'should-not-be-used', now: () => new Date() });
+    const anotherUser = await startOrResumeLocalSession(reopened, {
+      userId: 'owner-2',
+      mode: 'STOPWATCH',
+      durationSeconds: 0,
+    }, { createId: () => 'session-2', now: () => startedAt });
+    await expect(reopened.runAsync(
+      `INSERT INTO sessions (id, user_id, mode, status, duration_seconds, started_at)
+       VALUES ('duplicate', 'owner-1', 'STOPWATCH', 'ACTIVE', 0, ?)`,
+      startedAt.toISOString(),
+    )).rejects.toThrow();
+    const rows = await reopened.getAllAsync<{ id: string; user_id: string }>(
+      'SELECT id, user_id FROM sessions ORDER BY id',
+    );
+
+    expect(first).toEqual({
+      session: {
+        id: 'session-1',
+        userId: 'owner-1',
+        mode: 'COUNTDOWN',
+        durationSeconds: 1500,
+        startedAt: startedAt.toISOString(),
+      },
+      resumed: false,
+    });
+    expect(resumed).toEqual({ ...first, resumed: true });
+    expect(anotherUser.session.userId).toBe('owner-2');
+    expect(rows).toEqual([
+      { id: 'session-1', user_id: 'owner-1' },
+      { id: 'session-2', user_id: 'owner-2' },
+    ]);
+    await reopened.closeAsync();
+  });
+
+  test('cancels only the active session owned by the UID and permits a new mode', async () => {
+    const { getLocalDatabase } = await loadDatabaseModule();
+    const database = await getLocalDatabase();
+    const { startOrResumeLocalSession, cancelActiveLocalSession } = require('../src/features/solo/local-session-repository') as typeof import('../src/features/solo/local-session-repository');
+    const first = await startOrResumeLocalSession(database, { userId: 'owner-1', mode: 'COUNTDOWN', durationSeconds: 1500 }, { createId: () => 'session-old', now: () => new Date('2026-10-18T01:02:03.000Z') });
+    const wrongOwner = await cancelActiveLocalSession(database, { userId: 'owner-2', sessionId: first.session.id });
+    expect(wrongOwner).toBe(false);
+    expect(await database.getFirstAsync("SELECT status FROM sessions WHERE id = 'session-old'")).toEqual({ status: 'ACTIVE' });
+    const cancelled = await cancelActiveLocalSession(database, { userId: 'owner-1', sessionId: first.session.id });
+    expect(cancelled).toBe(true);
+    expect(await database.getFirstAsync("SELECT status, completed_at FROM sessions WHERE id = 'session-old'")).toMatchObject({ status: 'CANCELLED' });
+    const next = await startOrResumeLocalSession(database, { userId: 'owner-1', mode: 'STOPWATCH', durationSeconds: 0 }, { createId: () => 'session-new', now: () => new Date('2026-10-18T01:10:00.000Z') });
+    expect(next).toMatchObject({ resumed: false, session: { id: 'session-new', mode: 'STOPWATCH', userId: 'owner-1' } });
+    expect(await database.getFirstAsync("SELECT COUNT(*) AS count FROM sessions WHERE user_id = 'owner-1' AND status = 'ACTIVE'")).toEqual({ count: 1 });
+    await database.closeAsync();
+  });
+
+  test('does not return a started session when the local insert fails', async () => {
+    const currentHarness = harness;
+    if (!currentHarness) throw new Error('SQLite test harness was not initialized.');
+    const { getLocalDatabase } = await loadDatabaseModule();
+    const database = await getLocalDatabase();
+    const { startOrResumeLocalSession } = require('../src/features/solo/local-session-repository') as typeof import('../src/features/solo/local-session-repository');
+    currentHarness.failOnSessionInsert = true;
+
+    await expect(startOrResumeLocalSession(database, {
+      userId: 'owner-1',
+      mode: 'COUNTDOWN',
+      durationSeconds: 1500,
+    }, { createId: () => 'session-failed', now: () => new Date('2026-10-18T01:02:03.000Z') }))
+      .rejects.toThrow('Injected session insert failure');
+
+    currentHarness.failOnSessionInsert = false;
+    const rows = await database.getAllAsync<{ id: string }>('SELECT id FROM sessions');
+    expect(rows).toEqual([]);
+    await database.closeAsync();
   });
 
   test('reopening preserves the profile and does not rerun an applied migration', async () => {
@@ -157,8 +265,63 @@ describe('local database initialization', () => {
     const version = await reopened.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
 
     expect(profile).toEqual({ uid: 'owner-1', display_name: 'Owner' });
-    expect(version?.user_version).toBe(1);
+    expect(version?.user_version).toBe(2);
     await reopened.closeAsync();
+  });
+
+  test('upgrades a version 1 profile database without losing its profile', async () => {
+    const existing = harness?.open();
+    if (!existing) throw new Error('SQLite test harness was not initialized.');
+    await existing.execAsync(
+      'CREATE TABLE local_profiles (uid TEXT PRIMARY KEY NOT NULL, email TEXT NOT NULL, display_name TEXT NOT NULL, created_at_utc_ms INTEGER NOT NULL); PRAGMA user_version = 1;',
+    );
+    await existing.runAsync(
+      'INSERT INTO local_profiles (uid, email, display_name, created_at_utc_ms) VALUES (?, ?, ?, ?)',
+      'owner-1',
+      'owner@example.test',
+      'Owner',
+      1,
+    );
+    await existing.closeAsync();
+
+    const { getLocalDatabase } = await loadDatabaseModule();
+    const upgraded = await getLocalDatabase();
+    const profile = await upgraded.getFirstAsync<{ uid: string; display_name: string }>(
+      'SELECT uid, display_name FROM local_profiles WHERE uid = ?',
+      'owner-1',
+    );
+    const sessionsTable = await upgraded.getFirstAsync<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sessions'",
+    );
+    const version = await upgraded.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
+
+    expect(profile).toEqual({ uid: 'owner-1', display_name: 'Owner' });
+    expect(sessionsTable?.name).toBe('sessions');
+    expect(version?.user_version).toBe(2);
+    await upgraded.closeAsync();
+  });
+
+  test('a sessions migration failure leaves the v1 profile schema and data intact', async () => {
+    const currentHarness = harness;
+    if (!currentHarness) throw new Error('SQLite test harness was not initialized.');
+    currentHarness.failOnSessionsMigration = true;
+    const { getLocalDatabase } = await loadDatabaseModule();
+
+    await expect(getLocalDatabase()).rejects.toThrow('Injected sessions migration failure');
+    currentHarness.failOnSessionsMigration = false;
+    const verificationConnection = currentHarness.open();
+    const profileTable = await verificationConnection.getFirstAsync<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'local_profiles'",
+    );
+    const sessionsTable = await verificationConnection.getFirstAsync<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sessions'",
+    );
+    const version = await verificationConnection.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
+
+    expect(profileTable?.name).toBe('local_profiles');
+    expect(sessionsTable).toBeNull();
+    expect(version?.user_version).toBe(1);
+    await verificationConnection.closeAsync();
   });
 
   test('a migration failure rolls back schema and version and rejects readiness', async () => {
@@ -181,6 +344,7 @@ describe('local database initialization', () => {
   });
 });
 
+
 test('adopts an existing profile table with a missing schema version without deleting rows', async () => {
   const existing = harness?.open();
   if (!existing) throw new Error('Missing test database');
@@ -190,7 +354,19 @@ test('adopts an existing profile table with a missing schema version without del
   const { getLocalDatabase } = await loadDatabaseModule();
   const database = await getLocalDatabase();
   expect(await database.getFirstAsync('SELECT uid, display_name FROM local_profiles')).toEqual({ uid: 'legacy-owner', display_name: 'Legacy Name' });
-  expect(await database.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 1 });
+  expect(await database.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 2 });
+});
+
+test('adopts existing profile and session tables if schema version metadata was reset', async () => {
+  const first = await loadDatabaseModule();
+  const database = await first.getLocalDatabase();
+  await database.runAsync("INSERT INTO sessions (id, user_id, mode, status, duration_seconds, started_at) VALUES ('saved-session', 'owner', 'COUNTDOWN', 'ACTIVE', 1500, '2026-10-18T00:00:00Z')");
+  await database.execAsync('PRAGMA user_version = 0');
+  await database.closeAsync();
+  const next = await loadDatabaseModule();
+  const reopened = await next.getLocalDatabase();
+  expect(await reopened.getFirstAsync('SELECT id FROM sessions')).toEqual({ id: 'saved-session' });
+  expect(await reopened.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 2 });
 });
 
 test('rejects an incompatible existing profile table without marking it migrated or dropping data', async () => {

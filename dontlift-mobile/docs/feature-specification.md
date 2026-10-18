@@ -219,13 +219,18 @@ Host overrides replace the selected members' raw amounts or percentages before r
 ```sql
 CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY NOT NULL, -- UUIDv4
+    user_id TEXT NOT NULL, -- UID sở hữu bản ghi trên thiết bị này
     mode TEXT CHECK(mode IN ('COUNTDOWN', 'STOPWATCH', 'GROUP')) NOT NULL,
     status TEXT CHECK(status IN ('CREATED', 'ACTIVE', 'COMPLETED', 'CANCELLED')) NOT NULL,
-    duration_seconds INTEGER DEFAULT 0,
+    duration_seconds INTEGER NOT NULL DEFAULT 0,
     started_at TEXT NOT NULL,
     completed_at TEXT,
     synced_at TEXT
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_solo_session_per_user
+    ON sessions(user_id)
+    WHERE mode IN ('COUNTDOWN', 'STOPWATCH') AND status = 'ACTIVE';
 
 CREATE TABLE IF NOT EXISTS rooms (
     id TEXT PRIMARY KEY NOT NULL, -- Room ID string / UUID
