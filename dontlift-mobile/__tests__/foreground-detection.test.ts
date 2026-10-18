@@ -83,7 +83,7 @@ describe('foreground grace period', () => {
 });
 
 describe('foreground detection persistence', () => {
-  test('seals sensor transitions after a session is ended', async () => {
+  test('seals sensor transitions and leaves an active violation for atomic session finalization', async () => {
     const repository = {
       start: jest.fn(async (input) => ({
         eventId: 'event-sealed', sessionId: input.sessionId,
@@ -100,8 +100,26 @@ describe('foreground detection persistence', () => {
 
     const afterEnd = await controller.observeOrientation('LIFTED', 6_000);
     expect(repository.start).toHaveBeenCalledTimes(1);
-    expect(repository.end).toHaveBeenCalledWith({ eventId: 'event-sealed', endedAtUtcMs: 5_000 });
-    expect(afterEnd).toMatchObject({ isViolationActive: false, violationsCount: 1 });
+    expect(repository.end).not.toHaveBeenCalled();
+    expect(afterEnd).toMatchObject({ isViolationActive: true, violationsCount: 1 });
+  });
+
+  test('restores an open violation after restart without creating a second lift', async () => {
+    const repository = {
+      start: jest.fn(async () => { throw new Error('A restored violation must not start again.'); }),
+      end: jest.fn(async () => true),
+      getSummary: jest.fn(async () => ({ count: 1, durationSeconds: 3 })),
+      getActive: jest.fn(async () => ({ eventId: 'event-open', startedAtUtcMs: 10_000, confirmedAtUtcMs: 13_000 })),
+    };
+    const controller = createForegroundDetectionController({ id: 'session-1', userId: 'owner-1' }, repository);
+    await controller.initialize();
+
+    const active = await controller.observeOrientation('LIFTED', 14_000);
+    expect(active).toMatchObject({ isViolationActive: true, violationsCount: 1, violationDurationSeconds: 4 });
+    expect(repository.start).not.toHaveBeenCalled();
+
+    await controller.observeOrientation('FACE_DOWN', 15_000);
+    expect(repository.end).toHaveBeenCalledWith({ eventId: 'event-open', endedAtUtcMs: 15_000 });
   });
 
   test('persists only after the grace deadline and closes duration on re-ground', async () => {

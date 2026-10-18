@@ -59,6 +59,15 @@ export class GracePeriodEngine {
     this.candidateStartedAtUtcMs = null;
   }
 
+  restoreActiveViolation(violation: ActiveViolation): void {
+    if (!Number.isFinite(violation.startedAtUtcMs) || !Number.isFinite(violation.confirmedAtUtcMs)) {
+      throw new Error('Cannot restore a violation with invalid timestamps.');
+    }
+    this.orientation = 'UNKNOWN';
+    this.candidateStartedAtUtcMs = null;
+    this.activeViolation = violation;
+  }
+
   markEnded(): void {
     this.activeViolation = null;
     this.candidateStartedAtUtcMs = null;
