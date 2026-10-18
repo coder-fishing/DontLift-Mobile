@@ -210,7 +210,7 @@ Receipts được giữ lâu hơn maximum local retry/retention window rồi d�
 - `app_settings`
 - `sync_outbox`
 
-`rooms.status` hỗ trợ đầy đủ `CREATED | WAITING | ACTIVE | COMPLETED | CANCELLED | ABORTED`. `rooms.sync_status` và `violation_logs.sync_status` dùng đúng `PENDING | SYNCED | FAILED`. `violation_logs` có `event_id`, `session_id`, nullable `room_id`, `user_id`, `started_at`, `ended_at`, `duration_seconds`, `sync_status`, `created_at`, `synced_at`. `entitlements` giữ riêng `local_premium`, `server_premium`, code hash và verification state; pending activation code đầy đủ nằm tạm thời trong Expo SecureStore để redeem online.
+`rooms.status` hỗ trợ đầy đủ `CREATED | WAITING | ACTIVE | COMPLETED | CANCELLED | ABORTED`. `rooms.sync_status` và `violation_logs.sync_status` dùng đúng `PENDING | SYNCED | FAILED`. `violation_logs` có `event_id`, `session_id`, nullable `room_id`, `user_id`, `started_at`, `confirmed_at`, `ended_at`, `duration_seconds`, `sync_status`, `created_at`, `synced_at`. `confirmed_at` lưu thời điểm sensor xác nhận lift sau grace period; `created_at` lưu thời điểm ghi bản ghi cục bộ. `entitlements` giữ riêng `local_premium`, `server_premium`, code hash và verification state; pending activation code đầy đủ nằm tạm thời trong Expo SecureStore để redeem online.
 
 ### 6.4 Offline event envelope
 

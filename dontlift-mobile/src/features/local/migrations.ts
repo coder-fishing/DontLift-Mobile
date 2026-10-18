@@ -153,6 +153,29 @@ const migrations: LocalMigration[] = [
       });
     },
   },
+  {
+    version: 4,
+    migrate: async (database) => {
+      // Lưu riêng mốc xác nhận của cảm biến; created_at vẫn giữ nghĩa thời điểm ghi SQLite.
+      await database.execAsync('ALTER TABLE violation_logs ADD COLUMN confirmed_at TEXT');
+      await database.execAsync(`
+        UPDATE violation_logs SET confirmed_at = created_at WHERE confirmed_at IS NULL;
+      `);
+      await validateExistingSchema(database, 'violation_logs', {
+        event_id: { type: 'TEXT', notnull: 1, pk: 1 },
+        session_id: { type: 'TEXT', notnull: 1, pk: 0 },
+        room_id: { type: 'TEXT', notnull: 0, pk: 0 },
+        user_id: { type: 'TEXT', notnull: 1, pk: 0 },
+        started_at: { type: 'TEXT', notnull: 1, pk: 0 },
+        ended_at: { type: 'TEXT', notnull: 0, pk: 0 },
+        duration_seconds: { type: 'INTEGER', notnull: 1, pk: 0 },
+        sync_status: { type: 'TEXT', notnull: 1, pk: 0 },
+        created_at: { type: 'TEXT', notnull: 1, pk: 0 },
+        synced_at: { type: 'TEXT', notnull: 0, pk: 0 },
+        confirmed_at: { type: 'TEXT', notnull: 0, pk: 0 },
+      });
+    },
+  },
 ];
 
 const latestSchemaVersion = migrations.at(-1)?.version ?? 0;

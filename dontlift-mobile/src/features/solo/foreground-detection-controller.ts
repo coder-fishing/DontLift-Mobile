@@ -31,6 +31,7 @@ export class ForegroundDetectionController {
   private nextPersistenceAttemptAtUtcMs = 0;
   private persistenceError: string | undefined;
   private lastSampleAtUtcMs: number | null = null;
+  private sealed = false;
   private transitionQueue: Promise<void> = Promise.resolve();
 
   constructor(
@@ -47,6 +48,7 @@ export class ForegroundDetectionController {
 
   async observeSample(sample: AccelerometerSample, nowUtcMs: number): Promise<ForegroundDetectionViewState> {
     return this.serialize(async () => {
+      if (this.sealed) return this.getViewState(nowUtcMs);
       this.lastSampleAtUtcMs = nowUtcMs;
       return this.applyOrientation(classifyPhoneOrientation(sample), nowUtcMs);
     });
@@ -57,6 +59,7 @@ export class ForegroundDetectionController {
     nowUtcMs: number,
   ): Promise<ForegroundDetectionViewState> {
     return this.serialize(async () => {
+      if (this.sealed) return this.getViewState(nowUtcMs);
       this.lastSampleAtUtcMs = nowUtcMs;
       return this.applyOrientation(orientation, nowUtcMs);
     });
@@ -64,6 +67,7 @@ export class ForegroundDetectionController {
 
   async tick(nowUtcMs: number): Promise<ForegroundDetectionViewState> {
     return this.serialize(async () => {
+      if (this.sealed) return this.getViewState(nowUtcMs);
       const lastSampleIsFresh = this.lastSampleAtUtcMs !== null
         && nowUtcMs - this.lastSampleAtUtcMs <= SENSOR_SAMPLE_STALE_AFTER_MS;
       if (!lastSampleIsFresh) this.engine.observe('UNKNOWN', nowUtcMs);
@@ -74,15 +78,29 @@ export class ForegroundDetectionController {
 
   async endCurrentViolation(nowUtcMs: number): Promise<void> {
     await this.serialize(async () => {
-      await this.persistTransition(nowUtcMs);
-      const state = this.engine.snapshot(nowUtcMs);
-      if (state.shouldConfirm) throw new Error('A confirmed violation could not be saved before cancellation.');
-      if (state.activeViolation) {
-        const ended = await this.repository.end({ eventId: state.activeViolation.eventId, endedAtUtcMs: nowUtcMs });
-        if (!ended) throw new Error('The active violation could not be closed before cancellation.');
-        this.addActiveDuration(state.activeViolation, nowUtcMs);
+      const wasSealed = this.sealed;
+      this.sealed = true;
+      try {
+        await this.persistTransition(nowUtcMs);
+        const state = this.engine.snapshot(nowUtcMs);
+        if (state.shouldConfirm) throw new Error('A confirmed violation could not be saved before ending the session.');
+        // Giữ violation đang mở để completion/cancellation đóng nó cùng transaction đổi trạng thái session.
+      } catch (error) {
+        this.sealed = wasSealed;
+        throw error;
       }
-      this.engine.markEnded();
+    });
+  }
+
+  async resumeAfterFinalizationFailure(nowUtcMs: number): Promise<ForegroundDetectionViewState> {
+    return this.serialize(async () => {
+      if (!this.sealed) return this.getViewState(nowUtcMs);
+      // Session vẫn ACTIVE nếu bước ghi COMPLETED/CANCELLED lỗi; giữ violation mở và tiếp tục cùng một lượt.
+      this.lastSampleAtUtcMs = null;
+      this.nextPersistenceAttemptAtUtcMs = 0;
+      this.persistenceError = undefined;
+      this.sealed = false;
+      return this.getViewState(nowUtcMs);
     });
   }
 

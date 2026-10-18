@@ -34,19 +34,21 @@ export async function recordViolationStart(
   const eventId = dependencies.createId();
   const createdAt = new Date(dependencies.now()).toISOString();
   const confirmedAtUtcMs = Math.max(input.startedAtUtcMs + 3_000, input.confirmedAtUtcMs);
+  const confirmedAt = new Date(confirmedAtUtcMs).toISOString();
   const durationSeconds = Math.floor((confirmedAtUtcMs - input.startedAtUtcMs) / 1_000);
 
   await database.withExclusiveTransactionAsync(async (transaction) => {
     // Domain record và outbox luôn commit cùng nhau để không có violation bị mất đường sync.
     await transaction.runAsync(
       `INSERT INTO violation_logs (
-         event_id, session_id, room_id, user_id, started_at, ended_at,
+         event_id, session_id, room_id, user_id, started_at, confirmed_at, ended_at,
          duration_seconds, sync_status, created_at, synced_at
-       ) VALUES (?, ?, NULL, ?, ?, NULL, ?, 'PENDING', ?, NULL)`,
+       ) VALUES (?, ?, NULL, ?, ?, ?, NULL, ?, 'PENDING', ?, NULL)`,
       eventId,
       input.sessionId,
       input.userId,
       new Date(input.startedAtUtcMs).toISOString(),
+      confirmedAt,
       durationSeconds,
       createdAt,
     );

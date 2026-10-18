@@ -37,6 +37,8 @@ import type { RegistrationProfile, RegistrationUser } from '../features/auth/aut
 import type { AuthSessionState } from '../features/auth/auth-session-controller';
 import { createLocalSessionRepository } from '../features/solo/local-session-repository';
 import { createSoloSessionController, getSoloSessionTime, type SoloSession } from '../features/solo/session-controller';
+import { createSoloSessionCompletionController } from '../features/solo/session-completion-controller';
+import { createSoloSummaryRepository, type SoloSessionSummary } from '../features/solo/summary-service';
 import { createViolationRepository } from '../features/solo/violation-repository';
 import {
   createForegroundDetectionController,
@@ -45,6 +47,7 @@ import {
 } from '../features/solo/foreground-detection-controller';
 
 const soloSessionController = createSoloSessionController(createLocalSessionRepository());
+const soloCompletionController = createSoloSessionCompletionController(createSoloSummaryRepository());
 const violationRepository = createViolationRepository();
 const INITIAL_DETECTION_STATE: ForegroundDetectionViewState = {
   orientation: 'UNKNOWN',
@@ -119,9 +122,14 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const [soloNow, setSoloNow] = useState<number>(Date.now());
   const [isStartingSolo, setIsStartingSolo] = useState<boolean>(false);
   const [isCancellingSolo, setIsCancellingSolo] = useState<boolean>(false);
+  const [isCompletingSolo, setIsCompletingSolo] = useState<boolean>(false);
+  const [soloCompletionError, setSoloCompletionError] = useState<string | undefined>();
+  const [soloSummary, setSoloSummary] = useState<SoloSessionSummary | null>(null);
+  const [soloSummaryPendingView, setSoloSummaryPendingView] = useState<boolean>(false);
   const [foregroundDetection, setForegroundDetection] = useState<ForegroundDetectionViewState>(INITIAL_DETECTION_STATE);
   const foregroundDetectionController = useRef<ForegroundDetectionController | null>(null);
   const soloStartPending = useRef(false);
+  const completionAttemptedSessionId = useRef<string | null>(null);
   const isMounted = useRef(false);
 
   useEffect(() => {
@@ -129,8 +137,6 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     return () => { isMounted.current = false; };
   }, []);
   const [soloStartError, setSoloStartError] = useState<string | undefined>();
-  const [streakDays, setStreakDays] = useState<number>(6);
-
   // Group State
   const [participants, setParticipants] = useState<Participant[]>(INITIAL_PARTICIPANTS);
   const [groupTimerSeconds, setGroupTimerSeconds] = useState<number>(13 * 60 + 40); // 13:40
@@ -143,7 +149,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
 
   // Tính giờ từ started_at đã lưu để tiếp tục đúng thời điểm sau khi quay lại session.
   useEffect(() => {
-    if (currentScreen !== '03-solo-timer' || !activeSoloSession) return undefined;
+    if (!activeSoloSession) return undefined;
     setSoloNow(Date.now());
     const timer = setInterval(() => setSoloNow(Date.now()), 1000);
     // Cập nhật ngay khi quay lại app; không chờ tick kế tiếp sau thời gian chạy nền.
@@ -154,7 +160,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       clearInterval(timer);
       appState.remove();
     };
-  }, [currentScreen, activeSoloSession]);
+  }, [activeSoloSession]);
 
   useEffect(() => {
     if (!activeSoloSession) {
@@ -296,6 +302,10 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       if (!isMounted.current) return;
       // Chỉ chuyển sang timer sau khi repository xác nhận session đã commit vào SQLite.
       setActiveSoloSession(result.session);
+      setSoloSummary(null);
+      setSoloSummaryPendingView(false);
+      setSoloCompletionError(undefined);
+      completionAttemptedSessionId.current = null;
       setSelectedMode(result.session.mode);
       if (result.session.mode === 'COUNTDOWN') {
         setSelectedDuration(result.session.durationSeconds / 60);
@@ -333,14 +343,20 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     if (!activeSoloSession || soloStartPending.current) return;
     soloStartPending.current = true;
     setIsCancellingSolo(true);
+    const detector = foregroundDetectionController.current;
+    let detectionSealed = false;
     try {
-      await foregroundDetectionController.current?.endCurrentViolation(Date.now());
+      await detector?.endCurrentViolation(Date.now());
+      detectionSealed = detector !== null;
       const cancelled = await soloSessionController.cancel({
         userId: profile.uid,
         sessionId: activeSoloSession.id,
       });
       if (!isMounted.current) return;
       if (!cancelled) {
+        // Session không còn ACTIVE; bỏ giao diện cũ để không tiếp tục hiển thị timer sai trạng thái.
+        setActiveSoloSession(null);
+        setCurrentScreen('02-solo-select');
         Alert.alert('Session already changed', 'This session is no longer active. Return to Solo Focus and try again.');
         return;
       }
@@ -348,6 +364,10 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       setSoloStartError(undefined);
       setCurrentScreen('02-solo-select');
     } catch {
+      if (detectionSealed && detector) {
+        const detectionState = await detector.resumeAfterFinalizationFailure(Date.now()).catch(() => null);
+        if (detectionState && isMounted.current) setForegroundDetection(detectionState);
+      }
       if (isMounted.current) {
         Alert.alert('Could not cancel session', 'The session is still saved. Check device storage and try again.');
       }
@@ -361,10 +381,65 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     if (!activeSoloSession || soloStartPending.current) return;
     Alert.alert(
       'Cancel Solo session?',
-      'This will stop the current timer and let you choose a different mode. This action cannot be undone.',
+      'This session will be canceled without a completion summary. This action cannot be undone.',
       [
         { text: 'Keep session', style: 'cancel' },
         { text: 'Cancel session', style: 'destructive', onPress: () => { void performCancelSoloSession(); } },
+      ],
+    );
+  };
+
+  const completeActiveSoloSession = async (completedAtUtcMs = Date.now()) => {
+    if (!activeSoloSession || soloStartPending.current) return;
+    soloStartPending.current = true;
+    completionAttemptedSessionId.current = activeSoloSession.id;
+    setIsCompletingSolo(true);
+    setSoloCompletionError(undefined);
+    const detector = foregroundDetectionController.current;
+    let detectionSealed = false;
+    try {
+      // Đợi sensor queue đóng violation và khóa controller trước khi chốt summary.
+      await detector?.endCurrentViolation(completedAtUtcMs);
+      detectionSealed = detector !== null;
+      // Session, violations đã mở và summary outbox được chốt trong cùng transaction local.
+      const summary = await soloCompletionController.complete({
+        userId: profile.uid,
+        sessionId: activeSoloSession.id,
+        completedAtUtcMs,
+      });
+      if (!isMounted.current) return;
+      setSoloSummary(summary);
+      setActiveSoloSession(null);
+      const shouldShowSummaryNow = currentScreen === '02-solo-select' || currentScreen === '03-solo-timer';
+      setSoloSummaryPendingView(!shouldShowSummaryNow);
+      if (shouldShowSummaryNow) setCurrentScreen('04-solo-summary');
+    } catch {
+      if (detectionSealed && detector) {
+        const detectionState = await detector.resumeAfterFinalizationFailure(Date.now()).catch(() => null);
+        if (detectionState && isMounted.current) setForegroundDetection(detectionState);
+      }
+      if (isMounted.current) {
+        setSoloCompletionError('Could not save this session summary. Your session is still active; retry when device storage is available.');
+      }
+    } finally {
+      soloStartPending.current = false;
+      if (isMounted.current) setIsCompletingSolo(false);
+    }
+  };
+
+  const requestFinishSoloSession = () => {
+    if (!activeSoloSession || soloStartPending.current) return;
+    if (soloCompletionError) {
+      completionAttemptedSessionId.current = null;
+      void completeActiveSoloSession(Date.now());
+      return;
+    }
+    Alert.alert(
+      'Finish this focus session?',
+      'Your focus time, confirmed lifts, time away, and penalty score will be saved in the summary.',
+      [
+        { text: 'Keep focusing', style: 'cancel' },
+        { text: 'Finish session', onPress: () => { void completeActiveSoloSession(Date.now()); } },
       ],
     );
   };
@@ -377,6 +452,27 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     ? getSoloSessionTime(activeSoloSession, soloNow).displayedSeconds
     : 0;
 
+  useEffect(() => {
+    if (
+      activeSoloSession?.mode !== 'COUNTDOWN'
+      || soloSecondsLeft > 0
+      || isCompletingSolo
+      || completionAttemptedSessionId.current === activeSoloSession.id
+    ) return;
+
+    // Timer zero kết thúc theo cutoff dự kiến, không cộng thêm độ trễ của tick UI.
+    void completeActiveSoloSession(Date.parse(activeSoloSession.startedAt) + activeSoloSession.durationSeconds * 1_000);
+  }, [activeSoloSession, currentScreen, isCompletingSolo, soloSecondsLeft]);
+
+  const navigateToScreen = (screen: ScreenId) => {
+    if (screen === '02-solo-select' && soloSummaryPendingView && soloSummary) {
+      setSoloSummaryPendingView(false);
+      setCurrentScreen('04-solo-summary');
+      return;
+    }
+    setCurrentScreen(screen);
+  };
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#EEF2FF" />
@@ -384,7 +480,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       {/* Header */}
       <Header
         currentScreen={currentScreen}
-        onNavigate={(screen) => setCurrentScreen(screen)}
+        onNavigate={navigateToScreen}
         onOpenDrawer={() => setDrawerVisible(true)}
       />
 
@@ -440,17 +536,22 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
             violationsCount={foregroundDetection.violationsCount}
             violationDurationSeconds={foregroundDetection.violationDurationSeconds}
             detectionError={foregroundDetection.persistenceError}
+            completionError={soloCompletionError}
             onEndSession={handleEndSoloSession}
+            onFinishSession={requestFinishSoloSession}
             onCancelSession={confirmCancelSoloSession}
             isCancelling={isCancellingSolo}
+            isCompletingSession={isCompletingSolo}
           />
         )}
 
-        {currentScreen === '04-solo-summary' && (
+        {currentScreen === '04-solo-summary' && soloSummary && (
           <SoloSummaryScreen
-            selectedDuration={selectedDuration}
-            streakDays={streakDays}
-            onNewFocus={() => setCurrentScreen('02-solo-select')}
+            summary={soloSummary}
+            onNewFocus={() => {
+              setSoloSummaryPendingView(false);
+              setCurrentScreen('02-solo-select');
+            }}
           />
         )}
 
@@ -509,7 +610,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       {/* 5-Tab Bottom Navigation Bar */}
       <BottomNav
         currentScreen={currentScreen}
-        onNavigate={(screen) => setCurrentScreen(screen)}
+        onNavigate={navigateToScreen}
       />
 
       {/* Prototype Control Deck Modal */}

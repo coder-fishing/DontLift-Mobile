@@ -16,9 +16,12 @@ interface SoloTimerScreenProps {
   violationsCount: number;
   violationDurationSeconds: number;
   detectionError?: string;
+  completionError?: string;
   onEndSession: () => void;
+  onFinishSession: () => void;
   onCancelSession: () => void;
   isCancelling: boolean;
+  isCompletingSession: boolean;
 }
 
 export function SoloTimerScreen({
@@ -32,9 +35,12 @@ export function SoloTimerScreen({
   violationsCount,
   violationDurationSeconds,
   detectionError,
+  completionError,
   onEndSession,
+  onFinishSession,
   onCancelSession,
   isCancelling,
+  isCompletingSession,
 }: SoloTimerScreenProps) {
   const isCountdown = mode === 'COUNTDOWN';
   const isFaceDown = orientation === 'FACE_DOWN';
@@ -133,12 +139,20 @@ export function SoloTimerScreen({
 
       <View style={styles.actions}>
         {detectionError && <Text accessibilityRole="alert" style={styles.detectionError}>{detectionError}</Text>}
+        {completionError && <Text accessibilityRole="alert" style={styles.detectionError}>{completionError}</Text>}
+
+        <PrimaryButton
+          title={isCompletingSession ? 'Saving session…' : completionError ? 'Retry save' : isCountdown ? 'Finish early' : 'Finish session'}
+          onPress={onFinishSession}
+          disabled={isCompletingSession || isCancelling}
+          style={{ marginTop: 8 }}
+        />
 
         <PrimaryButton
           title="Cancel session"
           variant="danger"
           onPress={onCancelSession}
-          disabled={isCancelling}
+          disabled={isCancelling || isCompletingSession}
           style={{ marginTop: 8 }}
         />
 
@@ -146,6 +160,7 @@ export function SoloTimerScreen({
           title="Back to Solo Focus"
           variant="secondary"
           onPress={onEndSession}
+          disabled={isCancelling || isCompletingSession}
           style={{ marginTop: 8 }}
         />
       </View>

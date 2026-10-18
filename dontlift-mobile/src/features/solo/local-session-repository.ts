@@ -1,6 +1,7 @@
 import * as Crypto from 'expo-crypto';
 import type * as SQLite from 'expo-sqlite';
 import { getLocalDatabase } from '../local/database';
+import { updateViolationRecordedEvent } from '../sync/outbox-repository';
 import type {
   SoloSession,
   SoloSessionMode,
@@ -97,12 +98,51 @@ export async function cancelActiveLocalSession(
 ): Promise<boolean> {
   let cancelled = false;
   await database.withExclusiveTransactionAsync(async (transaction) => {
-    // UID và ID cùng ràng buộc câu UPDATE để không hủy nhầm phiên của tài khoản khác.
-    const result = await transaction.runAsync(
-      `UPDATE sessions
-       SET status = 'CANCELLED', completed_at = ?
+    const session = await transaction.getFirstAsync<{ id: string }>(
+      `SELECT id FROM sessions
        WHERE id = ? AND user_id = ? AND mode IN ('COUNTDOWN', 'STOPWATCH') AND status = 'ACTIVE'`,
-      new Date().toISOString(),
+      input.sessionId,
+      input.userId,
+    );
+    if (!session) return;
+
+    const cancelledAtUtcMs = Date.now();
+    const cancelledAt = new Date(cancelledAtUtcMs).toISOString();
+    const openViolations = await transaction.getAllAsync<{
+      event_id: string;
+      started_at: string;
+    }>(
+      `SELECT event_id, started_at FROM violation_logs
+       WHERE session_id = ? AND user_id = ? AND ended_at IS NULL`,
+      input.sessionId,
+      input.userId,
+    );
+    for (const violation of openViolations) {
+      const startedAtUtcMs = Date.parse(violation.started_at);
+      if (!Number.isFinite(startedAtUtcMs)) throw new Error('Violation timestamp is invalid.');
+      const endedAtUtcMs = Math.max(startedAtUtcMs, cancelledAtUtcMs);
+      const durationSeconds = Math.floor((endedAtUtcMs - startedAtUtcMs) / 1_000);
+      const updated = await transaction.runAsync(
+        `UPDATE violation_logs SET ended_at = ?, duration_seconds = ?
+         WHERE event_id = ? AND ended_at IS NULL`,
+        new Date(endedAtUtcMs).toISOString(),
+        durationSeconds,
+        violation.event_id,
+      );
+      if (updated.changes !== 1) throw new Error('Active violation could not be closed while canceling the session.');
+      await updateViolationRecordedEvent(transaction, {
+        eventId: violation.event_id,
+        startedAtUtcMs,
+        endedAtUtcMs,
+        durationSeconds,
+      });
+    }
+
+    // Session và violation cùng commit; lỗi ghi hủy sẽ giữ nguyên violation ACTIVE để retry.
+    const result = await transaction.runAsync(
+      `UPDATE sessions SET status = 'CANCELLED', completed_at = ?
+       WHERE id = ? AND user_id = ? AND mode IN ('COUNTDOWN', 'STOPWATCH') AND status = 'ACTIVE'`,
+      cancelledAt,
       input.sessionId,
       input.userId,
     );
