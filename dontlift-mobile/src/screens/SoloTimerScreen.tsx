@@ -22,6 +22,7 @@ interface SoloTimerScreenProps {
   onCancelSession: () => void;
   isCancelling: boolean;
   isCompletingSession: boolean;
+  isRecoveringBackground?: boolean;
 }
 
 export function SoloTimerScreen({
@@ -41,6 +42,7 @@ export function SoloTimerScreen({
   onCancelSession,
   isCancelling,
   isCompletingSession,
+  isRecoveringBackground = false,
 }: SoloTimerScreenProps) {
   const isCountdown = mode === 'COUNTDOWN';
   const isFaceDown = orientation === 'FACE_DOWN';
@@ -142,9 +144,9 @@ export function SoloTimerScreen({
         {completionError && <Text accessibilityRole="alert" style={styles.detectionError}>{completionError}</Text>}
 
         <PrimaryButton
-          title={isCompletingSession ? 'Saving session…' : completionError ? 'Retry save' : isCountdown ? 'Finish early' : 'Finish session'}
+          title={isRecoveringBackground ? 'Restoring session…' : isCompletingSession ? 'Saving session…' : completionError ? 'Retry save' : isCountdown ? 'Finish early' : 'Finish session'}
           onPress={onFinishSession}
-          disabled={isCompletingSession || isCancelling}
+          disabled={isRecoveringBackground || isCompletingSession || isCancelling}
           style={{ marginTop: 8 }}
         />
 
@@ -152,7 +154,7 @@ export function SoloTimerScreen({
           title="Cancel session"
           variant="danger"
           onPress={onCancelSession}
-          disabled={isCancelling || isCompletingSession}
+          disabled={isRecoveringBackground || isCancelling || isCompletingSession}
           style={{ marginTop: 8 }}
         />
 

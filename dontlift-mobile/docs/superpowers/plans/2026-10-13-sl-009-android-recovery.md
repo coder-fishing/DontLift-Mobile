@@ -156,3 +156,5 @@ Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên l�
 Human đã duyệt phạm vi Expo Go best-effort ngày 2026-10-18. Phạm vi đó không nghiệm thu native ON_STOP/WorkManager; nếu muốn làm phần native sau này cần review scope và evidence riêng.
 
 Implementation Expo Go được kiểm thử bằng unit/SQLite, nhưng Android thật và process-kill còn UNVERIFIED. Không tự bắt đầu P6.2 từ file draft hoặc từ prompt batch.
+
+**Review follow-up — recovery/finalization ordering 2026-10-19:** Recovery dùng state để countdown zero chạy lại sau reconciliation, kèm ref chặn đồng bộ mọi đường Finish/Retry/Cancel (bao gồm callback của hộp xác nhận đã mở). Khóa được mở sau khi reconcile và detector initialize thành công; sensor drain tạm dừng trong lúc phục hồi. Resume đợi thao tác lưu candidate đang chạy trước khi reconcile. TypeScript (node node_modules/typescript/bin/tsc --noEmit) exit 0. Chưa chạy lại test suite. Android thật còn UNVERIFIED: countdown hết giờ trong background phải mở summary khi resume; Finish/Cancel trong recovery phải bị khóa và chỉ hoạt động sau khi phục hồi xong.
