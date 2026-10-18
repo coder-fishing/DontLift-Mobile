@@ -1,25 +1,22 @@
-import {
-  FirebaseRuntimeConfigurationError,
-  FirebaseRuntimeConfig,
-  FirebaseRuntimeSettings,
-  resolveFirebaseRuntimeConfig,
-} from './firebase-runtime-config';
+import { getApps, initializeApp, type FirebaseApp } from 'firebase/app';
+import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signOut, updateProfile, type Auth } from 'firebase/auth';
+import { connectAuthEmulator } from 'firebase/auth';
+import { connectFirestoreEmulator, doc, getDocFromServer, getFirestore, type Firestore } from 'firebase/firestore';
 import * as Crypto from 'expo-crypto';
+import { initializeFirebaseAuth } from './firebase-auth-client';
+import { FirebaseRuntimeConfigurationError, resolveFirebaseRuntimeConfig, type FirebaseRuntimeConfig, type FirebaseRuntimeSettings } from './firebase-runtime-config';
 import { createAuthController } from './auth-controller';
-import type { RegistrationRequest, RegistrationResponse, RegistrationUser } from './auth-controller';
 import { createAuthSessionController } from './auth-session-controller';
 import { createAuthSessionProfileRepository, createLocalProfileRepository } from './local-profile-repository';
+import { completeRegistrationProfile, readRegistrationProfile } from './firebase-profile';
 
 export interface FirebaseRuntime {
   config: FirebaseRuntimeConfig;
-  app: ReturnType<typeof import('@react-native-firebase/app').getApp>;
-  auth: ReturnType<typeof import('@react-native-firebase/auth').getAuth>;
-  firestore: ReturnType<typeof import('@react-native-firebase/firestore').getFirestore>;
-  functions: ReturnType<typeof import('@react-native-firebase/functions').getFunctions>;
+  app: FirebaseApp;
+  auth: Auth;
+  firestore: Firestore;
 }
-
 let runtime: FirebaseRuntime | undefined;
-let initializationFailure: FirebaseRuntimeConfigurationError | undefined;
 
 const FIRESTORE_DIAGNOSTIC_CODES = new Set([
   'cancelled', 'unknown', 'invalid-argument', 'deadline-exceeded', 'not-found', 'already-exists',
@@ -42,6 +39,7 @@ function safeDiagnosticDetail(error: unknown): string | undefined {
   return detail || undefined;
 }
 
+
 export function initializeFirebaseRuntime(settings: FirebaseRuntimeSettings): FirebaseRuntime {
   const config = resolveFirebaseRuntimeConfig(settings);
   if (runtime) {
@@ -50,134 +48,83 @@ export function initializeFirebaseRuntime(settings: FirebaseRuntimeSettings): Fi
     }
     return runtime;
   }
-  if (initializationFailure) throw initializationFailure;
-
-  try {
-    // Load native modules only after platform and environment checks; web keeps its prototype runtime.
-    const appSdk = require('@react-native-firebase/app') as typeof import('@react-native-firebase/app');
-    const app = appSdk.getApp();
-    if (app.options.projectId !== config.projectId) {
-      throw new FirebaseRuntimeConfigurationError('native-project-mismatch', 'Native Firebase config does not match the expected project.');
-    }
-
-    const authSdk = require('@react-native-firebase/auth') as typeof import('@react-native-firebase/auth');
-    const firestoreSdk = require('@react-native-firebase/firestore') as typeof import('@react-native-firebase/firestore');
-    const functionsSdk = require('@react-native-firebase/functions') as typeof import('@react-native-firebase/functions');
-    const auth = authSdk.getAuth(app);
-    const firestore = firestoreSdk.getFirestore(app);
-    const functions = functionsSdk.getFunctions(app, config.region);
-
-    if (config.emulator) {
-      const { host, authPort, firestorePort, functionsPort } = config.emulator;
-      authSdk.connectAuthEmulator(auth, `http://${host}:${authPort}`, { disableWarnings: true });
-      firestoreSdk.connectFirestoreEmulator(firestore, host, firestorePort);
-      functionsSdk.connectFunctionsEmulator(functions, host, functionsPort);
-    }
-
-    runtime = { config, app, auth, firestore, functions };
-    return runtime;
-  } catch (error) {
-    initializationFailure = error instanceof FirebaseRuntimeConfigurationError
-      ? error
-      : new FirebaseRuntimeConfigurationError('native-runtime-unavailable', 'Firebase native modules are unavailable. Rebuild the development app with the required SDKs.');
-    throw initializationFailure;
+  const app = getApps().find((candidate) => candidate.name === '[DEFAULT]') ?? initializeApp(config.firebaseOptions);
+  if (app.options.projectId !== config.projectId || app.options.appId !== config.firebaseOptions.appId) {
+    throw new FirebaseRuntimeConfigurationError('project-mismatch', 'Firebase Web App config does not match the expected project.');
   }
+  const auth = initializeFirebaseAuth(app);
+  const firestore = getFirestore(app);
+  if (config.emulator) {
+    const { host, authPort, firestorePort } = config.emulator;
+    connectAuthEmulator(auth, 'http://' + host + ':' + authPort, { disableWarnings: true });
+    connectFirestoreEmulator(firestore, host, firestorePort);
+  }
+  runtime = { config, app, auth, firestore };
+  return runtime;
 }
 
 export function getConfiguredFirebaseRuntime(platform: string, isDevelopment: boolean): FirebaseRuntime {
   return initializeFirebaseRuntime({
-    platform,
-    isDevelopment,
+    platform, isDevelopment,
     mode: process.env.EXPO_PUBLIC_FIREBASE_RUNTIME_MODE,
     developmentProjectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
     productionProjectId: process.env.EXPO_PUBLIC_FIREBASE_PRODUCTION_PROJECT_ID,
+    apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+    appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
+    authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
     emulatorHost: process.env.EXPO_PUBLIC_FIREBASE_EMULATOR_HOST,
     authEmulatorPort: process.env.EXPO_PUBLIC_FIREBASE_AUTH_EMULATOR_PORT,
     firestoreEmulatorPort: process.env.EXPO_PUBLIC_FIREBASE_FIRESTORE_EMULATOR_PORT,
-    functionsEmulatorPort: process.env.EXPO_PUBLIC_FIREBASE_FUNCTIONS_EMULATOR_PORT,
   });
 }
 
 export function createFirebaseRegistrationController(current: FirebaseRuntime) {
-  const authSdk = require('@react-native-firebase/auth') as typeof import('@react-native-firebase/auth');
-  const functionsSdk = require('@react-native-firebase/functions') as typeof import('@react-native-firebase/functions');
-  const completeProfile = functionsSdk.httpsCallable<RegistrationRequest, RegistrationResponse>(
-    current.functions,
-    'completeRegistrationProfile',
-  );
-
   return createAuthController({
     getCurrentUser: () => current.auth.currentUser,
-    onAuthStateChanged(listener) {
-      return authSdk.onAuthStateChanged(current.auth, listener);
-    },
+    onAuthStateChanged: (listener) => onAuthStateChanged(current.auth, listener),
     async createAccount(email, password) {
-      const credential = await authSdk.createUserWithEmailAndPassword(current.auth, email, password);
-      return credential.user;
+      return (await createUserWithEmailAndPassword(current.auth, email, password)).user;
     },
     async setDisplayName(user, displayName) {
-      const currentUser = current.auth.currentUser;
-      if (!currentUser || currentUser.uid !== user.uid) throw new Error('Registration session changed.');
-      await authSdk.updateProfile(currentUser, { displayName });
+      const active = current.auth.currentUser;
+      if (!active || active.uid !== user.uid) throw new Error('Registration session changed.');
+      await updateProfile(active, { displayName });
     },
-    async completeProfile(request) {
-      return (await completeProfile(request)).data;
-    },
-  }, createLocalProfileRepository(), Crypto.randomUUID);
+    completeProfile: (request) => completeRegistrationProfile(current.auth, current.firestore, request),
+  }, createLocalProfileRepository(), Crypto.randomUUID, (stage, error) => {
+    if (!__DEV__) return;
+    const code = typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string'
+      && /^[a-zA-Z0-9_/-]{1,80}$/.test(error.code) ? error.code : 'unknown';
+    let detail = safeDiagnosticDetail(error);
+    for (const value of [current.auth.currentUser?.uid, current.auth.currentUser?.email, current.auth.currentUser?.displayName]) {
+      if (value) detail = detail?.split(value).join('<user>');
+    }
+    console.warn('[registration-profile] completion-failed', JSON.stringify({ stage, code, detail }));
+  });
 }
 
 export function createFirebaseAuthSessionController(current: FirebaseRuntime) {
-  const authSdk = require('@react-native-firebase/auth') as typeof import('@react-native-firebase/auth');
-  const firestoreSdk = require('@react-native-firebase/firestore') as typeof import('@react-native-firebase/firestore');
-
   return createAuthSessionController({
-    getCurrentUser() {
-      const user = current.auth.currentUser;
-      return user ? { uid: user.uid, email: user.email, displayName: user.displayName } : null;
-    },
+    getCurrentUser: () => current.auth.currentUser,
     async signIn(email, password) {
-      const credential = await authSdk.signInWithEmailAndPassword(current.auth, email, password);
-      return {
-        uid: credential.user.uid,
-        email: credential.user.email,
-        displayName: credential.user.displayName,
-      };
+      return (await signInWithEmailAndPassword(current.auth, email, password)).user;
     },
-    async signOut() {
-      await authSdk.signOut(current.auth);
-    },
+    signOut: () => signOut(current.auth),
   }, createAuthSessionProfileRepository(), {
     async get(uid) {
       if (current.auth.currentUser?.uid !== uid) throw new Error('The active account changed.');
-      const snapshot = await firestoreSdk.getDoc(firestoreSdk.doc(current.firestore, 'users', uid));
+      const snapshot = await getDocFromServer(doc(current.firestore, 'users', uid));
       if (!snapshot.exists() || current.auth.currentUser?.uid !== uid) return null;
-
-      const profile = snapshot.data();
-      if (typeof profile.displayName !== 'string' || typeof profile.email !== 'string') return null;
-      const createdAtUtcMs = profile.createdAt && typeof profile.createdAt.toMillis === 'function'
-        ? profile.createdAt.toMillis()
-        : Date.now();
-
-      return {
-        uid,
-        email: profile.email,
-        displayName: profile.displayName,
-        isPremium: profile.isPremium === true,
-        createdAtUtcMs,
-      };
+      return readRegistrationProfile(uid, snapshot.data());
     },
   });
 }
 
 export function firebaseRuntimeDiagnostics(current: FirebaseRuntime) {
   return {
-    platform: current.config.platform,
-    environment: current.config.environment,
-    mode: current.config.mode,
-    projectId: current.config.projectId,
-    functionsRegion: current.config.region,
-    authState: current.auth.currentUser ? 'signed-in' : 'signed-out',
-    nativeClients: 'initialized',
+    platform: current.config.platform, environment: current.config.environment,
+    mode: current.config.mode, projectId: current.config.projectId,
+    authState: current.auth.currentUser ? 'signed-in' : 'signed-out', sdk: 'firebase-js',
   };
 }
 
@@ -185,10 +132,9 @@ export async function probeFirebaseConnection(current: FirebaseRuntime, timeoutM
   if (current.config.environment !== 'development') {
     throw new FirebaseRuntimeConfigurationError('development-probe-only', 'The connectivity probe is development-only.');
   }
-  const sdk = require('@react-native-firebase/firestore') as typeof import('@react-native-firebase/firestore');
   // This is a read-only probe of an existing resource namespace. Never create a user or write test data.
   const userId = current.auth.currentUser?.uid ?? 'sl002_connection_probe';
-  const read = sdk.getDocFromServer(sdk.doc(current.firestore, 'users', userId));
+  const read = getDocFromServer(doc(current.firestore, 'users', userId));
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     await Promise.race([

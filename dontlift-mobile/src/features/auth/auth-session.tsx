@@ -1,3 +1,4 @@
+import { onAuthStateChanged } from 'firebase/auth';
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { Platform } from 'react-native';
 import { createFirebaseAuthSessionController, getConfiguredFirebaseRuntime } from './firebase-adapters';
@@ -32,9 +33,8 @@ export function AuthSessionProvider({ children }: React.PropsWithChildren) {
       const runtime = getConfiguredFirebaseRuntime(Platform.OS, __DEV__);
       const activeController = createFirebaseAuthSessionController(runtime);
       setController(activeController);
-      const authSdk = require('@react-native-firebase/auth') as typeof import('@react-native-firebase/auth');
       const unsubscribeState = activeController.subscribe(setState);
-      const unsubscribeAuth = authSdk.onAuthStateChanged(runtime.auth, (user) => {
+      const unsubscribeAuth = onAuthStateChanged(runtime.auth, (user) => {
         void activeController.restoreSession(toRegistrationUser(user));
       });
 

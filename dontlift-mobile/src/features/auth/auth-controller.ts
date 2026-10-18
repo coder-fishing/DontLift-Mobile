@@ -67,6 +67,7 @@ export function createAuthController(
   auth: RegistrationAuthPort,
   profiles: RegistrationProfilePort,
   createRequestId: () => string,
+  reportCompletionFailure?: (stage: 'auth-display-name' | 'firestore-profile' | 'local-profile', error: unknown) => void,
 ) {
   let pendingCompletion: PendingCompletion | undefined;
 
@@ -76,16 +77,19 @@ export function createAuthController(
       : { uid: user.uid, displayName, requestId: createRequestId() };
     pendingCompletion = pending;
 
+    let stage: 'firestore-profile' | 'local-profile' = 'firestore-profile';
     try {
       const response = await auth.completeProfile({
         version: 1,
         requestId: pending.requestId,
         displayName,
       });
+      stage = 'local-profile';
       await profiles.upsert(response.profile);
       pendingCompletion = undefined;
       return { kind: 'completed', profile: response.profile };
-    } catch {
+    } catch (error) {
+      reportCompletionFailure?.(stage, error);
       return { kind: 'pending', message: RETRYABLE_COMPLETION_ERROR };
     }
   }
@@ -101,7 +105,8 @@ export function createAuthController(
 
     try {
       if (user.displayName !== displayName) await auth.setDisplayName(user, displayName);
-    } catch {
+    } catch (error) {
+      reportCompletionFailure?.('auth-display-name', error);
       return { kind: 'pending', message: RETRYABLE_COMPLETION_ERROR };
     }
 
@@ -121,7 +126,8 @@ export function createAuthController(
         const user = await auth.createAccount(input.email.trim(), input.password);
         try {
           await auth.setDisplayName(user, input.displayName.trim());
-        } catch {
+        } catch (error) {
+          reportCompletionFailure?.('auth-display-name', error);
           pendingCompletion = {
             uid: user.uid,
             displayName: input.displayName.trim(),

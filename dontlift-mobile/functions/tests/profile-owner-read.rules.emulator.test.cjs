@@ -2,7 +2,7 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { doc, getDoc, setDoc, updateDoc } = require('firebase/firestore');
+const { doc, getDoc, setDoc, updateDoc, serverTimestamp, deleteDoc, getDocs, collection } = require('firebase/firestore');
 const { assertFails, assertSucceeds } = require('@firebase/rules-unit-testing');
 const { createRulesEnvironment } = require('./helpers/rules-emulator.cjs');
 
@@ -50,4 +50,32 @@ test('profile Rules enforce owner-only reads and server-owned writes', async (t)
     await assertFails(getDoc(receipt));
     await assertFails(setDoc(receipt, { payloadHash: 'client' }));
   });
+});
+
+
+test('profile creation enforces owner identity, defaults, bounds, field whitelist and server time', async (t) => {
+  const environment = await createRulesEnvironment();
+  t.after(() => environment.cleanup());
+  const email = 'owner@example.invalid';
+  const uid = 'create-owner';
+  const owner = environment.authenticatedContext(uid, { email }).firestore();
+  const valid = () => ({ displayName: 'Owner', email, isPremium: false, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  const reference = doc(owner, 'users/' + uid);
+  for (const bad of [
+    { ...valid(), isPremium: true }, { ...valid(), isPremium: 'false' },
+    { ...valid(), email: 'forged@example.invalid' }, { ...valid(), role: 'admin' },
+    { ...valid(), displayName: '' }, { ...valid(), displayName: '   ' },
+    { ...valid(), displayName: 'a'.repeat(41) }, { ...valid(), displayName: 7 },
+    { ...valid(), createdAt: new Date(0) }, { ...valid(), updatedAt: new Date(0) },
+    { displayName: 'Only a name' },
+  ]) await assertFails(setDoc(reference, bad));
+  await assertFails(setDoc(doc(owner, 'users/someone-else'), valid()));
+  await assertFails(setDoc(doc(environment.unauthenticatedContext().firestore(), 'users/anonymous'), valid()));
+  await assertSucceeds(setDoc(reference, valid()));
+  await assertFails(updateDoc(reference, { isPremium: true }));
+  await assertFails(updateDoc(reference, { email: 'changed@example.invalid' }));
+  await assertFails(updateDoc(reference, { displayName: 'Changed' }));
+  await assertFails(deleteDoc(reference));
+  await assertFails(getDocs(collection(owner, 'users')));
+  await assertFails(setDoc(doc(owner, 'rooms/client-room'), { hostId: uid }));
 });

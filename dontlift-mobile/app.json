@@ -7,12 +7,10 @@
     "scheme": "dontliftmobile",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "bundleIdentifier": "com.dontlift.mobile",
-      "googleServicesFile": "./firebase-config/GoogleService-Info.plist"
+      "bundleIdentifier": "com.dontlift.mobile"
     },
     "android": {
       "package": "com.dontlift.mobile",
-      "googleServicesFile": "./firebase-config/google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE"
       },
@@ -40,16 +38,6 @@
         "expo-sensors",
         {
           "motionPermission": "DontLift uses motion data to check your accelerometer before starting a focus session."
-        }
-      ],
-      "@react-native-firebase/app",
-      "@react-native-firebase/auth",
-      [
-        "expo-build-properties",
-        {
-          "ios": {
-            "useFrameworks": "static"
-          }
         }
       ]
     ],

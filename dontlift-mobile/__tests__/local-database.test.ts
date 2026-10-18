@@ -53,7 +53,7 @@ function createSQLiteHarness(databaseFile: string): SQLiteHarness {
       const database = new DatabaseSync(databaseFile);
       const wrapper: TestDatabase = {
         async execAsync(sql: string) {
-          if (fixture.failOnProfileMigration && sql.includes('CREATE TABLE local_profiles')) {
+          if (fixture.failOnProfileMigration && /CREATE TABLE (?:IF NOT EXISTS )?local_profiles/.test(sql)) {
             throw new Error('Injected profile migration failure');
           }
           database.exec(sql);
@@ -179,4 +179,28 @@ describe('local database initialization', () => {
     expect(version?.user_version).toBe(0);
     await verificationConnection.closeAsync();
   });
+});
+
+test('adopts an existing profile table with a missing schema version without deleting rows', async () => {
+  const existing = harness?.open();
+  if (!existing) throw new Error('Missing test database');
+  await existing.execAsync('CREATE TABLE local_profiles (uid TEXT PRIMARY KEY NOT NULL, email TEXT NOT NULL, display_name TEXT NOT NULL, created_at_utc_ms INTEGER NOT NULL)');
+  await existing.runAsync('INSERT INTO local_profiles VALUES (?, ?, ?, ?)', 'legacy-owner', 'legacy@example.test', 'Legacy Name', 123);
+  await existing.closeAsync();
+  const { getLocalDatabase } = await loadDatabaseModule();
+  const database = await getLocalDatabase();
+  expect(await database.getFirstAsync('SELECT uid, display_name FROM local_profiles')).toEqual({ uid: 'legacy-owner', display_name: 'Legacy Name' });
+  expect(await database.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 1 });
+});
+
+test('rejects an incompatible existing profile table without marking it migrated or dropping data', async () => {
+  const existing = harness?.open();
+  if (!existing) throw new Error('Missing test database');
+  await existing.execAsync("CREATE TABLE local_profiles (uid TEXT PRIMARY KEY NOT NULL, display_name TEXT NOT NULL); INSERT INTO local_profiles VALUES ('owner', 'Keep this row')");
+  await existing.closeAsync();
+  const { getLocalDatabase } = await loadDatabaseModule();
+  await expect(getLocalDatabase()).rejects.toThrow('Incompatible local schema');
+  const check = harness!.open();
+  expect(await check.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 0 });
+  expect(await check.getFirstAsync('SELECT display_name FROM local_profiles')).toEqual({ display_name: 'Keep this row' });
 });

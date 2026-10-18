@@ -62,6 +62,23 @@ function setup() {
 }
 
 describe('login and auth session controller', () => {
+  it('finishes startup loading when Firebase reports no signed-in user', async () => {
+    const state = setup();
+    await state.controller.restoreSession(null);
+    expect(state.controller.getState()).toEqual({ kind: 'signed-out' });
+    expect(state.remoteReads).toEqual([]);
+  });
+
+  it('ignores a stale signed-out callback after another account has signed in', async () => {
+    const state = setup();
+    const cached = profile('active-user');
+    state.localProfiles.set(cached.uid, cached);
+    state.setCurrentUser({ uid: cached.uid, email: cached.email, displayName: cached.displayName });
+    await state.controller.restoreSession(state.auth.getCurrentUser());
+    await state.controller.restoreSession(null);
+    expect(state.controller.getState()).toEqual({ kind: 'authenticated', profile: cached, source: 'cache' });
+  });
+
   it('uses a generic error for invalid credentials and stays signed out', async () => {
     const state = setup();
     state.setSignInError({ code: 'auth/invalid-credential' });

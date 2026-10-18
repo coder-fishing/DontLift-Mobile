@@ -1,24 +1,15 @@
 {
-  "name": "dontlift-mobile-functions",
+  "name": "dontlift-firebase-tests",
   "private": true,
-  "main": "index.js",
-  "engines": {
-    "node": "22"
-  },
   "scripts": {
-    "test:bootstrap": "node --test tests/runtime-bootstrap.test.cjs",
     "test:rules": "node --test tests/profile-owner-read.rules.emulator.test.cjs",
     "test:login": "node --test tests/login-profile-read.rules.emulator.test.cjs",
     "test:registration": "node --test tests/registration-profile.test.cjs",
-    "test:emulators": "firebase emulators:exec --config ../firebase.emulator.json --project demo-dontlift-sl003 --only auth,firestore,functions \"pnpm run test:rules && pnpm run test:login && pnpm run test:registration\""
-  },
-  "dependencies": {
-    "firebase-admin": "^14.5.0",
-    "firebase-functions": "^7.4.0"
+    "test:emulators": "firebase emulators:exec --config ../firebase.emulator.json --project demo-dontlift-expo-go --only auth,firestore \"pnpm run test:rules && pnpm run test:login && pnpm run test:registration\""
   },
   "devDependencies": {
-    "@firebase/rules-unit-testing": "^4.0.1",
-    "firebase": "^11.10.0",
+    "@firebase/rules-unit-testing": "^6.0.0",
+    "firebase": "^13.0.0",
     "firebase-tools": "^15.33.0"
   }
 }

@@ -1,5 +1,7 @@
 # DontLift — Detailed Feature Specification
 
+> Runtime update 2026-10-18: [ADR-010](decisions/ADR-010-expo-go-firebase-js.md) replaces native Firebase with Firebase JS SDK / Expo Go and replaces callable registration bootstrap with create-only Firestore Rules. Other planned authoritative commands below remain future work.
+
 > **Status:** APPROVED  
 > **Traceability:** PRD v1.6.0 (`US-01` – `US-19`, `FR-01` – `FR-06`) · Project Context v1.0.0  
 > **Version:** 1.1.0  

@@ -4,16 +4,11 @@
   "version": "1.0.0",
   "dependencies": {
     "@expo/ui": "~57.0.16",
-    "@react-native-firebase/app": "^26.4.0",
-    "@react-native-firebase/auth": "^26.4.0",
-    "@react-native-firebase/firestore": "^26.4.0",
-    "@react-native-firebase/functions": "26.4.0",
+    "@react-native-async-storage/async-storage": "2.2.0",
     "expo": "~57.0.20",
     "expo-blur": "~57.0.3",
-    "expo-build-properties": "~57.0.22",
     "expo-constants": "~57.0.17",
     "expo-crypto": "~57.0.4",
-    "expo-dev-client": "~57.0.20",
     "expo-device": "~57.0.1",
     "expo-font": "~57.0.3",
     "expo-glass-effect": "~57.0.1",
@@ -28,6 +23,7 @@
     "expo-symbols": "~57.0.2",
     "expo-system-ui": "~57.0.3",
     "expo-web-browser": "~57.0.2",
+    "firebase": "^13.0.0",
     "nativewind": "^4.2.7",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -54,18 +50,23 @@
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo run:android",
-    "dev": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\dev-emulator.ps1",
-    "dev:expo": "powershell -NoProfile -Command \"$env:NODE_OPTIONS='--dns-result-order=ipv4first'; $env:Path='D:\\platform-tools;' + $env:Path; adb reverse tcp:9099 tcp:9099; if ($LASTEXITCODE -ne 0) { exit 1 }; adb reverse tcp:8080 tcp:8080; if ($LASTEXITCODE -ne 0) { exit 1 }; adb reverse tcp:5001 tcp:5001; if ($LASTEXITCODE -ne 0) { exit 1 }; adb reverse tcp:8081 tcp:8081; if ($LASTEXITCODE -ne 0) { exit 1 }; pnpm exec expo start --dev-client --localhost\"",
-    "start:clear": "expo start --dev-client --localhost --clear",
-    "start:metro": "expo start --dev-client --localhost",
+    "dev": "expo start --go --lan",
+    "dev:expo": "expo start --go --lan",
+    "start:clear": "expo start --go --lan --clear",
+    "start:metro": "expo start --go --lan",
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test": "jest --watchAll=false"
+    "test": "jest --watchAll=false",
+    "dev:emulator": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/dev-emulator.ps1",
+    "dev:tunnel": "expo start --go --tunnel"
   },
   "private": true,
   "jest": {
     "preset": "jest-expo",
-    "cacheDirectory": "<rootDir>/node_modules/.cache/jest"
+    "cacheDirectory": "<rootDir>/node_modules/.cache/jest",
+    "modulePathIgnorePatterns": [
+      "<rootDir>/.expo/"
+    ]
   }
 }

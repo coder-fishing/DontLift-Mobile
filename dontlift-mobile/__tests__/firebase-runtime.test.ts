@@ -3,7 +3,7 @@ import { resolveFirebaseRuntimeConfig } from '../src/features/auth/firebase-runt
 const development = {
   platform: 'android',
   isDevelopment: true,
-  developmentProjectId: 'dontlift-test-development',
+  developmentProjectId: 'dontlift-test-development', apiKey: 'test-api', appId: 'test-app', authDomain: 'test.firebaseapp.com',
 };
 
 describe('Firebase environment boundary', () => {
@@ -12,7 +12,6 @@ describe('Firebase environment boundary', () => {
       mode: 'cloud',
       environment: 'development',
       projectId: development.developmentProjectId,
-      region: 'asia-southeast1',
     });
   });
 
@@ -27,9 +26,8 @@ describe('Firebase environment boundary', () => {
       .toThrow('project');
   });
 
-  test('rejects unsupported web runtime', () => {
-    expect(() => resolveFirebaseRuntimeConfig({ ...development, platform: 'web' }))
-      .toThrow('native');
+  test('accepts web config with the JS SDK', () => {
+    expect(resolveFirebaseRuntimeConfig({ ...development, platform: 'web' }).platform).toBe('web');
   });
 
   test('requires explicit production configuration for a release binary', () => {
@@ -64,10 +62,9 @@ describe('Firebase environment boundary', () => {
       emulatorHost: '127.0.0.1',
       authEmulatorPort: '9099',
       firestoreEmulatorPort: '8080',
-      functionsEmulatorPort: '5001',
     })).toMatchObject({
       mode: 'emulator',
-      emulator: { host: '127.0.0.1', authPort: 9099, firestorePort: 8080, functionsPort: 5001 },
+      emulator: { host: '127.0.0.1', authPort: 9099, firestorePort: 8080 },
     });
   });
 
@@ -84,7 +81,6 @@ describe('Firebase environment boundary', () => {
       emulatorHost: '127.0.0.1',
       authEmulatorPort: '70000',
       firestoreEmulatorPort: '8080',
-      functionsEmulatorPort: '5001',
     })).toThrow('port');
   });
 });

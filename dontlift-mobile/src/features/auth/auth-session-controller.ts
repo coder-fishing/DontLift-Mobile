@@ -118,7 +118,8 @@ export function createAuthSessionController(
       return () => listeners.delete(listener);
     },
     async restoreSession(user: RegistrationUser | null): Promise<void> {
-      if (user?.uid !== (auth.getCurrentUser()?.uid ?? null)) return;
+      // Chuẩn hóa hai trạng thái chưa đăng nhập về null để callback đầu tiên thoát màn loading.
+      if ((user?.uid ?? null) !== (auth.getCurrentUser()?.uid ?? null)) return;
       if (signInOperation !== null) return;
       if (!user) {
         explicitlyHandledUid = null;

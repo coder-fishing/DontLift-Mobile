@@ -1,5 +1,7 @@
 # ADR-001: Firebase native stack trong Expo Development Build
 
+> Superseded for the current runtime/profile bootstrap by [ADR-010](ADR-010-expo-go-firebase-js.md), approved 2026-10-18. Retained below as historical context.
+
 ## Status
 
 Accepted

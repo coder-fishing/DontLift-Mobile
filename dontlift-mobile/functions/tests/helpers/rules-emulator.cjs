@@ -16,7 +16,7 @@ async function createRulesEnvironment() {
     throw new Error('FIRESTORE_EMULATOR_HOST must be host:port.');
   }
 
-  const rulesPath = path.resolve(__dirname, '../../../firestore.emulator.rules');
+  const rulesPath = path.resolve(__dirname, '../../../firestore.rules');
   const rules = fs.readFileSync(rulesPath, 'utf8');
   return initializeTestEnvironment({
     projectId,
