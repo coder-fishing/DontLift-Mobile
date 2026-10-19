@@ -3,7 +3,7 @@ import { migrateLocalDatabase } from '../src/features/local/migrations';
 import {
   beginBackgroundCandidate,
   reconcileBackgroundCandidate,
-} from '../src/features/solo/android-background-recovery';
+} from '../src/features/solo/background-recovery';
 import { getActiveViolation } from '../src/features/solo/violation-repository';
 
 type NativeStatement = {
@@ -240,5 +240,60 @@ describe('Expo Go Android background recovery', () => {
 
     await expect(reconcileBackgroundCandidate(database, input, dependencies)).resolves.toBe('cancelled');
     expect(await database.getFirstAsync('SELECT COUNT(*) AS count FROM violation_logs')).toEqual({ count: 0 });
+  });
+});
+
+// Repository dùng chung cho AppState iOS và Android; các case này dùng SQLite thật trên Node.
+describe('shared recovery event timestamps', () => {
+  test('uses the observed iOS inactive/active times even when SQLite runs after the grace threshold', async () => {
+    await seedSession();
+    const { clock, dependencies } = createClock();
+    const input = { sessionId: 'session-1', userId: 'user-1' };
+    const inactive = { utcMs: clock.utc, monotonicMs: clock.monotonic };
+    const active = { utcMs: clock.utc + 2_000, monotonicMs: clock.monotonic + 2_000 };
+    clock.utc += 30_000;
+    clock.monotonic += 30_000;
+    await beginBackgroundCandidate(database, { ...input, observedAt: inactive }, dependencies);
+    await expect(reconcileBackgroundCandidate(database, { ...input, observedAt: active }, dependencies))
+      .resolves.toBe('cancelled');
+    expect(await database.getFirstAsync('SELECT COUNT(*) AS count FROM violation_logs')).toEqual({ count: 0 });
+    expect(await database.getFirstAsync('SELECT COUNT(*) AS count FROM sync_outbox')).toEqual({ count: 0 });
+  });
+
+  test('stores the full confirmed interval at resume rather than including storage queue delay', async () => {
+    await seedSession();
+    const { clock, dependencies } = createClock();
+    const input = { sessionId: 'session-1', userId: 'user-1' };
+    const inactive = { utcMs: clock.utc, monotonicMs: clock.monotonic };
+    const active = { utcMs: clock.utc + 4_000, monotonicMs: clock.monotonic + 4_000 };
+    clock.utc += 30_000;
+    clock.monotonic += 30_000;
+    await beginBackgroundCandidate(database, { ...input, observedAt: inactive }, dependencies);
+    await expect(reconcileBackgroundCandidate(database, { ...input, observedAt: active }, dependencies))
+      .resolves.toBe('confirmed');
+    expect(await database.getFirstAsync('SELECT duration_seconds, ended_at FROM violation_logs')).toEqual({
+      duration_seconds: 4, ended_at: new Date(active.utcMs).toISOString(),
+    });
+    const outbox = await database.getFirstAsync<{ payload_json: string }>('SELECT payload_json FROM sync_outbox');
+    expect(JSON.parse(outbox!.payload_json)).toEqual(expect.objectContaining({ durationSeconds: 4 }));
+  });
+
+  test('does not create a background candidate if a foreground violation committed before it', async () => {
+    await seedSession();
+    const { clock, dependencies } = createClock();
+    await database.runAsync(
+      "INSERT INTO violation_logs (event_id, session_id, user_id, started_at, confirmed_at, duration_seconds, sync_status, created_at) VALUES ('open-lift', 'session-1', 'user-1', ?, ?, 0, 'PENDING', ?)",
+      new Date(clock.utc - 4_000).toISOString(),
+      new Date(clock.utc - 1_000).toISOString(),
+      new Date(clock.utc - 1_000).toISOString(),
+    );
+    await expect(beginBackgroundCandidate(database, { sessionId: 'session-1', userId: 'user-1' }, dependencies))
+      .resolves.toBeNull();
+    expect(await database.getFirstAsync('SELECT COUNT(*) AS count FROM lifecycle_candidates')).toEqual({ count: 0 });
+    clock.utc += 4_000;
+    clock.monotonic += 4_000;
+    await expect(reconcileBackgroundCandidate(database, { sessionId: 'session-1', userId: 'user-1' }, dependencies))
+      .resolves.toBe('none');
+    expect(await database.getFirstAsync('SELECT COUNT(*) AS count FROM violation_logs')).toEqual({ count: 1 });
   });
 });

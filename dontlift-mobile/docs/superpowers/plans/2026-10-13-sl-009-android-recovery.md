@@ -45,7 +45,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 | File dự kiến | Trách nhiệm |
 |---|---|
-| `src/features/solo/android-background-recovery.ts` | Lưu candidate và reconcile idempotent trong SQLite; dùng monotonic cùng UTC khi còn cùng JS process, route candidate từ process cũ sang review. |
+| `src/features/solo/background-recovery.ts` | Lưu candidate và reconcile idempotent trong SQLite; dùng monotonic cùng UTC khi còn cùng JS process, route candidate từ process cũ sang review. |
 | `src/features/solo/grace-period-engine.ts` | Khôi phục violation đang mở sau process restart để tiếp tục một lift, tránh ghi trùng. |
 | `src/features/solo/violation-repository.ts` | Đọc violation đang mở của đúng session và user. |
 | `src/features/local/migrations.ts` | Thêm schema lifecycle candidate theo versioned migration, giữ nguyên local data hiện tại. |
@@ -158,3 +158,4 @@ Human đã duyệt phạm vi Expo Go best-effort ngày 2026-10-18. Phạm vi đ�
 Implementation Expo Go được kiểm thử bằng unit/SQLite, nhưng Android thật và process-kill còn UNVERIFIED. Không tự bắt đầu P6.2 từ file draft hoặc từ prompt batch.
 
 **Review follow-up — recovery/finalization ordering 2026-10-19:** Recovery dùng state để countdown zero chạy lại sau reconciliation, kèm ref chặn đồng bộ mọi đường Finish/Retry/Cancel (bao gồm callback của hộp xác nhận đã mở). Khóa được mở sau khi reconcile và detector initialize thành công; sensor drain tạm dừng trong lúc phục hồi. Resume đợi thao tác lưu candidate đang chạy trước khi reconcile. TypeScript (node node_modules/typescript/bin/tsc --noEmit) exit 0. Chưa chạy lại test suite. Android thật còn UNVERIFIED: countdown hết giờ trong background phải mở summary khi resume; Finish/Cancel trong recovery phải bị khóa và chỉ hoạt động sau khi phục hồi xong.
+**Chuyển ownership repository 2026-10-19 (SL-010):** Repository được đổi tên thành src/features/solo/background-recovery.ts và dùng chung cho Android/iOS. AppState orchestration nằm trong session-lifecycle-controller.ts. Schema lifecycle_candidates v5 được giữ nguyên; mọi caller đã chuyển sang factory createBackgroundRecoveryRepository. Các SQLite tests SL-009 vẫn được chạy như regression coverage.
