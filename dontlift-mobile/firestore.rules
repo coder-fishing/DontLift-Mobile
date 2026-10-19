@@ -1,13 +1,116 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function profilePath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
+    }
+
+    function roomPath(roomId) {
+      return /databases/$(database)/documents/rooms/$(roomId);
+    }
+
+    function hostMemberPath(roomId, uid) {
+      return /databases/$(database)/documents/rooms/$(roomId)/members/$(uid);
+    }
+
+    function pinPath(pin) {
+      return /databases/$(database)/documents/roomPins/$(pin);
+    }
+
+    function usagePath(uid) {
+      return /databases/$(database)/documents/users/$(uid)/usage/current;
+    }
+
+    function receiptPath(uid, requestId) {
+      return /databases/$(database)/documents/users/$(uid)/commandReceipts/$(requestId);
+    }
+
+    // Rules dùng giờ server và lịch UTC+07:00 đã được human duyệt cho D12.
+    function currentQuotaBucketStart() {
+      let localNow = request.time + duration.value(7, 'h');
+      return timestamp.date(localNow.year(), localNow.month(), 1) - duration.value(7, 'h');
+    }
+
+    function isServerPremium(uid) {
+      return get(profilePath(uid)).data.isPremium == true;
+    }
+
+    function hasRoomCreateLinks(roomId, uid, pin, requestId) {
+      let room = getAfter(roomPath(roomId)).data;
+      let member = getAfter(hostMemberPath(roomId, uid)).data;
+      let reservation = getAfter(pinPath(pin)).data;
+      let usage = getAfter(usagePath(uid)).data;
+      let receipt = getAfter(receiptPath(uid, requestId)).data;
+      return room.hostId == uid
+        && room.pin == pin
+        && room.status == 'WAITING'
+        && room.createdAt == request.time
+        && member.role == 'HOST'
+        && member.displayName == get(profilePath(uid)).data.displayName
+        && member.joinedAt == request.time
+        && reservation.roomId == roomId
+        && reservation.hostId == uid
+        && reservation.createdAt == request.time
+        && usage.bucketStart == currentQuotaBucketStart()
+        && usage.lastRequestId == requestId
+        && usage.updatedAt == request.time
+        && receipt.roomId == roomId
+        && receipt.pin == pin
+        && receipt.hostId == uid
+        && receipt.status == 'WAITING'
+        && receipt.createdAt == request.time;
+    }
+
+    function validUsageCreate(uid) {
+      let data = request.resource.data;
+      return data.keys().hasAll(['bucketStart', 'count', 'lastRequestId', 'updatedAt'])
+        && data.keys().hasOnly(['bucketStart', 'count', 'lastRequestId', 'updatedAt'])
+        && data.bucketStart == currentQuotaBucketStart()
+        && data.count == 1
+        && data.updatedAt == request.time
+        && data.lastRequestId is string
+        && data.lastRequestId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
+        && hasRoomCreateLinks(
+          getAfter(receiptPath(uid, data.lastRequestId)).data.roomId,
+          uid,
+          getAfter(receiptPath(uid, data.lastRequestId)).data.pin,
+          data.lastRequestId
+        );
+    }
+
+    function validUsageUpdate(uid) {
+      let before = resource.data;
+      let after = request.resource.data;
+      let sameMonth = before.bucketStart == currentQuotaBucketStart();
+      let expectedCount = sameMonth ? before.count + 1 : 1;
+      return after.keys().hasAll(['bucketStart', 'count', 'lastRequestId', 'updatedAt'])
+        && after.keys().hasOnly(['bucketStart', 'count', 'lastRequestId', 'updatedAt'])
+        && after.bucketStart == currentQuotaBucketStart()
+        && after.updatedAt == request.time
+        && after.lastRequestId is string
+        && after.lastRequestId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
+        && after.count == expectedCount
+        && (isServerPremium(uid) || after.count <= 7)
+        && hasRoomCreateLinks(
+          getAfter(receiptPath(uid, after.lastRequestId)).data.roomId,
+          uid,
+          getAfter(receiptPath(uid, after.lastRequestId)).data.pin,
+          after.lastRequestId
+        );
+    }
+
     match /users/{uid} {
-      function isOwner() {
-        return request.auth != null && request.auth.uid == uid;
-      }
       // Hồ sơ chỉ được tạo một lần; client không thể tự cấp Premium hay sửa hồ sơ người khác.
-      allow get: if isOwner();
-      allow create: if isOwner()
+      allow get: if isOwner(uid);
+      allow create: if isOwner(uid)
         && request.resource.data.keys().hasAll(['displayName', 'email', 'isPremium', 'createdAt', 'updatedAt'])
         && request.resource.data.keys().hasOnly(['displayName', 'email', 'isPremium', 'createdAt', 'updatedAt'])
         && request.resource.data.displayName is string
@@ -28,8 +131,129 @@ service cloud.firestore {
         allow get, list: if request.auth != null && request.auth.uid == uid;
         allow create, update, delete: if false;
       }
+
+      // Server-time probe chỉ trả giờ Rules; nó không thay đổi quota hoặc room state.
+      match /roomQuotaClock/current {
+        allow get: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+          && request.resource.data.keys().hasAll(['checkedAt'])
+          && request.resource.data.keys().hasOnly(['checkedAt'])
+          && request.resource.data.checkedAt == request.time;
+        allow list, delete: if false;
+      }
+
+      // Counter chỉ đổi trong giao dịch tạo room được liên kết đầy đủ.
+      match /usage/current {
+        allow get: if isOwner(uid);
+        allow create: if isOwner(uid) && validUsageCreate(uid);
+        allow update: if isOwner(uid) && validUsageUpdate(uid);
+        allow list, delete: if false;
+      }
+
+      // Receipt chỉ được tạo cùng room transaction; không thể sửa outcome sau commit.
+      match /commandReceipts/{requestId} {
+        allow get: if isOwner(uid);
+        allow create: if isOwner(uid)
+          && requestId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
+          && request.resource.data.keys().hasAll(['version', 'requestId', 'roomId', 'pin', 'hostId', 'status', 'createdAt'])
+          && request.resource.data.keys().hasOnly(['version', 'requestId', 'roomId', 'pin', 'hostId', 'status', 'createdAt'])
+          && request.resource.data.version == 1
+          && request.resource.data.requestId == requestId
+          && request.resource.data.hostId == uid
+          && request.resource.data.status == 'WAITING'
+          && request.resource.data.createdAt == request.time
+          && hasRoomCreateLinks(
+            request.resource.data.roomId,
+            uid,
+            request.resource.data.pin,
+            requestId
+          );
+        allow list, update, delete: if false;
+      }
     }
-    // Các slice room, sync và entitlement chưa triển khai không được mở quyền theo migration này.
+
+    // Ngoại lệ create-only của SL-013; không cấp quyền join hoặc mutate lobby.
+    match /rooms/{roomId} {
+      allow get: if signedIn()
+        && exists(/databases/$(database)/documents/rooms/$(roomId)/members/$(request.auth.uid));
+      allow create: if signedIn()
+        && request.resource.data.keys().hasAll([
+          'hostId', 'pin', 'status', 'participantCount', 'createdAt', 'updatedAt',
+          'hostHeartbeatAt', 'startedAt', 'endedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'hostId', 'pin', 'status', 'participantCount', 'createdAt', 'updatedAt',
+          'hostHeartbeatAt', 'startedAt', 'endedAt'
+        ])
+        && request.resource.data.hostId == request.auth.uid
+        && request.resource.data.pin is string
+        && request.resource.data.pin.matches('^[0-9]{4}$')
+        && roomId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
+        && request.resource.data.status == 'WAITING'
+        && request.resource.data.participantCount == 1
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.hostHeartbeatAt == request.time
+        && request.resource.data.startedAt == null
+        && request.resource.data.endedAt == null
+        && hasRoomCreateLinks(
+          roomId,
+          request.auth.uid,
+          request.resource.data.pin,
+          getAfter(usagePath(request.auth.uid)).data.lastRequestId
+        );
+      allow list, update, delete: if false;
+
+      match /members/{memberUid} {
+        allow get: if signedIn() && memberUid == request.auth.uid;
+        allow create: if signedIn()
+          && memberUid == request.auth.uid
+          && request.resource.data.keys().hasAll([
+            'displayName', 'role', 'status', 'penaltyScore', 'liftCount',
+            'violationDurationSeconds', 'joinedAt', 'earlyExitAt', 'syncedThroughAt', 'syncAcknowledgedAt'
+          ])
+          && request.resource.data.keys().hasOnly([
+            'displayName', 'role', 'status', 'penaltyScore', 'liftCount',
+            'violationDurationSeconds', 'joinedAt', 'earlyExitAt', 'syncedThroughAt', 'syncAcknowledgedAt'
+          ])
+          && request.resource.data.displayName == get(profilePath(memberUid)).data.displayName
+          && request.resource.data.role == 'HOST'
+          && request.resource.data.status == 'ACTIVE'
+          && request.resource.data.penaltyScore == 0
+          && request.resource.data.liftCount == 0
+          && request.resource.data.violationDurationSeconds == 0
+          && request.resource.data.joinedAt == request.time
+          && request.resource.data.earlyExitAt == null
+          && request.resource.data.syncedThroughAt == null
+          && request.resource.data.syncAcknowledgedAt == null
+          && hasRoomCreateLinks(
+            roomId,
+            memberUid,
+            getAfter(roomPath(roomId)).data.pin,
+            getAfter(usagePath(memberUid)).data.lastRequestId
+          );
+        allow list, update, delete: if false;
+      }
+    }
+
+    // Không cho đọc reservation để tránh dò PIN; quyền create-only giữ tính duy nhất.
+    match /roomPins/{pin} {
+      allow create: if signedIn()
+        && pin.matches('^[0-9]{4}$')
+        && request.resource.data.keys().hasAll(['roomId', 'hostId', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['roomId', 'hostId', 'createdAt'])
+        && request.resource.data.hostId == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && hasRoomCreateLinks(
+          request.resource.data.roomId,
+          request.auth.uid,
+          pin,
+          getAfter(usagePath(request.auth.uid)).data.lastRequestId
+        );
+      allow read, update, delete: if false;
+    }
+
+    // Các document khác vẫn deny-by-default.
     match /{document=**} {
       allow read, write: if false;
     }
