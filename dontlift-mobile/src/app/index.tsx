@@ -26,6 +26,8 @@ import { LoginScreen, LoginScreenBackground } from '../screens/LoginScreen';
 import { SoloSelectScreen } from '../screens/SoloSelectScreen';
 import { SoloTimerScreen } from '../screens/SoloTimerScreen';
 import { SoloSummaryScreen } from '../screens/SoloSummaryScreen';
+import { HistoryScreen } from '../screens/HistoryScreen';
+import { createSoloHistoryRepository } from '../features/history/solo-history-repository';
 import { GroupLobbyScreen } from '../screens/GroupLobbyScreen';
 import { GroupActiveScreen } from '../screens/GroupActiveScreen';
 import { BillAllocationScreen } from '../screens/BillAllocationScreen';
@@ -119,6 +121,10 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const insets = useSafeAreaInsets();
   const session = useAuthSession();
   const sensorAvailability = useSensorAvailability();
+  const soloHistoryRepository = useMemo(
+    () => createSoloHistoryRepository(getConfiguredFirebaseRuntime(Platform.OS, __DEV__)),
+    [profile.uid],
+  );
   // Navigation & Drawer
   const [currentScreen, setCurrentScreen] = useState<ScreenId>('02-solo-select');
   const [drawerVisible, setDrawerVisible] = useState<boolean>(false);
@@ -665,7 +671,14 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       {/* Main Body */}
       <View style={styles.mainBody}>
         {currentScreen === '01-login' && <LoginScreenBackground />}
-        <ScrollView
+        {currentScreen === '11-solo-history' ? (
+          <HistoryScreen
+            userId={profile.uid}
+            serverPremium={profile.isPremium}
+            repository={soloHistoryRepository}
+            onBack={() => navigateToScreen('02-solo-select')}
+          />
+        ) : <ScrollView
           style={styles.mainBodyScrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
@@ -688,6 +701,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
             onStartSession={handleStartSolo}
             onContinueSession={continueActiveSoloSession}
             onCancelSession={confirmCancelSoloSession}
+            onOpenHistory={() => setCurrentScreen('11-solo-history')}
             isStarting={isStartingSolo || isRecoveringBackground}
             isCancelling={isCancellingSolo}
             startError={soloStartError}
@@ -787,7 +801,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
             }}
           />
         )}
-        </ScrollView>
+        </ScrollView>}
       </View>
 
       {/* 5-Tab Bottom Navigation Bar */}

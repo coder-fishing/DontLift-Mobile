@@ -14,7 +14,8 @@ export function BottomNav({ currentScreen, onNavigate }: BottomNavProps) {
   const isSolo =
     currentScreen === '02-solo-select' ||
     currentScreen === '03-solo-timer' ||
-    currentScreen === '04-solo-summary';
+    currentScreen === '04-solo-summary' ||
+    currentScreen === '11-solo-history';
 
   const isGroup =
     currentScreen === '05-group-lobby' ||

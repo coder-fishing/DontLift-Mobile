@@ -8,7 +8,8 @@ export type ScreenId =
   | '07-bill-allocation'
   | '08-vietqr-settlement'
   | '09-activation'
-  | '10-hardware-diagnostics';
+  | '10-hardware-diagnostics'
+  | '11-solo-history';
 
 export type FocusModeType = 'countdown' | 'stopwatch';
 

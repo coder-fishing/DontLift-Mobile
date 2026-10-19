@@ -8,14 +8,16 @@
 
 **Slice:** SL-012. **Ưu tiên đề xuất:** P1. **Release:** MVP + activation/Premium; post-MVP deferred. SL-036 chỉ được tính release sau D6.
 
-**Trạng thái kế hoạch:** DRAFT — chưa được human duyệt.
-**Trạng thái implementation quan sát:** Chưa có history screen/repository. Chưa có evidence nghiệm thu slice.
-**Baseline khảo sát:** docs/p6.0-implementation-slices tại 57ca1eb28a2952c66d01f89b9b89bf755ab4812a.
+**Trạng thái kế hoạch:** APPROVED — human yêu cầu triển khai SL-012 trong cuộc trò chuyện ngày 2026-10-19.
+**Trạng thái implementation quan sát:** Đã triển khai list/detail local-first, cloud pagination/cache, retention filtering và navigation. Automated checks đã pass; nghiệm thu Expo Go trên thiết bị và dữ liệu Cloud thật còn UNVERIFIED.
+**Baseline khảo sát:** Nhánh feature/sl-012-solo-history tại dc5ef9e sau khi merge PR #37 (SL-011).
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Plan slug:** `2026-10-13-sl-012-solo-history`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-012-solo-history]`.
-**Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13, chưa được phê duyệt. User đã yêu cầu ghi draft P6.1 cho cả 37 slice; không suy thành approval thực thi.
+**Đầu vào phạm vi:** User đã yêu cầu triển khai riêng SL-012 trong cuộc trò chuyện ngày 2026-10-19 sau khi được giải thích list/detail Solo history và nhánh feature/sl-012-solo-history. Approval này không bao gồm các slice sau.
 **Traceability:** US-16; ARCH §6.1/7.2; ADR-002.
 **Phụ thuộc bắt buộc:** [SL-011](./2026-10-13-sl-011-solo-sync.md)
+
+**Quyết định execution hiện tại:** Reuse Expo Go + Firebase JS SDK theo ADR-010; owner Rules đã được SL-011 thêm vào canonical `firestore.rules`, không tạo policy emulator thứ hai. Dùng FlatList ngoài ScrollView, entry trong tab Solo và các metric/card hiện có vì chưa có mockup History riêng. Không thêm dependency/backend endpoint/deploy. Cloud cache có bảng riêng và không tạo domain session/outbox. Local Premium chưa có provider (SL-031), hiện mặc định Free; Server Premium được đọc từ profile server khi query cloud. Không tự commit/push trong lượt này khi human chưa yêu cầu riêng cho SL-012.
 **Ưu tiên mềm:** Theo thứ tự đề xuất trong [mục lục](../../implementation-plan.md); thứ tự không tạo thêm hard dependency.
 
 ## 1. Nguồn và ranh giới
@@ -26,7 +28,7 @@ V01–V10 chỉ các màn tương ứng tại `design/concepts/concept-final/scr
 
 **Kiến trúc:** Solo history repository sở hữu hành vi của slice. Presentation đọc kết quả qua controller/repository; không tự trở thành nguồn authoritative. Units và đường dẫn mới bên dưới là đề xuất, chưa tồn tại trên baseline; nếu prerequisite đã tạo cùng trách nhiệm thì reuse, không thêm convention thứ hai.
 
-**Stack:** Expo SDK 57 / React Native / TypeScript. SQLite cho local-first khi slice có persistence; React Native Firebase Auth/Firestore Standard/Functions cho boundary có Firebase. Không bắt slice thuần local phải có network.
+**Stack:** Expo SDK 57 / React Native / TypeScript, Expo Go + Firebase JS SDK theo ADR-010. SQLite giữ domain records và cache bền vững; Firestore Standard owner reads bổ sung history. SL-012 không thêm callable hoặc cloud writes.
 
 **Không gồm:** Group history, analytics và physical purge thuộc 028/033.
 
@@ -44,7 +46,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 | File dự kiến | Trách nhiệm |
 |---|---|
-| `firestore.emulator.rules` | SL-012 mở rộng local Rules bằng owner-scoped Solo history reads, giữ deny client authoritative writes. |
+| `firestore.rules` | Reuse owner-scoped Solo history reads đã có từ SL-011; rules harness trỏ đúng canonical file, giữ deny client authoritative writes. |
 | `functions/tests/solo-history-rules.emulator.test.cjs` | Rules integration cases theo resource, dùng harness/dependencies backend SL-003 và Emulator Suite; no runtime install trong P6.1. |
 | `src/features/history/solo-history-repository.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/features/history/history-controller.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
@@ -55,7 +57,10 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | `src/screens/SoloSelectScreen.tsx` | Thêm entry nhìn thấy được để mở History từ tab Solo. |
 | `__tests__/solo-history.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
 | `__tests__/solo-history-navigation.test.ts` | Kiểm thử route, entry từ SoloSelect và render History. |
-| `functions/tests/solo-history.test.cjs` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
+| `src/features/history/history-model.ts` | Typed history, canonical data validation và stable merge. |
+| `src/features/local/migrations.ts` | Migration 6 bổ sung cloud summary cache và indexes, giữ nguyên sessions/outbox. |
+| `src/components/BottomNav.tsx` | History thuộc Solo tab hiện tại. |
+| `__tests__/solo-history-storage.test.ts` | SQLite thật: ownership, retention cutoff, cache, cursor pagination. |
 
 **Unit:** Solo history repository.
 **Nhận:** Current UID, local sessions, owner-scoped cloud pages và retention context.
@@ -81,7 +86,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 ### Task 0 — Solo history Rules coverage trước cloud read
 
-SL-012 sở hữu mở rộng firestore.emulator.rules cho owner path users/{uid}/sessions, và functions/tests/solo-history-rules.emulator.test.cjs. Reuse local config SL-002 cùng Rules harness SL-003 từ dependency chain; chưa có thì dừng cloud integration.
+SL-012 reuse owner path users/{uid}/sessions đã được SL-011 thêm vào firestore.rules, và bổ sung functions/tests/solo-history-rules.emulator.test.cjs. Reuse local config cùng Rules harness hiện có; chưa có thì dừng cloud integration.
 
 - [ ] Owner đọc list/detail/page của chính mình được; anonymous hoặc user khác bị deny.
 - [ ] Client direct-write Solo summaries bị deny, gồm create/update/delete; syncEvents vẫn là write authority.
@@ -171,3 +176,30 @@ Ghi trong kết quả execution: baseline/commit mới, command, exit status, s�
 Human phải duyệt scope, non-goals, tasks, acceptance cases, dependencies và các quyết định còn mở của **SL-012** trước implementation. Duyệt một slice không duyệt tất cả 37; duyệt authoring batch không duyệt code.
 
 Sau approval, cập nhật trạng thái/date/decision evidence trong đúng plan; kế hoạch mới chỉ đủ execution-ready khi blocker đã được giải quyết và baseline được re-inspect. Dùng qskill-executing-plans khi user yêu cầu execute plan đã duyệt. Không tự bắt đầu P6.2 từ file draft hoặc từ prompt batch.
+
+## 9. Execution evidence — 2026-10-19
+
+Thực hiện trực tiếp tại `D:\DontLift-Mobile`, nhánh `feature/sl-012-solo-history`, baseline `dc5ef9e`. Node 24.14.1. Chưa commit/push theo yêu cầu human về commit riêng.
+
+| Check | Actual result |
+|---|---|
+| `pnpm exec tsc --noEmit` | PASS, exit 0. |
+| `pnpm test --runInBand` | PASS, 17 suites / 140 tests, exit 0. |
+| History controller/model | PASS: local-first, offline empty, owner filtering, canonical merge, overlap, cursor retry, refresh ACK/cutoff và bỏ kết quả khi disposed. |
+| SQLite thật qua Node SQLite | PASS: migration 6, user isolation, cutoff 7 ngày inclusive, giữ unsynced, cache idempotent, 45 rows có cùng timestamp phân trang không trùng/thiếu, không sinh sessions/outbox từ cloud cache. Migration regression giữ profile/session cũ. |
+| Firestore emulator (Standard), demo-dontlift-expo-go, Java 21 | PASS, 10 Rules tests gồm profile regressions và Solo owner list/detail/cursor; anonymous/cross-user/direct writes bị deny. Chạy `firebase emulators:exec --config ../firebase.emulator.json --project demo-dontlift-expo-go --only firestore "node --test tests/solo-history-rules.emulator.test.cjs tests/profile-owner-read.rules.emulator.test.cjs"` từ functions/. |
+| `pnpm exec expo export --platform android --output-dir .expo/sl012-check` | PASS, Android bundle 1,831 modules, exit 0. Đây là bundle check, không phải device test. |
+| Browser component preview | PASS với repository fixtures ghi rõ là kiểm thử: khung 360px, list/detail/empty, Retry giữ list khi cloud fail, quay lại list, labels/roles và nội dung không tràn ngang. Preview entry/HTML đã xóa; không ship fixture data. |
+| Full web app | UNVERIFIED: hiện bị `expo-sqlite/web/worker.ts` worker chunk error. Component preview độc lập bỏ qua root bootstrap để kiểm tra presentation; không sửa lỗi web ngoài slice. |
+| Lint | NOT RUN: không có ESLint package/config trong checkout; không cài thêm dependency. |
+| Expo Go Android/iOS, offline restart và Cloud thật | UNVERIFIED: chưa có actual device/session walkthrough. Cần complete session → Solo / View Solo history → detail → offline/reopen → reconnect. Cloud fills gaps cần summaries đã được SL-011 sync lên tài khoản; không coi Functions đã deploy từ việc merge code. |
+
+Design read: lịch sử cá nhân theo thời gian, reuse Liquid Acrylic hiện có; ENERGY 1 / RHYTHM 1 / MOTION 1. Dùng hàng danh sách để ưu tiên ngày/thời gian, một card detail cho các metric; FlatList tránh lồng danh sách động vào ScrollView. Reuse tokens giúp cùng độ tương phản với các màn Solo hiện tại. Các nút có handler thật và role; không thêm thống kê giả, tab mới hoặc animations không có mục đích.
+
+Local Premium provider thuộc SL-031 chưa triển khai nên composition hiện tại dùng Free; repository nhận retention context riêng. Server retention query dựa profile đọc từ server, không lấy Local Premium cấp quyền cloud. Physical purge vẫn thuộc SL-033. SL-012 không có backend command mới nên không tạo `functions/tests/solo-history.test.cjs`; boundary coverage nằm trong Rules test hiện có. UI/controller dùng Firebase JS SDK, không thêm dependency hoặc thay lockfiles.
+
+### Cloud history read fix — 2026-10-19
+
+Sau khi human báo app hiển thị local history nhưng báo Cloud unavailable, đọc Rules đang deploy xác nhận bản cloud còn thiếu `users/{uid}/sessions` owner read. Đối chiếu local/cloud bằng script read-only xác nhận khác biệt duy nhất là block đọc Solo summary cho chính owner; các quyền profile và default-deny không đổi. Database `(default)` của `august-monument-508716-u0` được xác nhận là STANDARD và freeTier=true.
+
+Deploy riêng `firestore:rules` với project/config cụ thể đã thành công; không deploy Functions hoặc indexes. Đọc lại Rules từ Firebase Rules API xác nhận `DEPLOYED_RULES_MATCH_TESTED_SOURCE: true`. Bản source này đã qua 10 Rules tests trên emulator ở trên. App cần Retry history để kiểm chứng request người dùng; actual device walkthrough vẫn chưa được ghi nhận. Không có code/dependency thay đổi trong fix này.

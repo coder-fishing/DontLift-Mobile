@@ -55,6 +55,7 @@ export const SCREEN_TITLES: Record<ScreenId, string> = {
   '08-vietqr-settlement': 'VietQR Settlement',
   '09-activation': 'Pro Activation',
   '10-hardware-diagnostics': 'Hardware Health',
+  '11-solo-history': 'Solo History',
 };
 
 export function formatTime(totalSecs: number): string {
