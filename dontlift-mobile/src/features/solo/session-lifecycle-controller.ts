@@ -50,8 +50,27 @@ export function createSessionLifecycleController(options: LifecycleOptions) {
     operations.push({ stage, run });
     return drain();
   };
+
+  const enqueueReconciliation = (observedAt: BackgroundTimestamp, expectedGeneration: number) => {
+    const input = { ...options.session, observedAt };
+    let result: BackgroundRecoveryResult | undefined;
+    return enqueue('reconcile', async () => {
+      // Nếu DB đã commit nhưng detector lỗi, giữ outcome để retry không mất cảnh báo NEEDS_REVIEW.
+      result ??= await options.repository.reconcile(input);
+      const detection = await options.getDetector()?.initialize();
+      // Recovery cũ không được mở khóa khi app đã rời foreground lần nữa hoặc màn bị hủy.
+      if (disposed || generation !== expectedGeneration || state !== 'active') return;
+      options.onPendingChange(false);
+      options.onRecovered(result, detection);
+    });
+  };
+
   return {
     handleChange(nextState: AppStateStatus): Promise<void> {
+      if (disposed || nextState === state) return drain();
+      return this.handleChangeAt(nextState, options.captureTime());
+    },
+    handleChangeAt(nextState: AppStateStatus, observedAt: BackgroundTimestamp): Promise<void> {
       if (disposed) return Promise.resolve();
       if (nextState === state) return drain();
       const wasActive = state === 'active';
@@ -60,7 +79,6 @@ export function createSessionLifecycleController(options: LifecycleOptions) {
       if (!wasActive && nextState !== 'active') return drain();
 
       const currentGeneration = ++generation;
-      const observedAt = options.captureTime();
       const input = { ...options.session, observedAt };
       options.onPendingChange(true);
 
@@ -75,17 +93,14 @@ export function createSessionLifecycleController(options: LifecycleOptions) {
         });
       }
 
-      let result: BackgroundRecoveryResult | undefined;
-      return enqueue('reconcile', async () => {
-        // Cùng queue với begin: resume nhanh vẫn đợi candidate được lưu bền trước.
-        // Nếu DB đã commit nhưng detector lỗi, giữ outcome để retry không mất cảnh báo NEEDS_REVIEW.
-        result ??= await options.repository.reconcile(input);
-        const detection = await options.getDetector()?.initialize();
-        // Recovery cũ không được mở khóa khi app đã rời foreground lần nữa hoặc màn bị hủy.
-        if (disposed || generation !== currentGeneration || state !== 'active') return;
-        options.onPendingChange(false);
-        options.onRecovered(result, detection);
-      });
+      // Cùng queue với begin: resume nhanh vẫn đợi candidate được lưu bền trước.
+      return enqueueReconciliation(observedAt, currentGeneration);
+    },
+    reconcileCurrent(): Promise<void> {
+      const observedAt = options.captureTime();
+      const currentGeneration = ++generation;
+      options.onPendingChange(true);
+      return enqueueReconciliation(observedAt, currentGeneration);
     },
     dispose() {
       disposed = true;

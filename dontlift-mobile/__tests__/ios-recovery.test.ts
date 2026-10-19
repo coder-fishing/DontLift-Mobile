@@ -167,6 +167,22 @@ describe('iOS Expo Go lifecycle ordering', () => {
     expect(test.onPendingChange.mock.calls.some(([pending]) => pending === false)).toBe(false);
   });
 
+  test('replays background transitions captured while session persistence was pending', async () => {
+    const test = setup();
+    const departure = { utcMs: 20_000, monotonicMs: 15_000 };
+    const resume = { utcMs: 24_000, monotonicMs: 19_000 };
+    const leaving = test.controller.handleChangeAt('inactive', departure);
+    const returning = test.controller.handleChangeAt('active', resume);
+    await Promise.all([leaving, returning]);
+    expect(test.repository.begin).toHaveBeenCalledWith({
+      sessionId: 'session-1', userId: 'user-1', observedAt: departure,
+    });
+    expect(test.repository.reconcile).toHaveBeenCalledWith({
+      sessionId: 'session-1', userId: 'user-1', observedAt: resume,
+    });
+    expect(test.onRecovered).toHaveBeenCalledWith('confirmed', test.detection);
+    expect(test.onPendingChange).toHaveBeenLastCalledWith(false);
+  });
   test('ignores duplicate active notifications', async () => {
     const test = setup();
     await test.controller.handleChange('active');

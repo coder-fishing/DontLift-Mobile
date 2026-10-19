@@ -137,6 +137,11 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const backgroundRecoveryPending = useRef(false);
   // State đánh thức effect countdown; ref khóa thao tác ngay trước lượt render tiếp theo.
   const [isRecoveringBackground, setIsRecoveringBackground] = useState(false);
+  const soloLifecycle = useRef<{
+    sessionId: string;
+    controller: ReturnType<typeof createSessionLifecycleController>;
+    subscription: ReturnType<typeof AppState.addEventListener>;
+  } | null>(null);
   const isMounted = useRef(false);
 
   useEffect(() => {
@@ -154,15 +159,10 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const [totalBillAmount, setTotalBillAmount] = useState<number>(550000);
   const [hostOverrideMode, setHostOverrideMode] = useState<boolean>(false);
 
-  // Tính giờ từ started_at đã lưu để tiếp tục đúng thời điểm sau khi quay lại session.
-  useEffect(() => {
-    if (!activeSoloSession) return undefined;
-    setSoloNow(Date.now());
-    const timer = setInterval(() => setSoloNow(Date.now()), 1000);
-    const supportsRecovery = Platform.OS === 'android' || Platform.OS === 'ios';
-    const lifecycle = supportsRecovery ? createSessionLifecycleController({
-      session: { sessionId: activeSoloSession.id, userId: activeSoloSession.userId },
-      initialState: AppState.currentState,
+  const createSoloLifecycle = (soloSession: SoloSession, initialState: typeof AppState.currentState) =>
+    createSessionLifecycleController({
+      session: { sessionId: soloSession.id, userId: soloSession.userId },
+      initialState,
       repository: backgroundRecovery,
       captureTime: backgroundRecovery.captureTime,
       getDetector: () => foregroundDetectionController.current,
@@ -188,17 +188,33 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
             : 'The session remains saved on this device. Leave and reopen DontLift to retry recovery before completing the session.',
         );
       },
-    }) : null;
-    const appState = AppState.addEventListener('change', (nextState) => {
-      void lifecycle?.handleChange(nextState);
     });
+
+  // Tính giờ từ started_at đã lưu để tiếp tục đúng thời điểm sau khi quay lại session.
+  useEffect(() => {
+    if (!activeSoloSession) return undefined;
+    setSoloNow(Date.now());
+    const timer = setInterval(() => setSoloNow(Date.now()), 1000);
+    let lifecycleHandle = soloLifecycle.current;
+    if (!lifecycleHandle || lifecycleHandle.sessionId !== activeSoloSession.id) {
+      lifecycleHandle?.controller.dispose();
+      lifecycleHandle?.subscription.remove();
+      const controller = createSoloLifecycle(activeSoloSession, AppState.currentState);
+      const subscription = AppState.addEventListener('change', (nextState) => {
+        void controller.handleChange(nextState);
+      });
+      lifecycleHandle = { sessionId: activeSoloSession.id, controller, subscription };
+      soloLifecycle.current = lifecycleHandle;
+    }
     return () => {
-      lifecycle?.dispose();
       clearInterval(timer);
-      appState.remove();
+      if (soloLifecycle.current === lifecycleHandle) {
+        lifecycleHandle.controller.dispose();
+        lifecycleHandle.subscription.remove();
+        soloLifecycle.current = null;
+      }
     };
   }, [activeSoloSession]);
-
   useEffect(() => {
     if (!activeSoloSession) {
       foregroundDetectionController.current = null;
@@ -328,6 +344,33 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     soloStartPending.current = true;
     setSoloStartError(undefined);
     setIsStartingSolo(true);
+
+    const supportsRecovery = Platform.OS === 'android' || Platform.OS === 'ios';
+    const startupState = AppState.currentState;
+    let latestStartupState = startupState;
+    const startupTransitions: { state: typeof AppState.currentState; observedAt: ReturnType<typeof backgroundRecovery.captureTime> }[] = [];
+    let startupLifecycle: ReturnType<typeof createSessionLifecycleController> | null = null;
+    let startupSubscription: ReturnType<typeof AppState.addEventListener> | undefined;
+    let attachedLifecycle = false;
+
+    if (supportsRecovery) {
+      // Nếu Start bị gọi trong giai đoạn chuyển nền, ghi nhận luôn mốc để session không mất grace.
+      if (startupState !== 'active') {
+        startupTransitions.push({ state: startupState, observedAt: backgroundRecovery.captureTime() });
+      }
+      startupSubscription = AppState.addEventListener('change', (nextState) => {
+        const wasActive = latestStartupState === 'active';
+        latestStartupState = nextState;
+        if (startupLifecycle) {
+          void startupLifecycle.handleChangeAt(nextState, backgroundRecovery.captureTime());
+        } else if (wasActive && nextState !== 'active') {
+          startupTransitions.push({ state: nextState, observedAt: backgroundRecovery.captureTime() });
+        } else if (!wasActive && nextState === 'active') {
+          startupTransitions.push({ state: nextState, observedAt: backgroundRecovery.captureTime() });
+        }
+      });
+    }
+
     try {
       const result = await soloSessionController.start({
         userId: profile.uid,
@@ -335,13 +378,41 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
         durationMinutes: mode === 'COUNTDOWN' ? mins : undefined,
         sensorReady: sensorAvailability.state.kind === 'ready',
       });
-      const recovery = Platform.OS === 'android' || Platform.OS === 'ios'
-        ? await backgroundRecovery.reconcile({ sessionId: result.session.id, userId: result.session.userId })
-        : 'none';
-      backgroundRecoveryPending.current = false;
-      setIsRecoveringBackground(false);
-      // Không cập nhật màn hình cũ nếu người dùng đã đăng xuất hoặc đổi tài khoản trong lúc lưu.
-      if (!isMounted.current) return;
+
+      if (supportsRecovery) {
+        const existing = soloLifecycle.current;
+        if (existing?.sessionId === result.session.id) {
+          startupLifecycle = existing.controller;
+          startupSubscription?.remove();
+          startupSubscription = undefined;
+        } else {
+          existing?.controller.dispose();
+          existing?.subscription.remove();
+          // Khởi tạo từ active để mốc non-active đã chụp trước khi SQLite trả lời được ghi như một lần rời app.
+          startupLifecycle = createSoloLifecycle(result.session, 'active');
+          const subscription = startupSubscription!;
+          soloLifecycle.current = {
+            sessionId: result.session.id,
+            controller: startupLifecycle,
+            subscription,
+          };
+          attachedLifecycle = true;
+          // Replay các mốc đã chụp trong lúc SQLite chưa trả session ID; thao tác được queue trước event mới.
+          const replay = startupTransitions.map(({ state, observedAt }) =>
+            startupLifecycle!.handleChangeAt(state, observedAt));
+          await Promise.all(replay);
+        }
+        if (startupTransitions.length === 0) await startupLifecycle.reconcileCurrent();
+      }
+
+      if (!isMounted.current) {
+        if (attachedLifecycle && soloLifecycle.current?.controller === startupLifecycle) {
+          startupLifecycle?.dispose();
+          startupSubscription?.remove();
+          soloLifecycle.current = null;
+        }
+        return;
+      }
       // Chỉ chuyển sang timer sau khi repository xác nhận session đã commit vào SQLite.
       setActiveSoloSession(result.session);
       setSoloSummary(null);
@@ -354,28 +425,28 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       }
       setSoloNow(Date.now());
       setCurrentScreen('03-solo-timer');
-      if (recovery === 'needs-review') {
-        Alert.alert(
-          'Session recovery needs review',
-          'Elapsed time could not be verified while DontLift was away. No violation was added; continue or cancel the session to resolve it.',
-        );
-      } else if (result.resumed) {
+      if (result.resumed) {
         Alert.alert('Active session continued', 'Your existing Solo session was restored from this device.');
       }
     } catch (error) {
+      if (attachedLifecycle && soloLifecycle.current?.controller === startupLifecycle) {
+        startupLifecycle?.dispose();
+        startupSubscription?.remove();
+        soloLifecycle.current = null;
+      }
       if (!isMounted.current) return;
       const code = (error as { code?: string }).code;
       setSoloStartError(code === 'sensor-not-ready'
         ? 'Accelerometer check must be ready before a focus session can start.'
         : code === 'invalid-duration'
           ? 'Choose a duration from 5 to 180 minutes in 5-minute steps.'
-          : 'Could not save this session on the device. Your choices are kept; retry when local storage is available.');
+          : 'Could not save or restore this session on the device. Your choices are kept; retry when local storage is available.');
     } finally {
+      if (!attachedLifecycle) startupSubscription?.remove();
       soloStartPending.current = false;
       if (isMounted.current) setIsStartingSolo(false);
     }
   };
-
   const continueActiveSoloSession = () => {
     if (!activeSoloSession || isCancellingSolo) return;
     setSelectedMode(activeSoloSession.mode);
