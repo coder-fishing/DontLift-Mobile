@@ -147,6 +147,12 @@ describe('local database initialization', () => {
     const outboxTable = await database.getFirstAsync<{ name: string }>(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sync_outbox'",
     );
+    const roomsTable = await database.getFirstAsync<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'rooms'",
+    );
+    const roomMembersTable = await database.getFirstAsync<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'room_members'",
+    );
     const sessionColumns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(sessions)');
     const version = await database.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
     const columns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(local_profiles)');
@@ -155,9 +161,11 @@ describe('local database initialization', () => {
     expect(sessionsTable?.name).toBe('sessions');
     expect(violationsTable?.name).toBe('violation_logs');
     expect(outboxTable?.name).toBe('sync_outbox');
+    expect(roomsTable?.name).toBe('rooms');
+    expect(roomMembersTable?.name).toBe('room_members');
     expect(sessionColumns.map(({ name }) => name)).toContain('user_id');
     expect(sessionColumns.map(({ name }) => name)).toContain('duration_seconds');
-    expect(version?.user_version).toBe(6);
+    expect(version?.user_version).toBe(7);
     expect(columns?.map(({ name }) => name)).toEqual([
       'uid',
       'email',
@@ -186,7 +194,7 @@ describe('local database initialization', () => {
       .toEqual({ uid: 'owner-1', display_name: 'Owner' });
     expect(await reopened.getFirstAsync('SELECT id, user_id FROM sessions WHERE id = ?', 'session-1'))
       .toEqual({ id: 'session-1', user_id: 'owner-1' });
-    expect(await reopened.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 6 });
+    expect(await reopened.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 7 });
     expect(await reopened.getFirstAsync("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sync_outbox'"))
       .toEqual({ name: 'sync_outbox' });
     await reopened.closeAsync();
@@ -347,7 +355,7 @@ describe('local database initialization', () => {
     const version = await reopened.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
 
     expect(profile).toEqual({ uid: 'owner-1', display_name: 'Owner' });
-    expect(version?.user_version).toBe(6);
+    expect(version?.user_version).toBe(7);
     await reopened.closeAsync();
   });
 
@@ -379,7 +387,7 @@ describe('local database initialization', () => {
 
     expect(profile).toEqual({ uid: 'owner-1', display_name: 'Owner' });
     expect(sessionsTable?.name).toBe('sessions');
-    expect(version?.user_version).toBe(6);
+    expect(version?.user_version).toBe(7);
     await upgraded.closeAsync();
   });
 
@@ -436,7 +444,7 @@ test('adopts an existing profile table with a missing schema version without del
   const { getLocalDatabase } = await loadDatabaseModule();
   const database = await getLocalDatabase();
   expect(await database.getFirstAsync('SELECT uid, display_name FROM local_profiles')).toEqual({ uid: 'legacy-owner', display_name: 'Legacy Name' });
-  expect(await database.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 6 });
+  expect(await database.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 7 });
 });
 
 test('adopts existing profile and session tables if schema version metadata was reset', async () => {
@@ -448,7 +456,7 @@ test('adopts existing profile and session tables if schema version metadata was 
   const next = await loadDatabaseModule();
   const reopened = await next.getLocalDatabase();
   expect(await reopened.getFirstAsync('SELECT id FROM sessions')).toEqual({ id: 'saved-session' });
-  expect(await reopened.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 6 });
+  expect(await reopened.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 7 });
 });
 
 test('rejects an incompatible existing profile table without marking it migrated or dropping data', async () => {
