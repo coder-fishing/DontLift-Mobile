@@ -96,22 +96,6 @@ async function insertViolation(database: TestDatabase, input: {
     input.durationSeconds,
     startedAt,
   );
-  await database.runAsync(
-    `INSERT INTO sync_outbox (
-       event_id, event_type, schema_version, aggregate_type, aggregate_id,
-       session_id, actor_uid, occurred_at_utc_ms, payload_json, sync_status,
-       attempt_count, next_attempt_at, lease_expires_at, last_error_code, created_at, synced_at
-     ) VALUES (?, 'VIOLATION_RECORDED', 1, 'SOLO_SESSION', 'session-1', 'session-1',
-       'user-1', ?, ?, 'PENDING', 0, NULL, NULL, NULL, ?, NULL)`,
-    input.eventId,
-    input.endedAtUtcMs ?? input.startedAtUtcMs,
-    JSON.stringify({
-      startedAtUtcMs: input.startedAtUtcMs,
-      endedAtUtcMs: input.endedAtUtcMs ?? input.startedAtUtcMs + 3_000,
-      durationSeconds: input.durationSeconds,
-    }),
-    startedAt,
-  );
 }
 
 describe('Solo session completion', () => {

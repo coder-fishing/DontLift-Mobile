@@ -8,6 +8,8 @@ import type { SoloSessionSummary } from '../features/solo/summary-service';
 
 interface SoloSummaryScreenProps {
   summary: SoloSessionSummary;
+  syncStatus: 'syncing' | 'pending' | 'synced' | 'failed';
+  onRetrySync: () => void;
   onNewFocus: () => void;
 }
 
@@ -21,7 +23,7 @@ function SummaryMetric({ label, value, detail }: { label: string; value: string;
   );
 }
 
-export function SoloSummaryScreen({ summary, onNewFocus }: SoloSummaryScreenProps) {
+export function SoloSummaryScreen({ summary, syncStatus, onRetrySync, onNewFocus }: SoloSummaryScreenProps) {
   const hasNoConfirmedViolations = summary.liftCount === 0 && summary.violationDurationSeconds === 0;
   const completedAt = new Date(summary.completedAt).toLocaleString();
 
@@ -46,6 +48,20 @@ export function SoloSummaryScreen({ summary, onNewFocus }: SoloSummaryScreenProp
         <SummaryMetric label="Away time" value={formatTime(summary.violationDurationSeconds)} detail="Total confirmed violation time" />
         <SummaryMetric label="Penalty score" value={`${summary.penaltyScore} pts`} detail="10 points per lift + seconds away" />
       </View>
+
+      <GlassCard style={styles.syncCard}>
+        <Text style={styles.syncTitle}>
+          {syncStatus === 'synced' ? 'Summary synced' : syncStatus === 'syncing' ? 'Syncing summary…' : 'Saved on this device'}
+        </Text>
+        <Text style={styles.syncDetail}>
+          {syncStatus === 'synced'
+            ? 'Your Solo summary is backed up to your account.'
+            : syncStatus === 'failed'
+              ? 'This summary could not be synced. It remains saved on this device.'
+              : 'The summary will sync when the connection is available.'}
+        </Text>
+        {syncStatus === 'pending' ? <PrimaryButton title="Retry sync" onPress={onRetrySync} /> : null}
+      </GlassCard>
 
       <PrimaryButton title="Start another session" onPress={onNewFocus} />
     </View>
@@ -107,5 +123,19 @@ const styles = StyleSheet.create({
   metricDetail: {
     color: Colors.light.textSecondary,
     fontSize: 12,
+  },
+  syncCard: {
+    padding: 14,
+    gap: 8,
+  },
+  syncTitle: {
+    color: Colors.light.text,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  syncDetail: {
+    color: Colors.light.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
   },
 });

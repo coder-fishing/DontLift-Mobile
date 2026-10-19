@@ -2,6 +2,7 @@ import { getApps, initializeApp, type FirebaseApp } from 'firebase/app';
 import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signOut, updateProfile, type Auth } from 'firebase/auth';
 import { connectAuthEmulator } from 'firebase/auth';
 import { connectFirestoreEmulator, doc, getDocFromServer, getFirestore, type Firestore } from 'firebase/firestore';
+import { connectFunctionsEmulator, getFunctions, type Functions } from 'firebase/functions';
 import * as Crypto from 'expo-crypto';
 import { initializeFirebaseAuth } from './firebase-auth-client';
 import { FirebaseRuntimeConfigurationError, resolveFirebaseRuntimeConfig, type FirebaseRuntimeConfig, type FirebaseRuntimeSettings } from './firebase-runtime-config';
@@ -15,6 +16,7 @@ export interface FirebaseRuntime {
   app: FirebaseApp;
   auth: Auth;
   firestore: Firestore;
+  functions: Functions;
 }
 let runtime: FirebaseRuntime | undefined;
 
@@ -54,12 +56,14 @@ export function initializeFirebaseRuntime(settings: FirebaseRuntimeSettings): Fi
   }
   const auth = initializeFirebaseAuth(app);
   const firestore = getFirestore(app);
+  const functions = getFunctions(app);
   if (config.emulator) {
-    const { host, authPort, firestorePort } = config.emulator;
+    const { host, authPort, firestorePort, functionsPort } = config.emulator;
     connectAuthEmulator(auth, 'http://' + host + ':' + authPort, { disableWarnings: true });
     connectFirestoreEmulator(firestore, host, firestorePort);
+    connectFunctionsEmulator(functions, host, functionsPort);
   }
-  runtime = { config, app, auth, firestore };
+  runtime = { config, app, auth, firestore, functions };
   return runtime;
 }
 
@@ -75,6 +79,7 @@ export function getConfiguredFirebaseRuntime(platform: string, isDevelopment: bo
     emulatorHost: process.env.EXPO_PUBLIC_FIREBASE_EMULATOR_HOST,
     authEmulatorPort: process.env.EXPO_PUBLIC_FIREBASE_AUTH_EMULATOR_PORT,
     firestoreEmulatorPort: process.env.EXPO_PUBLIC_FIREBASE_FIRESTORE_EMULATOR_PORT,
+    functionsEmulatorPort: process.env.EXPO_PUBLIC_FIREBASE_FUNCTIONS_EMULATOR_PORT,
   });
 }
 

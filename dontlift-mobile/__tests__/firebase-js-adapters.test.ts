@@ -1,11 +1,14 @@
 const mockApp = { name: '[DEFAULT]', options: { projectId: 'dontlift-test-development', appId: 'test-app' } };
 const mockAuth: { currentUser: { uid: string; email?: string } | null } = { currentUser: null };
 const mockFirestore = {};
+const mockFunctions = {};
 const mockInitializeApp = jest.fn(() => mockApp);
 const mockInitializeAuth = jest.fn(() => mockAuth);
 const mockGetFirestore = jest.fn(() => mockFirestore);
 const mockConnectAuth = jest.fn();
 const mockConnectFirestore = jest.fn();
+const mockGetFunctions = jest.fn(() => mockFunctions);
+const mockConnectFunctions = jest.fn();
 const mockRead = jest.fn();
 const development = { platform: 'android', isDevelopment: true, developmentProjectId: 'dontlift-test-development', apiKey: 'test-api', appId: 'test-app', authDomain: 'test.firebaseapp.com' };
 let sdk: typeof import('../src/features/auth/firebase-adapters');
@@ -22,6 +25,7 @@ beforeEach(() => {
     getFirestore: mockGetFirestore, connectFirestoreEmulator: mockConnectFirestore,
     doc: (_db: unknown, ...segments: string[]) => segments.join('/'), getDocFromServer: mockRead,
   }));
+  jest.doMock('firebase/functions', () => ({ getFunctions: mockGetFunctions, connectFunctionsEmulator: mockConnectFunctions }));
   sdk = require('../src/features/auth/firebase-adapters');
 });
 
@@ -48,13 +52,14 @@ test('reuses clients and rejects changing runtime without restarting', () => {
   const first = sdk.initializeFirebaseRuntime(development);
   expect(sdk.initializeFirebaseRuntime(development)).toBe(first);
   expect(mockInitializeAuth).toHaveBeenCalledTimes(1);
-  expect(() => sdk.initializeFirebaseRuntime({ ...development, mode: 'emulator', emulatorHost: 'localhost', authEmulatorPort: '9099', firestoreEmulatorPort: '8080' })).toThrow('Restart');
+  expect(() => sdk.initializeFirebaseRuntime({ ...development, mode: 'emulator', emulatorHost: 'localhost', authEmulatorPort: '9099', firestoreEmulatorPort: '8080', functionsEmulatorPort: '5001' })).toThrow('Restart');
 });
 
-test('explicit emulator mode configures Auth and Firestore only', () => {
-  sdk.initializeFirebaseRuntime({ ...development, mode: 'emulator', emulatorHost: '127.0.0.1', authEmulatorPort: '9099', firestoreEmulatorPort: '8080' });
+test('explicit emulator mode configures Auth, Firestore and Functions', () => {
+  sdk.initializeFirebaseRuntime({ ...development, mode: 'emulator', emulatorHost: '127.0.0.1', authEmulatorPort: '9099', firestoreEmulatorPort: '8080', functionsEmulatorPort: '5001' });
   expect(mockConnectAuth).toHaveBeenCalledWith(mockAuth, 'http://127.0.0.1:9099', { disableWarnings: true });
   expect(mockConnectFirestore).toHaveBeenCalledWith(mockFirestore, '127.0.0.1', 8080);
+  expect(mockConnectFunctions).toHaveBeenCalledWith(mockFunctions, '127.0.0.1', 5001);
 });
 
 test('diagnostics do not expose client config or identity', () => {

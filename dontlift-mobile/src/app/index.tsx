@@ -14,6 +14,7 @@ import {
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Network from 'expo-network';
 import { ScreenId, Participant, BillParticipantShare } from '../types';
 import { INITIAL_PARTICIPANTS } from '../constants';
 import { Header } from '../components/Header';
@@ -41,6 +42,11 @@ import { createSoloSessionController, getSoloSessionTime, type SoloSession } fro
 import { createSoloSessionCompletionController } from '../features/solo/session-completion-controller';
 import { createSoloSummaryRepository, type SoloSessionSummary } from '../features/solo/summary-service';
 import { createViolationRepository } from '../features/solo/violation-repository';
+import { createOutboxSyncRepository } from '../features/sync/outbox-repository';
+import { createSoloSyncWorker } from '../features/sync/sync-worker';
+import { createSyncEventsPort } from '../features/sync/sync-events-port';
+import { getConfiguredFirebaseRuntime } from '../features/auth/firebase-adapters';
+import { getLocalDatabase } from '../features/local/database';
 import { createBackgroundRecoveryRepository } from '../features/solo/background-recovery';
 import { createSessionLifecycleController } from '../features/solo/session-lifecycle-controller';
 import {
@@ -130,6 +136,11 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const [soloCompletionError, setSoloCompletionError] = useState<string | undefined>();
   const [soloSummary, setSoloSummary] = useState<SoloSessionSummary | null>(null);
   const [soloSummaryPendingView, setSoloSummaryPendingView] = useState<boolean>(false);
+  const [soloSyncState, setSoloSyncState] = useState<{
+    sessionId: string;
+    status: 'syncing' | 'pending' | 'synced' | 'failed';
+  } | null>(null);
+  const soloSyncWorker = useRef<ReturnType<typeof createSoloSyncWorker> | null>(null);
   const [foregroundDetection, setForegroundDetection] = useState<ForegroundDetectionViewState>(INITIAL_DETECTION_STATE);
   const foregroundDetectionController = useRef<ForegroundDetectionController | null>(null);
   const soloStartPending = useRef(false);
@@ -148,6 +159,51 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     isMounted.current = true;
     return () => { isMounted.current = false; };
   }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let appStateSubscription: ReturnType<typeof AppState.addEventListener> | undefined;
+    let networkSubscription: ReturnType<typeof Network.addNetworkStateListener> | undefined;
+    let worker: ReturnType<typeof createSoloSyncWorker> | undefined;
+    void (async () => {
+      try {
+        const [database, runtime] = await Promise.all([
+          getLocalDatabase(),
+          Promise.resolve(getConfiguredFirebaseRuntime(Platform.OS, __DEV__)),
+        ]);
+        if (disposed) return;
+        worker = createSoloSyncWorker({
+          userId: profile.uid,
+          getCurrentUserId: () => runtime.auth.currentUser?.uid ?? null,
+          repository: createOutboxSyncRepository(database),
+          transport: createSyncEventsPort(runtime.functions),
+          onStatusChange: (sessionId, status) => {
+            if (!disposed) setSoloSyncState({ sessionId, status });
+          },
+        });
+        soloSyncWorker.current = worker;
+        appStateSubscription = AppState.addEventListener('change', (state) => {
+          if (state === 'active') void worker?.kick();
+        });
+        networkSubscription = Network.addNetworkStateListener((state) => {
+          if (state.isConnected && state.isInternetReachable !== false) void worker?.kick();
+        });
+        void worker.kick();
+      } catch {
+      }
+    })();
+    return () => {
+      disposed = true;
+      appStateSubscription?.remove();
+      networkSubscription?.remove();
+      worker?.dispose();
+      if (soloSyncWorker.current === worker) soloSyncWorker.current = null;
+    };
+  }, [profile.uid]);
+
+  useEffect(() => {
+    if (soloSummary) void soloSyncWorker.current?.kick({ sessionId: soloSummary.sessionId });
+  }, [soloSummary]);
   const [soloStartError, setSoloStartError] = useState<string | undefined>();
   // Group State
   const [participants, setParticipants] = useState<Participant[]>(INITIAL_PARTICIPANTS);
@@ -527,6 +583,8 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       });
       if (!isMounted.current) return;
       setSoloSummary(summary);
+      setSoloSyncState({ sessionId: summary.sessionId, status: 'pending' });
+      void soloSyncWorker.current?.kick({ sessionId: summary.sessionId });
       setActiveSoloSession(null);
       const shouldShowSummaryNow = currentScreen === '02-solo-select' || currentScreen === '03-solo-timer';
       setSoloSummaryPendingView(!shouldShowSummaryNow);
@@ -669,6 +727,10 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
         {currentScreen === '04-solo-summary' && soloSummary && (
           <SoloSummaryScreen
             summary={soloSummary}
+            syncStatus={soloSyncState?.sessionId === soloSummary.sessionId ? soloSyncState.status : 'pending'}
+            onRetrySync={() => {
+              void soloSyncWorker.current?.kick({ ignoreBackoff: true, sessionId: soloSummary.sessionId });
+            }}
             onNewFocus={() => {
               setSoloSummaryPendingView(false);
               setCurrentScreen('02-solo-select');

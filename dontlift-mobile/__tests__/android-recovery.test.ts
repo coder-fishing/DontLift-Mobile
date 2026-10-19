@@ -34,7 +34,7 @@ const path = require('path') as PathModule;
 const operatingSystem = require('os') as OsModule;
 let database: TestDatabase;
 let directory: string;
-let failOutboxInsert = false;
+let failLocalViolationInsert = false;
 
 function openDatabase(file: string): TestDatabase {
   const DatabaseSync = (require('node:sqlite') as { DatabaseSync: new (file: string) => NativeDatabase }).DatabaseSync;
@@ -48,8 +48,8 @@ function openDatabase(file: string): TestDatabase {
       return native.prepare(sql).all(...params) as T[];
     },
     async runAsync(sql: string, ...params: unknown[]) {
-      if (failOutboxInsert && sql.includes('INSERT INTO sync_outbox')) {
-        throw new Error('Injected outbox insert failure');
+      if (failLocalViolationInsert && sql.includes('INSERT INTO violation_logs')) {
+        throw new Error('Injected local violation insert failure');
       }
       return native.prepare(sql).run(...params);
     },
@@ -108,7 +108,7 @@ function createClock(overrides?: Partial<{
 beforeEach(async () => {
   directory = fileSystem.mkdtempSync(path.join(operatingSystem.tmpdir(), 'dontlift-android-recovery-'));
   database = openDatabase(path.join(directory, 'test.db'));
-  failOutboxInsert = false;
+  failLocalViolationInsert = false;
   await migrateLocalDatabase(database);
 });
 
@@ -131,7 +131,7 @@ describe('Expo Go Android background recovery', () => {
     expect(await database.getFirstAsync('SELECT COUNT(*) AS count FROM violation_logs')).toEqual({ count: 0 });
   });
 
-  test('confirms exactly once at three seconds and commits its outbox event atomically', async () => {
+  test('confirms exactly once at three seconds and keeps the violation local', async () => {
     await seedSession();
     const { clock, dependencies } = createClock();
     const input = { sessionId: 'session-1', userId: 'user-1' };
@@ -145,8 +145,8 @@ describe('Expo Go Android background recovery', () => {
     await expect(reconcileBackgroundCandidate(database, input, dependencies)).resolves.toBe('none');
     expect(await database.getFirstAsync('SELECT event_id, duration_seconds FROM violation_logs'))
       .toEqual({ event_id: 'candidate-1', duration_seconds: 3 });
-    expect(await database.getFirstAsync("SELECT event_id, event_type FROM sync_outbox WHERE event_type = 'VIOLATION_RECORDED'"))
-      .toEqual({ event_id: 'candidate-1', event_type: 'VIOLATION_RECORDED' });
+    expect(await database.getFirstAsync("SELECT COUNT(*) AS count FROM sync_outbox WHERE event_type = 'VIOLATION_RECORDED'"))
+      .toEqual({ count: 0 });
   });
 
   test('routes a forward wall-clock jump after process restart to manual review', async () => {
@@ -215,16 +215,16 @@ describe('Expo Go Android background recovery', () => {
       .resolves.toEqual({ eventId: 'open-event', startedAtUtcMs: 10_000, confirmedAtUtcMs: 13_000 });
   });
 
-  test('rolls candidate and violation writes back if the outbox insert fails', async () => {
+  test('rolls candidate state back if the local violation insert fails', async () => {
     await seedSession();
     const { clock, dependencies } = createClock();
     const input = { sessionId: 'session-1', userId: 'user-1' };
     await beginBackgroundCandidate(database, input, dependencies);
     clock.utc += 4_000;
     clock.monotonic += 4_000;
-    failOutboxInsert = true;
+    failLocalViolationInsert = true;
 
-    await expect(reconcileBackgroundCandidate(database, input, dependencies)).rejects.toThrow('Injected outbox insert failure');
+    await expect(reconcileBackgroundCandidate(database, input, dependencies)).rejects.toThrow('Injected local violation insert failure');
     expect(await database.getFirstAsync('SELECT state FROM lifecycle_candidates')).toEqual({ state: 'PENDING' });
     expect(await database.getFirstAsync('SELECT COUNT(*) AS count FROM violation_logs')).toEqual({ count: 0 });
   });
@@ -274,8 +274,10 @@ describe('shared recovery event timestamps', () => {
     expect(await database.getFirstAsync('SELECT duration_seconds, ended_at FROM violation_logs')).toEqual({
       duration_seconds: 4, ended_at: new Date(active.utcMs).toISOString(),
     });
-    const outbox = await database.getFirstAsync<{ payload_json: string }>('SELECT payload_json FROM sync_outbox');
-    expect(JSON.parse(outbox!.payload_json)).toEqual(expect.objectContaining({ durationSeconds: 4 }));
+    expect(await database.getFirstAsync("SELECT COUNT(*) AS count FROM sync_outbox WHERE event_type = 'VIOLATION_RECORDED'"))
+      .toEqual({ count: 0 });
+    expect(await database.getFirstAsync('SELECT duration_seconds FROM violation_logs'))
+      .toEqual({ duration_seconds: 4 });
   });
 
   test('does not create a background candidate if a foreground violation committed before it', async () => {
