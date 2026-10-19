@@ -1,7 +1,6 @@
 import * as Crypto from 'expo-crypto';
 import type * as SQLite from 'expo-sqlite';
 import { getLocalDatabase } from '../local/database';
-import { enqueueViolationRecorded } from '../sync/outbox-repository';
 
 export const BACKGROUND_GRACE_PERIOD_MS = 3_000;
 // Các mốc được đọc liên tiếp nên lệch tối đa 1 giây vẫn được xem là sai số nhỏ.
@@ -211,15 +210,6 @@ export async function reconcileBackgroundCandidate(
       durationSeconds,
       createdAt,
     );
-    await enqueueViolationRecorded(transaction, {
-      eventId: candidate.id,
-      sessionId: session.id,
-      actorUid: session.user_id,
-      startedAtUtcMs: candidate.transition_at_utc_ms,
-      endedAtUtcMs,
-      durationSeconds,
-      createdAt,
-    });
     await resolveCandidate(transaction, candidate.id, 'CONFIRMED', nowUtcMs);
     result = 'confirmed';
   });

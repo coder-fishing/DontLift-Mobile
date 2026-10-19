@@ -38,7 +38,7 @@ type SQLiteHarness = {
   failOnProfileMigration: boolean;
   failOnSessionsMigration: boolean;
   failOnSessionInsert: boolean;
-  failOnOutboxInsert: boolean;
+  failOnViolationInsert: boolean;
   databases: TestDatabase[];
   open: () => TestDatabase;
 };
@@ -52,7 +52,7 @@ function createSQLiteHarness(databaseFile: string): SQLiteHarness {
     failOnProfileMigration: false,
     failOnSessionsMigration: false,
     failOnSessionInsert: false,
-    failOnOutboxInsert: false,
+    failOnViolationInsert: false,
     databases: [],
     open: () => {
       const { DatabaseSync } = require('node:sqlite') as { DatabaseSync: new (path: string) => NativeDatabase };
@@ -77,8 +77,8 @@ function createSQLiteHarness(databaseFile: string): SQLiteHarness {
           if (fixture.failOnSessionInsert && sql.includes('INSERT INTO sessions')) {
             throw new Error('Injected session insert failure');
           }
-          if (fixture.failOnOutboxInsert && sql.includes('INSERT INTO sync_outbox')) {
-            throw new Error('Injected outbox insert failure');
+          if (fixture.failOnViolationInsert && sql.includes('INSERT INTO violation_logs')) {
+            throw new Error('Injected local violation insert failure');
           }
           return database.prepare(sql).run(...params);
         },
@@ -192,7 +192,7 @@ describe('local database initialization', () => {
     await reopened.closeAsync();
   });
 
-  test('records a violation and its outbox event in one local transaction', async () => {
+  test('records and closes a Solo violation locally without adding a cloud event', async () => {
     const { getLocalDatabase } = await loadDatabaseModule();
     const database = await getLocalDatabase();
     const { recordViolationStart, endViolation } = require('../src/features/solo/violation-repository') as typeof import('../src/features/solo/violation-repository');
@@ -204,36 +204,32 @@ describe('local database initialization', () => {
     expect(record).toMatchObject({ eventId: 'violation-1', endedAtUtcMs: null, durationSeconds: 3 });
     expect(await database.getFirstAsync('SELECT event_id, session_id, duration_seconds FROM violation_logs'))
       .toEqual({ event_id: 'violation-1', session_id: 'session-1', duration_seconds: 3 });
-    expect(await database.getFirstAsync('SELECT event_id, event_type, sync_status FROM sync_outbox'))
-      .toEqual({ event_id: 'violation-1', event_type: 'VIOLATION_RECORDED', sync_status: 'PENDING' });
+    expect(await database.getFirstAsync('SELECT COUNT(*) AS count FROM sync_outbox'))
+      .toEqual({ count: 0 });
 
     const endedAtUtcMs = startedAtUtcMs + 7_250;
     expect(await endViolation(database, { eventId: 'violation-1', endedAtUtcMs })).toBe(true);
     expect(await endViolation(database, { eventId: 'violation-1', endedAtUtcMs: endedAtUtcMs + 5_000 })).toBe(false);
     const updatedViolation = await database.getFirstAsync('SELECT ended_at, duration_seconds FROM violation_logs');
-    const updatedEvent = await database.getFirstAsync<{ payload_json: string }>('SELECT payload_json FROM sync_outbox');
     expect(updatedViolation).toEqual({ ended_at: new Date(endedAtUtcMs).toISOString(), duration_seconds: 7 });
-    expect(JSON.parse(updatedEvent?.payload_json ?? '{}')).toEqual({
-      startedAtUtcMs,
-      endedAtUtcMs,
-      durationSeconds: 7,
-    });
+    expect(await database.getFirstAsync('SELECT COUNT(*) AS count FROM sync_outbox'))
+      .toEqual({ count: 0 });
     await database.closeAsync();
   });
 
-  test('rolls back the violation row when its outbox insert fails', async () => {
+  test('keeps local violation state empty when its SQLite insert fails', async () => {
     const currentHarness = harness;
     if (!currentHarness) throw new Error('SQLite test harness was not initialized.');
     const database = await (await loadDatabaseModule()).getLocalDatabase();
     const { recordViolationStart } = require('../src/features/solo/violation-repository') as typeof import('../src/features/solo/violation-repository');
-    currentHarness.failOnOutboxInsert = true;
+    currentHarness.failOnViolationInsert = true;
 
     await expect(recordViolationStart(database, {
       sessionId: 'session-1',
       userId: 'owner-1',
       startedAtUtcMs: 10_000,
       confirmedAtUtcMs: 13_000,
-    }, { createId: () => 'violation-failed', now: () => 13_000 })).rejects.toThrow('Injected outbox insert failure');
+    }, { createId: () => 'violation-failed', now: () => 13_000 })).rejects.toThrow('Injected local violation insert failure');
     expect(await database.getFirstAsync('SELECT COUNT(*) AS count FROM violation_logs')).toEqual({ count: 0 });
     expect(await database.getFirstAsync('SELECT COUNT(*) AS count FROM sync_outbox')).toEqual({ count: 0 });
     await database.closeAsync();

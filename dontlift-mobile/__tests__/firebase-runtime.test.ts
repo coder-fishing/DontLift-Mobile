@@ -62,9 +62,10 @@ describe('Firebase environment boundary', () => {
       emulatorHost: '127.0.0.1',
       authEmulatorPort: '9099',
       firestoreEmulatorPort: '8080',
+      functionsEmulatorPort: '5001',
     })).toMatchObject({
       mode: 'emulator',
-      emulator: { host: '127.0.0.1', authPort: 9099, firestorePort: 8080 },
+      emulator: { host: '127.0.0.1', authPort: 9099, firestorePort: 8080, functionsPort: 5001 },
     });
   });
 
@@ -80,6 +81,17 @@ describe('Firebase environment boundary', () => {
       mode: 'emulator',
       emulatorHost: '127.0.0.1',
       authEmulatorPort: '70000',
+      firestoreEmulatorPort: '8080',
+      functionsEmulatorPort: '5001',
+    })).toThrow('port');
+  });
+
+  test('requires an explicit Functions emulator port', () => {
+    expect(() => resolveFirebaseRuntimeConfig({
+      ...development,
+      mode: 'emulator',
+      emulatorHost: '127.0.0.1',
+      authEmulatorPort: '9099',
       firestoreEmulatorPort: '8080',
     })).toThrow('port');
   });

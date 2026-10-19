@@ -22,6 +22,12 @@ service cloud.firestore {
         && request.resource.data.updatedAt is timestamp
         && request.resource.data.updatedAt == request.time;
       allow list, update, delete: if false;
+
+      // Solo summary được ghi bởi syncEvents; owner chỉ đọc history của chính mình.
+      match /sessions/{sessionId} {
+        allow get, list: if request.auth != null && request.auth.uid == uid;
+        allow create, update, delete: if false;
+      }
     }
     // Các slice room, sync và entitlement chưa triển khai không được mở quyền theo migration này.
     match /{document=**} {

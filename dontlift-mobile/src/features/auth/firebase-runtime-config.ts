@@ -19,6 +19,7 @@ export interface FirebaseRuntimeSettings {
   emulatorHost?: string;
   authEmulatorPort?: string;
   firestoreEmulatorPort?: string;
+  functionsEmulatorPort?: string;
 }
 
 export interface FirebaseRuntimeConfig {
@@ -27,7 +28,7 @@ export interface FirebaseRuntimeConfig {
   mode: 'cloud' | 'emulator';
   projectId: string;
   firebaseOptions: FirebaseOptions;
-  emulator?: { host: string; authPort: number; firestorePort: number };
+  emulator?: { host: string; authPort: number; firestorePort: number; functionsPort: number };
 }
 
 function emulatorPort(value: string | undefined): number {
@@ -73,7 +74,12 @@ export function resolveFirebaseRuntimeConfig(settings: FirebaseRuntimeSettings):
     if (!host || !/^[a-zA-Z0-9.-]+$/.test(host) || host === '0.0.0.0') {
       throw new FirebaseRuntimeConfigurationError('invalid-emulator-host', 'An explicit emulator hostname or IPv4 host is required.');
     }
-    config.emulator = { host, authPort: emulatorPort(settings.authEmulatorPort), firestorePort: emulatorPort(settings.firestoreEmulatorPort) };
+    config.emulator = {
+      host,
+      authPort: emulatorPort(settings.authEmulatorPort),
+      firestorePort: emulatorPort(settings.firestoreEmulatorPort),
+      functionsPort: emulatorPort(settings.functionsEmulatorPort),
+    };
   }
   return config;
 }

@@ -1,7 +1,6 @@
 import * as Crypto from 'expo-crypto';
 import type * as SQLite from 'expo-sqlite';
 import { getLocalDatabase } from '../local/database';
-import { enqueueViolationRecorded, updateViolationRecordedEvent } from '../sync/outbox-repository';
 import type { ActiveViolation } from './grace-period-engine';
 
 export type ViolationRecord = {
@@ -39,7 +38,7 @@ export async function recordViolationStart(
   const durationSeconds = Math.floor((confirmedAtUtcMs - input.startedAtUtcMs) / 1_000);
 
   await database.withExclusiveTransactionAsync(async (transaction) => {
-    // Domain record và outbox luôn commit cùng nhau để không có violation bị mất đường sync.
+    // Solo violation là dữ liệu cục bộ; chỉ summary hoàn tất đi vào cloud outbox.
     await transaction.runAsync(
       `INSERT INTO violation_logs (
          event_id, session_id, room_id, user_id, started_at, confirmed_at, ended_at,
@@ -53,15 +52,6 @@ export async function recordViolationStart(
       durationSeconds,
       createdAt,
     );
-    await enqueueViolationRecorded(transaction, {
-      eventId,
-      sessionId: input.sessionId,
-      actorUid: input.userId,
-      startedAtUtcMs: input.startedAtUtcMs,
-      endedAtUtcMs: confirmedAtUtcMs,
-      durationSeconds,
-      createdAt,
-    });
   });
 
   return {
@@ -103,12 +93,6 @@ export async function endViolation(
     );
     if (result.changes !== 1) return;
 
-    await updateViolationRecordedEvent(transaction, {
-      eventId: input.eventId,
-      startedAtUtcMs,
-      endedAtUtcMs,
-      durationSeconds,
-    });
     ended = true;
   });
   return ended;

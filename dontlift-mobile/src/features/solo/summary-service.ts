@@ -2,7 +2,6 @@ import type * as SQLite from 'expo-sqlite';
 import { getLocalDatabase } from '../local/database';
 import {
   enqueueSoloSessionCompleted,
-  updateViolationRecordedEvent,
 } from '../sync/outbox-repository';
 
 export type SoloSessionSummary = {
@@ -175,12 +174,6 @@ export async function completeSoloSession(
         violation.event_id,
       );
       if (updated.changes !== 1) throw new Error('Active violation could not be closed at session completion.');
-      await updateViolationRecordedEvent(transaction, {
-        eventId: violation.event_id,
-        startedAtUtcMs: violationStartedAtUtcMs,
-        endedAtUtcMs: violationEndedAtUtcMs,
-        durationSeconds: violationDurationSeconds,
-      });
     }
 
     const violations = await summarizeViolations(transaction, {

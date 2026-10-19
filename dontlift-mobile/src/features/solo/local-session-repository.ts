@@ -1,7 +1,6 @@
 import * as Crypto from 'expo-crypto';
 import type * as SQLite from 'expo-sqlite';
 import { getLocalDatabase } from '../local/database';
-import { updateViolationRecordedEvent } from '../sync/outbox-repository';
 import type {
   SoloSession,
   SoloSessionMode,
@@ -130,12 +129,6 @@ export async function cancelActiveLocalSession(
         violation.event_id,
       );
       if (updated.changes !== 1) throw new Error('Active violation could not be closed while canceling the session.');
-      await updateViolationRecordedEvent(transaction, {
-        eventId: violation.event_id,
-        startedAtUtcMs,
-        endedAtUtcMs,
-        durationSeconds,
-      });
     }
 
     // Session và violation cùng commit; lỗi ghi hủy sẽ giữ nguyên violation ACTIVE để retry.
