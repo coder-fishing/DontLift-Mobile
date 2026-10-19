@@ -22,14 +22,16 @@ Rules dùng authenticated UID và membership existence:
 - User chỉ đọc profile của mình và chỉ sửa profile field allowlist.
 - `isPremium`, role, score, room status, counters và bill fields là server-owned.
 - Host/Member chỉ đọc room resources khi membership hợp lệ.
-- Client không trực tiếp ghi authoritative room subcollections.
-- `roomPins`, monthly usage, activation codes và sync receipts bị deny hoàn toàn với client.
+- Client không trực tiếp ghi authoritative room subcollections, ngoại trừ đúng transaction tạo room ban đầu được ADR-011 cho phép.
+- `roomPins` chỉ được tạo cùng transaction SL-013 và không thể đọc; monthly usage chỉ được tạo/cập nhật cùng transaction đó. Activation codes và sync receipts bị deny hoàn toàn với client.
 - Create/update đều kiểm tra field allowlist, types, size và immutable fields.
 - Queries phải mang constraints tương thích với Rules.
 
 Functions dùng Admin SDK phải lặp lại Auth, role, ownership, type, size và lifecycle checks vì Admin SDK bỏ qua Rules.
 
 PIN được reserve bằng `roomPins/{pin}` trong transaction. Client join qua `joinRoomByPin`; không query PIN collection.
+
+**Ngoại lệ SL-013:** Theo [ADR-011](ADR-011-spark-room-creation.md), Security Rules cho phép đúng transaction tạo ban đầu của Host: room WAITING, membership HOST, PIN reservation create-only, current quota và command receipt. Client vẫn không được đọc PIN reservations hoặc update/delete bất kỳ authority document nào; mọi document phải qua `getAfter()` consistency checks.
 
 ## Consequences
 
@@ -38,7 +40,7 @@ PIN được reserve bằng `roomPins/{pin}` trong transaction. Client join qua 
 - Không có unbounded participant array trên room.
 - Role authority không đến từ request payload.
 - Membership document phục vụ Rules và domain cùng lúc.
-- Server-only collections không bị client enumeration.
+- PIN reservations và các collection chỉ dành cho server không bị client enumeration.
 - Dễ audit field ownership và create/update parity.
 
 ### Negative

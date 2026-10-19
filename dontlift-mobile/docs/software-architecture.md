@@ -114,7 +114,7 @@ Trên Android, lifecycle observer persist candidate tại `ON_STOP`; WorkManager
 |---|---|---|
 | `users/{uid}` | Chính user | User chỉ sửa profile allowlist; Functions sửa entitlement |
 | `users/{uid}/sessions/{sessionId}` | Chính user | `syncEvents` Function |
-| `rooms/{roomId}` | Host hoặc Member có membership | Functions |
+| `rooms/{roomId}` | Host hoặc Member có membership | Rules-authorized createRoom transaction (initial create only); Functions for later authoritative mutations |
 | `members/{uid}` | Thành viên room | Functions |
 | `violations/{eventId}` | Thành viên room | `syncEvents` Function |
 | early-exit requests | Thành viên room | Request/decision Functions |
@@ -191,10 +191,12 @@ History query của US-16 đọc collection này theo owner path, sắp xếp `c
 
 A bill share stores `baseShareVnd`, `penaltyShareVnd`, optional override information, `shareVnd`, `paymentStatus` và `updatedAt`. `settlementDetails/current` stores `bankId`, `accountNumber`, `accountName`, `updatedAt` và `expiresAt = room.completedAt + 30 days`; only `setSettlementDetails` writes it, room Members may read it, and scheduled cleanup deletes it at expiry. Bank details never enter logs or analytics. A `reconciliationAudits` document is append-only and stores `action = HOST_OVERRIDE`, `actorUid`, `requestId`, `unsyncedMemberUids`, `roomEndedAt`, `createdAt` và resulting score snapshot reference.
 
-### 6.2 Server-only supporting collections
+### 6.2 Server-owned supporting collections
 
-- `roomPins/{pin}`: unique active PIN reservation and room reference.
-- `users/{uid}/usage/{yyyyMM}`: atomic room-creation counter.
+- `roomPins/{pin}`: unique active PIN reservation and room reference; create-only Rules exception for SL-013, no client reads.
+- `users/{uid}/usage/current`: current calendar bucket and atomic room-creation counter; owner read, create/update only as part of the validated SL-013 transaction.
+- `users/{uid}/roomQuotaClock/current`: per-user server-time probe, owner read/write only with `checkedAt == request.time`; it does not authorize quota or room changes.
+- `users/{uid}/commandReceipts/{requestId}`: command outcome. SL-013 receipt is create-only in the validated transaction; other command receipts remain server-only.
 - `activationCodes/{codeHash}`: redemption authority; plaintext code không làm document ID.
 - `users/{uid}/syncReceipts/{eventId}`: event type, payload hash, outcome, processed time và optional destination reference.
 
@@ -234,14 +236,14 @@ Initial allowlist: `VIOLATION_RECORDED`, `SOLO_SESSION_COMPLETED`, `GROUP_SESSIO
 
 ## 7. API và Firestore contract
 
-Wire-level request, response, required-field, response-version, per-function error và transaction-output contracts nằm trong [`docs/api-contracts.md`](api-contracts.md). Artifact này là canonical callable schema; prose table dưới đây chỉ là responsibility index.
+Wire-level request, response, required-field, response-version, per-command error và transaction-output contracts nằm trong [`docs/api-contracts.md`](api-contracts.md). Artifact này là canonical contract; prose table dưới đây chỉ là responsibility index.
 
-### 7.1 Callable Functions
+### 7.1 Callable Functions and Rules-authorized command exceptions
 
 | Function | Authority/invariant |
 |---|---|
 | `completeRegistrationProfile` | Khởi tạo profile theo authenticated UID |
-| `createRoom` | Monthly quota, unique PIN, Host membership |
+| `createRoom` | Monthly quota, unique PIN, Host membership; Rules-authorized Firestore transaction per ADR-011 |
 | `joinRoomByPin` | WAITING state, capacity, idempotent membership |
 | `startRoom` | Host-only `WAITING → ACTIVE` |
 | `syncEvents` | Batch validation, receipts, idempotent domain effects |

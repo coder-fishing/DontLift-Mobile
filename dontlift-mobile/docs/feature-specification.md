@@ -45,7 +45,7 @@
 
 ### 2.2 Entitlement & Quota Authorization Rules
 - **Host Room Creation Limit (`US-06`, `FR-06`):**  
-  - Free Tier Host: Max 7 created rooms per calendar month. Evaluated via Cloud Function before room creation (`COUNT(rooms WHERE hostId == uid AND createdAt >= firstDayOfMonth) < 7`).  
+  - Free Tier Host: Max 7 created rooms per calendar month. For SL-013, a Firestore transaction and Security Rules enforce the counter atomically using server request time and the approved D12 calendar.
   - Premium Tier Host: Unlimited room creations (`is_premium == true`).  
 - **Room Capacity Limit (`US-07`, `FR-06`):**  
   - Free Tier Host Room: Max 5 participants (1 Host + 4 Members). Blocked at join time via Cloud Function (`participantCount < 5`).  
@@ -110,7 +110,7 @@
    - Session summary written to local SQLite and queued for Firestore sync.
 
 ### 4.2 Group Room Mode (`US-06` – `US-12`, `FR-03`, `FR-04`)
-1. **Room Creation (`US-06`):** Host taps "Create Room". Server returns 4-digit PIN (e.g. `4829`) and QR string (`dontlift://room/4829`). Room enters `WAITING` state. Local `rooms` table row created.
+1. **Room Creation (`US-06`):** Host taps "Create Room". The authenticated client submits one Firestore transaction authorized by Security Rules; the transaction creates a `WAITING` room, unique 4-digit PIN reservation, Host membership, quota counter and receipt atomically. Canonical QR payload is `dontliftmobile://room/{4-digit-PIN}`. The local `rooms` row is created only after server commit. See ADR-011.
 2. **Room Join (`US-07`):** Member enters PIN or scans QR code. Cloud Function checks room status (`WAITING`), capacity (Free Host $\le 5$), and adds member to `rooms/{roomId}/members/{uid}`. Operation is idempotent. Member caches room metadata into local `rooms` and `room_members` tables.
 3. **Lobby & Real-Time Listener (`US-08`):** Firestore real-time snapshot listener syncs participant list across all devices in real time and updates local `room_members` SQLite cache. Host sees "Start Session" button; Members see waiting banner.
 4. **Session Active (`US-09`):** Host starts session. All devices trigger local motion detection (`FR-01`). Each confirmed violation writes to local SQLite and syncs to Firestore `rooms/{roomId}/violations/{eventId}`. Penalty Leaderboard updates across all connected clients within $\le 2\text{s}$.
