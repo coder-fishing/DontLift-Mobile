@@ -212,6 +212,29 @@ const migrations: LocalMigration[] = [
       });
     },
   },
+  {
+    version: 6,
+    async migrate(database) {
+      // Cache cloud tách khỏi sessions để không tạo session/outbox giả trên thiết bị khác.
+      await database.execAsync(`
+        CREATE TABLE IF NOT EXISTS solo_history_cache (
+          user_id TEXT NOT NULL,
+          session_id TEXT NOT NULL,
+          duration_seconds INTEGER NOT NULL,
+          lift_count INTEGER NOT NULL,
+          violation_duration_seconds INTEGER NOT NULL,
+          penalty_score INTEGER NOT NULL,
+          started_at TEXT NOT NULL,
+          completed_at TEXT NOT NULL,
+          PRIMARY KEY(user_id, session_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_solo_history_cache_owner_completed
+          ON solo_history_cache(user_id, completed_at DESC, session_id DESC);
+        CREATE INDEX IF NOT EXISTS idx_solo_history_sessions_owner_completed
+          ON sessions(user_id, status, completed_at DESC, id DESC);
+      `);
+    },
+  },
 ];
 
 const latestSchemaVersion = migrations.at(-1)?.version ?? 0;

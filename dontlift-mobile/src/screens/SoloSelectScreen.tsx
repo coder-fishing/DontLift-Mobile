@@ -15,6 +15,7 @@ interface SoloSelectScreenProps {
   onStartSession: (mode: 'COUNTDOWN' | 'STOPWATCH', mins: number) => void;
   onContinueSession: () => void;
   onCancelSession: () => void;
+  onOpenHistory: () => void;
   isStarting: boolean;
   isCancelling: boolean;
   startError?: string;
@@ -32,6 +33,7 @@ export function SoloSelectScreen({
   onStartSession,
   onContinueSession,
   onCancelSession,
+  onOpenHistory,
   isStarting,
   isCancelling,
   startError,
@@ -59,6 +61,8 @@ export function SoloSelectScreen({
           Select discipline interval before placing phone face-down.
         </Text>
       </View>
+
+      <PrimaryButton accessibilityRole="button" title="View Solo history" variant="secondary" onPress={onOpenHistory} />
 
       {activeSession ? (
         <GlassCard style={styles.activeSessionCard}>
