@@ -98,18 +98,36 @@ export function createSoloSyncWorker(dependencies: SyncWorkerDependencies) {
   let disposed = false;
   let currentRun: Promise<void> | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  const retryDeadlinesByEvent = new Map<string, number>();
 
   const emit = (sessionId: string, status: 'syncing' | 'pending' | 'synced' | 'failed') => {
     dependencies.onStatusChange?.(sessionId, status);
   };
 
-  const scheduleRetryTimer = (delayMs: number) => {
-    if (disposed) return;
+  const armRetryTimer = () => {
+    if (
+      disposed
+      || dependencies.getCurrentUserId() !== dependencies.userId
+      || retryDeadlinesByEvent.size === 0
+    ) return;
+
     if (retryTimer) clearTimeout(retryTimer);
+    const earliestRetryAtUtcMs = Math.min(...retryDeadlinesByEvent.values());
+    const currentTimeUtcMs = now();
+    const delayMs = earliestRetryAtUtcMs > currentTimeUtcMs
+      ? earliestRetryAtUtcMs - currentTimeUtcMs
+      : BASE_RETRY_DELAY_MS;
+
     retryTimer = setTimeout(() => {
       retryTimer = undefined;
-      void kick();
-    }, Math.max(0, delayMs));
+      void kick().finally(armRetryTimer);
+    }, delayMs);
+  };
+
+  const scheduleRetryTimer = (eventId: string, nextAttemptAtUtcMs: number) => {
+    if (disposed) return;
+    retryDeadlinesByEvent.set(eventId, nextAttemptAtUtcMs);
+    armRetryTimer();
   };
 
   const retryDelay = (attemptCount: number) => {
@@ -127,7 +145,11 @@ export function createSoloSyncWorker(dependencies: SyncWorkerDependencies) {
       return;
     }
 
-    events.forEach((event) => emit(event.sessionId, 'syncing'));
+    events.forEach((event) => {
+      retryDeadlinesByEvent.delete(event.eventId);
+      emit(event.sessionId, 'syncing');
+    });
+    armRetryTimer();
     let response: Awaited<ReturnType<SyncWorkerTransport['sendBatch']>>;
     try {
       response = await dependencies.transport.sendBatch(events.map((event): SoloSyncWireEvent => ({
@@ -160,14 +182,15 @@ export function createSoloSyncWorker(dependencies: SyncWorkerDependencies) {
           emit(event.sessionId, 'failed');
         } else {
           const delay = retryDelay(event.attemptCount);
+          const nextAttemptAtUtcMs = now() + delay;
           await dependencies.repository.scheduleRetry({
             userId: dependencies.userId,
             eventId: event.eventId,
-            nextAttemptAtUtcMs: now() + delay,
+            nextAttemptAtUtcMs,
             errorCode: code,
           });
           emit(event.sessionId, 'pending');
-          scheduleRetryTimer(delay);
+          scheduleRetryTimer(event.eventId, nextAttemptAtUtcMs);
         }
       }
       return;
@@ -188,14 +211,15 @@ export function createSoloSyncWorker(dependencies: SyncWorkerDependencies) {
       const outcome = outcomeById.get(event.eventId);
       if (!outcome) {
         const delay = retryDelay(event.attemptCount);
+        const nextAttemptAtUtcMs = now() + delay;
         await dependencies.repository.scheduleRetry({
           userId: dependencies.userId,
           eventId: event.eventId,
-          nextAttemptAtUtcMs: now() + delay,
+          nextAttemptAtUtcMs,
           errorCode: 'missing-outcome',
         });
         emit(event.sessionId, 'pending');
-        scheduleRetryTimer(delay);
+        scheduleRetryTimer(event.eventId, nextAttemptAtUtcMs);
       } else if (outcome.status === 'SYNCED') {
         await dependencies.repository.markSynced({
           userId: dependencies.userId, eventId: event.eventId, syncedAtUtcMs: now(),
@@ -203,14 +227,15 @@ export function createSoloSyncWorker(dependencies: SyncWorkerDependencies) {
         emit(event.sessionId, 'synced');
       } else if (outcome.retryable) {
         const delay = retryDelay(event.attemptCount);
+        const nextAttemptAtUtcMs = now() + delay;
         await dependencies.repository.scheduleRetry({
           userId: dependencies.userId,
           eventId: event.eventId,
-          nextAttemptAtUtcMs: now() + delay,
+          nextAttemptAtUtcMs,
           errorCode: outcome.errorCode ?? 'retryable-failure',
         });
         emit(event.sessionId, 'pending');
-        scheduleRetryTimer(delay);
+        scheduleRetryTimer(event.eventId, nextAttemptAtUtcMs);
       } else {
         await dependencies.repository.markFailed({
           userId: dependencies.userId,
@@ -251,6 +276,7 @@ export function createSoloSyncWorker(dependencies: SyncWorkerDependencies) {
       disposed = true;
       if (retryTimer) clearTimeout(retryTimer);
       retryTimer = undefined;
+      retryDeadlinesByEvent.clear();
     },
   };
 }
