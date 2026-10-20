@@ -12,9 +12,10 @@ interface JoinRoomScreenProps {
   errorMessage?: string;
   onJoin: (pin: string) => void;
   onCancel: () => void;
+  onOpenLobby?: () => void;
 }
 
-export function JoinRoomScreen({ result, isJoining, errorMessage, onJoin, onCancel }: JoinRoomScreenProps) {
+export function JoinRoomScreen({ result, isJoining, errorMessage, onJoin, onCancel, onOpenLobby }: JoinRoomScreenProps) {
   const [pin, setPin] = useState('');
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [isScannerOpen, setScannerOpen] = useState(false);
@@ -70,6 +71,7 @@ export function JoinRoomScreen({ result, isJoining, errorMessage, onJoin, onCanc
             <Text style={styles.body}>Bạn đã vào phòng đang chờ. Mã PIN được giữ trên thiết bị này để mở lại phòng.</Text>
             <Text style={styles.pin}>{result.pin}</Text>
             <Text style={styles.body}>Hiện có {result.participantCount} người trong phòng.</Text>
+            <PrimaryButton title="Mở sảnh chờ" onPress={onOpenLobby ?? onCancel} />
             {!result.localCacheSaved ? (
               <Text accessibilityRole="alert" style={styles.body}>Đã tham gia trên Firebase, nhưng cache trên thiết bị chưa hoàn tất. Bạn có thể nhập lại mã này để thử cache lần nữa.</Text>
             ) : null}

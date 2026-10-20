@@ -23,7 +23,7 @@ async function seedRoom(env, { pin = '12345678', roomId = '10000000-0000-4000-80
     await setDoc(doc(db, `rooms/${roomId}`), {
       hostId: hostUid, pin, status, participantCount: count,
       createdAt: now, updatedAt: now, hostHeartbeatAt: now,
-      startedAt: null, endedAt: null, lastJoinRequestId: null,
+      startedAt: null, endedAt: null, lastJoinRequestId: null, lastStartRequestId: null,
     });
     await setDoc(doc(db, `rooms/${roomId}/members/${hostUid}`), {
       displayName: 'Host User', role: 'HOST', status: 'ACTIVE', penaltyScore: 0,
@@ -112,7 +112,7 @@ test('free host room rejects a sixth participant and active room joins', async t
     await setDoc(doc(context.firestore(), `rooms/${fullRoomId}`), {
       hostId: 'room-host', pin: '12345678', status: 'ACTIVE', participantCount: 2,
       createdAt: serverTimestamp(), updatedAt: serverTimestamp(), hostHeartbeatAt: serverTimestamp(),
-      startedAt: serverTimestamp(), endedAt: null, lastJoinRequestId: null,
+      startedAt: serverTimestamp(), endedAt: null, lastJoinRequestId: null, lastStartRequestId: null,
     });
   });
   await assertFails(join(db, { roomId: fullRoomId, uid: 'full-member', requestId: '00000000-0000-4000-8000-000000000035' }));

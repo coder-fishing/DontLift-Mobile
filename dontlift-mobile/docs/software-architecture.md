@@ -245,7 +245,7 @@ Wire-level request, response, required-field, response-version, per-command erro
 | `completeRegistrationProfile` | Khởi tạo profile theo authenticated UID |
 | `createRoom` | Monthly quota, unique PIN, Host membership; Rules-authorized Firestore transaction per ADR-011 |
 | `joinRoomByPin` | WAITING state, capacity, idempotent membership |
-| `startRoom` | Host-only `WAITING → ACTIVE` |
+| `startRoom` | Host-only `WAITING → ACTIVE`; Rules-authorized Firestore transaction per ADR-013 |
 | `syncEvents` | Batch validation, receipts, idempotent domain effects |
 | `requestEarlyExit` | Active Member, one open request |
 | `decideEarlyExit` | Host-only, freeze Member stats on approval |

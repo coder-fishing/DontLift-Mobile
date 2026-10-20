@@ -22,7 +22,7 @@ Rules dùng authenticated UID và membership existence:
 - User chỉ đọc profile của mình và chỉ sửa profile field allowlist.
 - `isPremium`, role, score, room status, counters và bill fields là server-owned.
 - Host/Member chỉ đọc room resources khi membership hợp lệ.
-- Client không trực tiếp ghi authoritative room subcollections, ngoại trừ đúng transaction tạo room ban đầu được ADR-011 cho phép.
+- Client không trực tiếp ghi authoritative room subcollections, ngoại trừ đúng transactions `createRoom` (ADR-011), `joinRoomByPin` (ADR-012) và transition `startRoom` (ADR-013); Rules giới hạn exact fields, actor và precondition của từng transaction.
 - `roomPins` chỉ được tạo cùng transaction SL-013 và không thể đọc; monthly usage chỉ được tạo/cập nhật cùng transaction đó. Activation codes và sync receipts bị deny hoàn toàn với client.
 - Create/update đều kiểm tra field allowlist, types, size và immutable fields.
 - Queries phải mang constraints tương thích với Rules.

@@ -6,10 +6,23 @@ import {
 import type * as SQLite from 'expo-sqlite';
 import { getRandomBytes } from 'expo-crypto';
 import { encodeRoomInvitation } from './room-invite-contract';
+export { persistRoomLobbyProjection } from './room-lobby-projection';
 import { mapRoomCreateError, RoomCreateError, type RoomCreateStage } from './room-create-error';
 export { RoomCreateError } from './room-create-error';
 
 type RoomJoinErrorCode = 'unauthenticated' | 'invalid-argument' | 'not-found' | 'failed-precondition' | 'unavailable' | 'already-exists' | 'rejected' | 'unknown';
+
+type RoomStartErrorCode = 'unauthenticated' | 'invalid-argument' | 'not-found' | 'failed-precondition' | 'unavailable' | 'rejected' | 'unknown';
+
+export class RoomStartError extends Error {
+  constructor(public readonly code: RoomStartErrorCode, public readonly firebaseCode?: string) {
+    super(code);
+    this.name = 'RoomStartError';
+  }
+}
+
+export type RoomStartCommand = { version: 1; roomId: string; requestId: string };
+export type StartedRoom = { version: 1; roomId: string; requestId: string; status: 'ACTIVE'; startedAtUtcMs: number | null };
 
 export class RoomJoinError extends Error {
   constructor(public readonly code: RoomJoinErrorCode, public readonly firebaseCode?: string) {
@@ -62,6 +75,31 @@ function mapJoinError(error: unknown): RoomJoinError {
   if (code === 'permission-denied') return new RoomJoinError('rejected', code);
   if (code === 'already-exists') return new RoomJoinError('already-exists', code);
   return new RoomJoinError('unknown');
+}
+
+function mapRoomStartError(error: unknown): RoomStartError {
+  if (error instanceof RoomStartError) return error;
+  const code = typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string'
+    ? error.code.replace(/^firestore\//, '') : '';
+  if (code === 'unauthenticated') return new RoomStartError('unauthenticated', code);
+  if (['unavailable', 'deadline-exceeded', 'network-request-failed'].includes(code)) return new RoomStartError('unavailable', code);
+  if (code === 'not-found') return new RoomStartError('not-found', code);
+  if (code === 'failed-precondition') return new RoomStartError('failed-precondition', code);
+  if (code === 'permission-denied') return new RoomStartError('rejected', code);
+  return new RoomStartError('unknown', code || undefined);
+}
+
+export function roomStartErrorMessage(error: unknown): string {
+  if (!(error instanceof RoomStartError)) return 'Không thể bắt đầu phòng lúc này. Hãy thử lại.';
+  switch (error.code) {
+    case 'unauthenticated': return 'Phiên đăng nhập không còn hiệu lực. Hãy đăng nhập lại rồi thử lại.';
+    case 'invalid-argument': return 'Yêu cầu bắt đầu phòng không hợp lệ.';
+    case 'not-found': return 'Không tìm thấy phòng này.';
+    case 'failed-precondition': return 'Phòng đã được bắt đầu hoặc không còn ở trạng thái chờ.';
+    case 'unavailable': return 'Không có kết nối tới Firebase. Phòng chưa được bắt đầu; hãy kết nối rồi thử lại.';
+    case 'rejected': return 'Firebase từ chối bắt đầu phòng. Hãy xác nhận bạn vẫn là Host của phòng đang chờ.';
+    default: return 'Không thể bắt đầu phòng lúc này. Hãy thử lại.';
+  }
 }
 
 export function roomJoinErrorMessage(error: unknown): string {
@@ -147,6 +185,9 @@ async function saveJoinedRoomProjection(database: SQLite.SQLiteDatabase, room: J
 
 export function createRoomRepository(dependencies: RoomCreateDependencies) {
   return {
+    startCommand(roomId: string): RoomStartCommand {
+      return { version: 1, roomId, requestId: dependencies.randomUUID() };
+    },
     createCommand(): RoomCreateCommand {
       return {
         requestId: dependencies.randomUUID(),
@@ -212,7 +253,7 @@ export function createRoomRepository(dependencies: RoomCreateDependencies) {
           transaction.set(roomRef, {
             hostId: uid, pin, status: 'WAITING', participantCount: 1,
             createdAt: timestamp, updatedAt: timestamp, hostHeartbeatAt: timestamp,
-            startedAt: null, endedAt: null, lastJoinRequestId: null,
+            startedAt: null, endedAt: null, lastJoinRequestId: null, lastStartRequestId: null,
           });
           transaction.set(memberRef, {
             displayName: profile.data().displayName || hostDisplayName,
@@ -261,6 +302,52 @@ export function createRoomRepository(dependencies: RoomCreateDependencies) {
         return { ...created, localCacheSaved };
       } catch (error) {
         throw mapRoomCreateError(error, stage);
+      }
+    },
+    async startRoom(command: RoomStartCommand): Promise<StartedRoom> {
+      const actor = dependencies.auth.currentUser;
+      if (!actor) throw new RoomStartError('unauthenticated');
+      const uuidV4 = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
+      if (command.version !== 1 || !uuidV4.test(command.roomId) || !uuidV4.test(command.requestId)) {
+        throw new RoomStartError('invalid-argument');
+      }
+      const roomRef = doc(dependencies.firestore, 'rooms', command.roomId);
+      const memberRef = doc(dependencies.firestore, 'rooms', command.roomId, 'members', actor.uid);
+      try {
+        // Transaction online-only: Rules kiểm tra membership Host và giờ server trước khi đổi lifecycle.
+        const result = await runTransaction(dependencies.firestore, async transaction => {
+          const [roomSnapshot, memberSnapshot] = await Promise.all([
+            transaction.get(roomRef), transaction.get(memberRef),
+          ]);
+          if (!roomSnapshot.exists()) throw new RoomStartError('not-found');
+          if (!memberSnapshot.exists()) throw new RoomStartError('rejected');
+          const room = roomSnapshot.data();
+          const member = memberSnapshot.data();
+          if (room.hostId !== actor.uid || member.role !== 'HOST' || member.status !== 'ACTIVE') {
+            throw new RoomStartError('rejected');
+          }
+          if (room.status === 'ACTIVE' && room.lastStartRequestId === command.requestId) {
+            return { version: 1 as const, roomId: command.roomId, requestId: command.requestId, status: 'ACTIVE' as const };
+          }
+          if (room.status !== 'WAITING') throw new RoomStartError('failed-precondition');
+          transaction.update(roomRef, {
+            status: 'ACTIVE', startedAt: serverTimestamp(), updatedAt: serverTimestamp(),
+            lastStartRequestId: command.requestId,
+          });
+          return { version: 1 as const, roomId: command.roomId, requestId: command.requestId, status: 'ACTIVE' as const };
+        });
+        // Transaction đã commit; lỗi đọc lại chỉ làm timestamp tạm thời chưa xác định.
+        let startedAtUtcMs: number | null = null;
+        try {
+          const committed = await getDocFromServer(roomRef);
+          const startedAt = committed.data()?.startedAt;
+          if (startedAt instanceof Timestamp) startedAtUtcMs = startedAt.toMillis();
+        } catch {
+          // Listener/retry có thể bổ sung timestamp sau; không báo transaction đã thất bại.
+        }
+        return { ...result, startedAtUtcMs };
+      } catch (error) {
+        throw mapRoomStartError(error);
       }
     },
     async joinRoomByPin(command: RoomJoinCommand): Promise<JoinedRoom> {

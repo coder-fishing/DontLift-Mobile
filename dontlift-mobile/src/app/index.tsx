@@ -50,7 +50,8 @@ import { createSoloSyncWorker } from '../features/sync/sync-worker';
 import { createSyncEventsPort } from '../features/sync/sync-events-port';
 import { getConfiguredFirebaseRuntime } from '../features/auth/firebase-adapters';
 import { getLocalDatabase } from '../features/local/database';
-import { createRoomRepository, RoomCreateError, type CreatedRoom, type RoomCreateCommand, type JoinedRoom, RoomJoinError, roomJoinErrorMessage } from '../features/rooms/room-repository';
+import { createRoomRepository, persistRoomLobbyProjection, RoomCreateError, type CreatedRoom, type RoomCreateCommand, type JoinedRoom, RoomJoinError, roomJoinErrorMessage, RoomStartError, roomStartErrorMessage, type RoomStartCommand } from '../features/rooms/room-repository';
+import { listenToRoomLobby, type RoomLobbyState } from '../features/rooms/room-listener';
 import { roomCreateErrorMessage } from '../features/rooms/room-create-error';
 import { JoinRoomScreen } from '../screens/JoinRoomScreen';
 import { createBackgroundRecoveryRepository } from '../features/solo/background-recovery';
@@ -129,15 +130,13 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     () => createSoloHistoryRepository(getConfiguredFirebaseRuntime(Platform.OS, __DEV__)),
     [profile.uid],
   );
-  const roomRepository = useMemo(() => {
-    const runtime = getConfiguredFirebaseRuntime(Platform.OS, __DEV__);
-    return createRoomRepository({
-      firestore: runtime.firestore,
-      auth: runtime.auth,
+  const roomRuntime = useMemo(() => getConfiguredFirebaseRuntime(Platform.OS, __DEV__), [profile.uid]);
+  const roomRepository = useMemo(() => createRoomRepository({
+      firestore: roomRuntime.firestore,
+      auth: roomRuntime.auth,
       database: getLocalDatabase(),
       randomUUID: Crypto.randomUUID,
-    });
-  }, [profile.uid]);
+    }), [roomRuntime]);
   // Navigation & Drawer
   const [currentScreen, setCurrentScreen] = useState<ScreenId>('02-solo-select');
   const [drawerVisible, setDrawerVisible] = useState<boolean>(false);
@@ -152,6 +151,21 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const [joinedRoom, setJoinedRoom] = useState<JoinedRoom | null>(null);
   const [roomJoinError, setRoomJoinError] = useState<string | undefined>();
   const pendingRoomJoinCommand = useRef<{ requestId: string; pin: string } | null>(null);
+  const [roomLobbyState, setRoomLobbyState] = useState<RoomLobbyState | null>(null);
+  const [isStartingRoom, setIsStartingRoom] = useState(false);
+  const [roomStartError, setRoomStartError] = useState<string | undefined>();
+  const pendingRoomStartCommand = useRef<RoomStartCommand | null>(null);
+  const lobbyRoom = joinedRoom ?? createdRoom;
+
+  useEffect(() => {
+    if (currentScreen !== '05-group-lobby' || !lobbyRoom) {
+      setRoomLobbyState(null);
+      return undefined;
+    }
+    // Mỗi lần mở sảnh tạo đúng một cặp listener; cleanup ngăn snapshot cũ ghi đè room mới.
+    return listenToRoomLobby(roomRuntime.firestore, lobbyRoom.roomId, setRoomLobbyState,
+      snapshot => persistRoomLobbyProjection(getLocalDatabase(), snapshot));
+  }, [currentScreen, lobbyRoom?.roomId, roomRuntime.firestore]);
 
   const handleCreateRoom = async () => {
     if (isCreatingRoom) return;
@@ -164,6 +178,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       const result = await roomRepository.createRoom(profile.displayName, command);
       if (attemptId !== roomCreateAttempt.current) return;
       pendingRoomCommand.current = null;
+      setJoinedRoom(null);
       setCreatedRoom(result);
     } catch (error) {
       if (!(error instanceof RoomCreateError) || error.code !== 'unavailable') pendingRoomCommand.current = null;
@@ -188,6 +203,28 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     setRoomJoinError(undefined);
     pendingRoomJoinCommand.current = null;
     setCurrentScreen('12-join-room');
+  };
+
+  const handleStartRoom = async () => {
+    if (!lobbyRoom || isStartingRoom) return;
+    setIsStartingRoom(true);
+    setRoomStartError(undefined);
+    const command = pendingRoomStartCommand.current?.roomId === lobbyRoom.roomId
+      ? pendingRoomStartCommand.current
+      : roomRepository.startCommand(lobbyRoom.roomId);
+    pendingRoomStartCommand.current = command;
+    try {
+      await roomRepository.startRoom(command);
+      pendingRoomStartCommand.current = null;
+    } catch (error) {
+      if (!(error instanceof RoomStartError) || error.code !== 'unavailable') pendingRoomStartCommand.current = null;
+      if (__DEV__ && error instanceof RoomStartError) {
+        console.warn('[room-start] failed', JSON.stringify({ code: error.code, firebaseCode: error.firebaseCode }));
+      }
+      setRoomStartError(roomStartErrorMessage(error));
+    } finally {
+      setIsStartingRoom(false);
+    }
   };
 
   const handleJoinRoom = async (pin: string) => {
@@ -852,11 +889,21 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
 
         {currentScreen === '05-group-lobby' && (
           <GroupLobbyScreen
-            room={createdRoom}
+            room={lobbyRoom ? {
+              roomId: lobbyRoom.roomId, pin: lobbyRoom.pin, invitation: lobbyRoom.invitation,
+              hostUid: lobbyRoom.hostUid,
+              createdAt: 'createdAt' in lobbyRoom ? lobbyRoom.createdAt : lobbyRoom.roomCreatedAt,
+              localCacheSaved: lobbyRoom.localCacheSaved,
+            } : null}
             isCreating={isCreatingRoom}
             errorMessage={roomCreateError}
-            onCreateRoom={() => { void handleCreateRoom(); }}
             onCancelCreate={cancelRoomCreateAndJoin}
+            lobbyState={roomLobbyState}
+            isHost={lobbyRoom?.hostUid === profile.uid}
+            isStarting={isStartingRoom}
+            startError={roomStartError}
+            onStartRoom={() => { void handleStartRoom(); }}
+            onCreateRoom={() => { void handleCreateRoom(); }}
             onJoinRoom={() => {
               setJoinedRoom(null);
               setRoomJoinError(undefined);
@@ -873,6 +920,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
             errorMessage={roomJoinError}
             onJoin={(pin) => { void handleJoinRoom(pin); }}
             onCancel={cancelRoomJoin}
+            onOpenLobby={() => { setCurrentScreen('05-group-lobby'); }}
           />
         )}
 

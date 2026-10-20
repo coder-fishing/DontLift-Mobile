@@ -8,7 +8,7 @@
     "test:rules": "node --test tests/profile-owner-read.rules.emulator.test.cjs",
     "test:login": "node --test tests/login-profile-read.rules.emulator.test.cjs",
     "test:registration": "node --test tests/registration-profile.test.cjs",
-    "test:rooms": "node --test tests/room-create.rules.emulator.test.cjs tests/room-join-pin.rules.emulator.test.cjs",
+    "test:rooms": "node --test tests/room-create.rules.emulator.test.cjs tests/room-join-pin.rules.emulator.test.cjs tests/room-lobby-start.rules.emulator.test.cjs",
     "test:sync:unit": "node --test tests/solo-sync-handler.test.cjs",
     "test:sync": "node --test tests/solo-sync.test.cjs",
     "test:history": "node --test tests/solo-history-rules.emulator.test.cjs",

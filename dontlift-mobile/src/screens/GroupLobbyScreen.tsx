@@ -3,18 +3,27 @@ import { ActivityIndicator, Share, StyleSheet, Text, View } from 'react-native';
 import { Colors } from '../constants/theme';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { RoomInvitationQr } from '../components/RoomInvitationQr';
-import type { CreatedRoom } from '../features/rooms/room-repository';
+import type { RoomLobbyState } from '../features/rooms/room-listener';
+
+type LobbyRoom = { roomId: string; pin: string; invitation: string; hostUid: string; hostDisplayName?: string; createdAt: string | null; localCacheSaved: boolean };
 
 interface GroupLobbyScreenProps {
-  room: CreatedRoom | null;
+  room: LobbyRoom | null;
   isCreating: boolean;
   errorMessage?: string;
   onCreateRoom: () => void;
   onJoinRoom: () => void;
   onCancelCreate: () => void;
+  lobbyState?: RoomLobbyState | null;
+  isHost?: boolean;
+  isStarting?: boolean;
+  startError?: string;
+  onStartRoom?: () => void;
 }
 
-export function GroupLobbyScreen({ room, isCreating, errorMessage, onCreateRoom, onJoinRoom, onCancelCreate }: GroupLobbyScreenProps) {
+export function GroupLobbyScreen({ room, isCreating, errorMessage, onCreateRoom, onJoinRoom, onCancelCreate, lobbyState, isHost, isStarting, startError, onStartRoom }: GroupLobbyScreenProps) {
+  // Snapshot của phòng trước không được lóe lên giữa lần đổi room và effect cleanup.
+  const visibleLobbyState = lobbyState?.snapshot && lobbyState.snapshot.roomId !== room?.roomId ? null : lobbyState;
   if (!room) {
     return (
       <View style={styles.container}>
@@ -47,13 +56,30 @@ export function GroupLobbyScreen({ room, isCreating, errorMessage, onCreateRoom,
       <View style={styles.card}>
         <Text style={styles.eyebrow}>ROOM ĐANG CHỜ</Text>
         <Text style={styles.title}>Phòng đã sẵn sàng</Text>
-        <Text style={styles.body}>Chia sẻ mã mời để người khác tham gia. Danh sách người tham gia realtime sẽ có ở slice sau.</Text>
+        <Text style={styles.body}>Chia sẻ mã mời để người khác tham gia. Danh sách bên dưới được cập nhật trực tiếp từ Firebase.</Text>
         <View style={styles.qrCard} accessibilityLabel="Mã QR lời mời phòng">
           <RoomInvitationQr value={room.invitation} size={200} />
         </View>
         <Text style={styles.pinLabel}>PIN PHÒNG</Text>
         <Text selectable style={styles.pin}>{room.pin}</Text>
         <Text selectable style={styles.invitation}>{room.invitation}</Text>
+        {!visibleLobbyState || visibleLobbyState.kind === 'loading' ? <Text style={styles.body}>Đang tải danh sách thành viên…</Text> : null}
+        {visibleLobbyState?.kind === 'cached' ? <Text style={styles.body}>Đang hiển thị dữ liệu đã lưu trên máy; chờ kết nối Firebase để cập nhật trực tiếp.</Text> : null}
+        {visibleLobbyState?.kind === 'error' ? <Text accessibilityRole="alert" style={styles.error}>Mất kết nối tới danh sách realtime. Đang giữ dữ liệu gần nhất.</Text> : null}
+        {visibleLobbyState?.snapshot ? (
+          <View style={styles.roster} accessibilityLabel="Danh sách thành viên trong phòng">
+            <Text style={styles.pinLabel}>{visibleLobbyState.snapshot.status === 'ACTIVE' ? 'PHÒNG ĐÃ BẮT ĐẦU' : 'ĐANG CHỜ'} · {visibleLobbyState.snapshot.participantCount} NGƯỜI</Text>
+            {visibleLobbyState.snapshot.members.map(member => (
+              <Text key={member.uid} style={styles.member}>{member.displayName}{member.uid === room.hostUid ? ' · Host' : ''}</Text>
+            ))}
+          </View>
+        ) : null}
+        {isHost && visibleLobbyState?.kind === 'live' && visibleLobbyState.snapshot.status === 'WAITING' ? (
+          <>
+            {startError ? <Text accessibilityRole="alert" style={styles.error}>{startError}</Text> : null}
+            <PrimaryButton title={isStarting ? 'Đang bắt đầu…' : 'Bắt đầu phòng'} onPress={onStartRoom ?? (() => {})} disabled={isStarting} />
+          </>
+        ) : null}
         {!room.localCacheSaved && room.createdAt === null ? (
           <Text accessibilityRole="alert" style={styles.body}>Phòng đã lưu trên Firebase. Thời gian máy chủ đang chờ xác nhận nên chưa lưu cache cục bộ.</Text>
         ) : null}
@@ -85,4 +111,6 @@ const styles = StyleSheet.create({
   pinLabel: { color: Colors.light.textSecondary, fontSize: 11, fontWeight: '800' },
   pin: { color: Colors.light.text, fontSize: 30, fontWeight: '900', letterSpacing: 5, fontVariant: ['tabular-nums'] },
   invitation: { color: Colors.light.primary, fontSize: 13, textAlign: 'center' },
+  roster: { width: '100%', gap: 8, padding: 14, borderRadius: 16, backgroundColor: Colors.light.backgroundElement },
+  member: { color: Colors.light.text, fontSize: 14, textAlign: 'center' },
 });
