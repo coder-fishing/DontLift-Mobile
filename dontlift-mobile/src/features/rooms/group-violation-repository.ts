@@ -133,6 +133,7 @@ export function createGroupViolationRepository(dependencies: Dependencies) {
               liftCount: Number(member.data().liftCount) + 1,
               violationDurationSeconds: Number(member.data().violationDurationSeconds) + durationSeconds,
               penaltyScore: Number(member.data().penaltyScore) + 10 + durationSeconds,
+              lastViolationEventId: row.event_id,
             });
           });
           await db.withExclusiveTransactionAsync(async tx => {

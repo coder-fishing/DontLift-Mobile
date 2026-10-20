@@ -32,14 +32,14 @@ async function seedActiveRoom(env) {
   });
 }
 
-function confirmedEvent() {
+function confirmedEvent(id = eventId) {
   const endedAt = Timestamp.now();
   const startedAt = Timestamp.fromMillis(endedAt.toMillis() - 4_000);
-  return { eventId, actorUid: memberId, startedAt, endedAt, durationSeconds: 4, createdAt: serverTimestamp() };
+  return { eventId: id, actorUid: memberId, startedAt, endedAt, durationSeconds: 4, createdAt: serverTimestamp() };
 }
 
 async function recordAtomically(db, uid, event = confirmedEvent(), targetUid = uid) {
-  const eventRef = doc(db, `rooms/${roomId}/violations/${eventId}`);
+  const eventRef = doc(db, `rooms/${roomId}/violations/${event.eventId}`);
   const memberRef = doc(db, `rooms/${roomId}/members/${targetUid}`);
   return runTransaction(db, async transaction => {
     const [member, existing] = await Promise.all([transaction.get(memberRef), transaction.get(eventRef)]);
@@ -100,4 +100,26 @@ test('Rules enforce the three-second grace period for every confirmed event', as
     endedAt, durationSeconds: 2, createdAt: serverTimestamp(),
   };
   await assertFails(recordAtomically(db, memberId, event));
+});
+
+test('Rules reject incrementing a score by reusing an existing violation event', async t => {
+  const env = await createRulesEnvironment();
+  t.after(() => env.cleanup());
+  await seedActiveRoom(env);
+  const db = env.authenticatedContext(memberId).firestore();
+  const first = confirmedEvent(eventId);
+  const second = confirmedEvent('00000000-0000-4000-8000-000000000018');
+  await assertSucceeds(recordAtomically(db, memberId, first));
+  await assertSucceeds(recordAtomically(db, memberId, second));
+
+  const memberRef = doc(db, `rooms/${roomId}/members/${memberId}`);
+  await assertFails(runTransaction(db, async transaction => {
+    const member = await transaction.get(memberRef);
+    transaction.update(memberRef, {
+      liftCount: member.data().liftCount + 1,
+      violationDurationSeconds: member.data().violationDurationSeconds + first.durationSeconds,
+      penaltyScore: member.data().penaltyScore + 10 + first.durationSeconds,
+      lastViolationEventId: first.eventId,
+    });
+  }));
 });

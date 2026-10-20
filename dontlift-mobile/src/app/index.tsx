@@ -163,14 +163,14 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const lobbyRoom = joinedRoom ?? createdRoom;
 
   useEffect(() => {
-    if (!['05-group-lobby', '06-group-active'].includes(currentScreen) || !lobbyRoom) {
+    if (!lobbyRoom) {
       setRoomLobbyState(null);
       return undefined;
     }
-    // Mỗi lần mở sảnh tạo đúng một cặp listener; cleanup ngăn snapshot cũ ghi đè room mới.
+    // Giữ listener sống khi đổi tab để Group Active vẫn nhận trạng thái phòng và tiếp tục capture.
     return listenToRoomLobby(roomRuntime.firestore, lobbyRoom.roomId, setRoomLobbyState,
       snapshot => persistRoomLobbyProjection(getLocalDatabase(), snapshot));
-  }, [currentScreen, lobbyRoom?.roomId, roomRuntime.firestore]);
+  }, [lobbyRoom?.roomId, roomRuntime.firestore]);
 
   useEffect(() => {
     if (roomLobbyState?.snapshot?.status === 'ACTIVE' && roomLobbyState.snapshot.startedAtUtcMs !== null

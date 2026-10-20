@@ -161,6 +161,8 @@ service cloud.firestore {
       return memberUid == request.auth.uid
         && activeRoomMember(roomId, memberUid)
         && eventId is string
+        // Chỉ cho phép tăng điểm khi cùng transaction tạo event mới, không khi trỏ lại event cũ.
+        && !exists(eventPath)
         && resource.data.get('lastViolationEventId', null) != eventId
         && after.diff(resource.data).affectedKeys().hasOnly(['liftCount', 'violationDurationSeconds', 'penaltyScore', 'lastViolationEventId'])
         && after.lastViolationEventId == eventId
