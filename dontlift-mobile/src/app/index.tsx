@@ -52,6 +52,7 @@ import { getConfiguredFirebaseRuntime } from '../features/auth/firebase-adapters
 import { getLocalDatabase } from '../features/local/database';
 import { createRoomRepository, persistRoomLobbyProjection, RoomCreateError, type CreatedRoom, type RoomCreateCommand, type JoinedRoom, RoomJoinError, roomJoinErrorMessage, RoomStartError, roomStartErrorMessage, type RoomStartCommand } from '../features/rooms/room-repository';
 import { listenToRoomLobby, type RoomLobbyState } from '../features/rooms/room-listener';
+import { createGroupViolationRepository, type GroupViolationError } from '../features/rooms/group-violation-repository';
 import { roomCreateErrorMessage } from '../features/rooms/room-create-error';
 import { JoinRoomScreen } from '../screens/JoinRoomScreen';
 import { createBackgroundRecoveryRepository } from '../features/solo/background-recovery';
@@ -137,6 +138,10 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       database: getLocalDatabase(),
       randomUUID: Crypto.randomUUID,
     }), [roomRuntime]);
+  const groupViolationRepository = useMemo(() => createGroupViolationRepository({
+    firestore: roomRuntime.firestore,
+    auth: roomRuntime.auth,
+  }), [roomRuntime]);
   // Navigation & Drawer
   const [currentScreen, setCurrentScreen] = useState<ScreenId>('02-solo-select');
   const [drawerVisible, setDrawerVisible] = useState<boolean>(false);
@@ -158,7 +163,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const lobbyRoom = joinedRoom ?? createdRoom;
 
   useEffect(() => {
-    if (currentScreen !== '05-group-lobby' || !lobbyRoom) {
+    if (!['05-group-lobby', '06-group-active'].includes(currentScreen) || !lobbyRoom) {
       setRoomLobbyState(null);
       return undefined;
     }
@@ -166,6 +171,14 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     return listenToRoomLobby(roomRuntime.firestore, lobbyRoom.roomId, setRoomLobbyState,
       snapshot => persistRoomLobbyProjection(getLocalDatabase(), snapshot));
   }, [currentScreen, lobbyRoom?.roomId, roomRuntime.firestore]);
+
+  useEffect(() => {
+    if (roomLobbyState?.snapshot?.status === 'ACTIVE' && roomLobbyState.snapshot.startedAtUtcMs !== null
+      && ['live', 'cached'].includes(roomLobbyState.kind)
+      && currentScreen === '05-group-lobby') {
+      setCurrentScreen('06-group-active');
+    }
+  }, [roomLobbyState, currentScreen]);
 
   const handleCreateRoom = async () => {
     if (isCreatingRoom) return;
@@ -348,9 +361,173 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const [soloStartError, setSoloStartError] = useState<string | undefined>();
   // Group State
   const [participants, setParticipants] = useState<Participant[]>(INITIAL_PARTICIPANTS);
-  const [groupTimerSeconds, setGroupTimerSeconds] = useState<number>(13 * 60 + 40); // 13:40
-  const [groupAlertVisible, setGroupAlertVisible] = useState<boolean>(true);
-  const [groupGraceSeconds, setGroupGraceSeconds] = useState<number>(2);
+  const [groupTimerSeconds, setGroupTimerSeconds] = useState(0);
+  const [groupDetection, setGroupDetection] = useState<ForegroundDetectionViewState>(INITIAL_DETECTION_STATE);
+  const [groupIsOnline, setGroupIsOnline] = useState(false);
+  const [groupSyncMessage, setGroupSyncMessage] = useState<string>();
+  const candidateGroupRoom = roomLobbyState?.snapshot;
+  const groupRoomSnapshot = candidateGroupRoom?.status === 'ACTIVE'
+    && candidateGroupRoom.startedAtUtcMs !== null ? candidateGroupRoom : null;
+
+  useEffect(() => {
+    if (!groupRoomSnapshot) {
+      setGroupTimerSeconds(0);
+      return undefined;
+    }
+    const update = () => setGroupTimerSeconds(Math.max(0, Math.floor((Date.now() - groupRoomSnapshot.startedAtUtcMs!) / 1_000)));
+    update();
+    const timer = setInterval(update, 1_000);
+    return () => clearInterval(timer);
+  }, [groupRoomSnapshot?.roomId, groupRoomSnapshot?.startedAtUtcMs]);
+
+  useEffect(() => {
+    if (!groupRoomSnapshot) {
+      setGroupDetection(INITIAL_DETECTION_STATE);
+      return undefined;
+    }
+    const roomId = groupRoomSnapshot.roomId;
+    const controller = createForegroundDetectionController({ id: roomId, userId: profile.uid }, groupViolationRepository);
+    let disposed = false;
+    let initialized = false;
+    let processing = false;
+    let lifecyclePending = false;
+    let lifecycleController: ReturnType<typeof createSessionLifecycleController> | undefined;
+    let lastDetectionState = INITIAL_DETECTION_STATE;
+    let latestMeasurement: AccelerometerMeasurement | undefined;
+    let tickRequested = false;
+
+    const refreshPending = async () => {
+      try {
+        const pending = await groupViolationRepository.getPendingCount(roomId);
+        if (!disposed) setGroupSyncMessage(pending > 0 ? `${pending} violation${pending === 1 ? '' : 's'} waiting to sync` : undefined);
+      } catch {
+        if (!disposed) setGroupSyncMessage('Could not check pending sync yet.');
+      }
+    };
+    const drain = async () => {
+      if (disposed || processing || !initialized || lifecyclePending || AppState.currentState !== 'active') return;
+      processing = true;
+      try {
+        while (!disposed && !lifecyclePending && AppState.currentState === 'active' && (latestMeasurement || tickRequested)) {
+          if (latestMeasurement) {
+            const sample = latestMeasurement;
+            latestMeasurement = undefined;
+            const next = await controller.observeSample(sample, Date.now());
+            if (!disposed) {
+              setGroupDetection(next);
+              if (lastDetectionState.isViolationActive && !next.isViolationActive) {
+                void groupViolationRepository.syncPending(roomId).then(refreshPending).catch(() => refreshPending());
+              }
+              lastDetectionState = next;
+            }
+          } else {
+            tickRequested = false;
+            const next = await controller.tick(Date.now());
+            if (!disposed) {
+              setGroupDetection(next);
+              if (lastDetectionState.isViolationActive && !next.isViolationActive) {
+                void groupViolationRepository.syncPending(roomId).then(refreshPending).catch(() => refreshPending());
+              }
+              lastDetectionState = next;
+            }
+          }
+        }
+      } catch {
+        if (!disposed) setGroupDetection(state => ({
+          ...state, persistenceError: 'Could not save the group violation on this device. It will retry automatically.',
+        }));
+      } finally {
+        processing = false;
+        if (!disposed && !lifecyclePending && (latestMeasurement || tickRequested)) void drain();
+      }
+    };
+
+    void (async () => {
+      try {
+        const db = await getLocalDatabase();
+        await db.runAsync(
+          `INSERT OR IGNORE INTO sessions (id, user_id, mode, status, duration_seconds, started_at, completed_at, synced_at)
+           VALUES (?, ?, 'GROUP', 'ACTIVE', 0, ?, NULL, NULL)`,
+          roomId, profile.uid, new Date(groupRoomSnapshot.startedAtUtcMs!).toISOString(),
+        );
+        const state = await controller.initialize();
+        if (disposed) return;
+        setGroupDetection(state);
+        lastDetectionState = state;
+        initialized = true;
+        lifecycleController = createSessionLifecycleController({
+          session: { sessionId: roomId, userId: profile.uid },
+          initialState: AppState.currentState,
+          repository: backgroundRecovery,
+          captureTime: backgroundRecovery.captureTime,
+          getDetector: () => controller,
+          onPendingChange: pending => {
+            lifecyclePending = pending;
+            if (!pending) void drain();
+          },
+          onRecovered: (recovery, detection) => {
+            if (detection) { setGroupDetection(detection); lastDetectionState = detection; }
+            void groupViolationRepository.syncPending(roomId).then(refreshPending).catch(() => refreshPending());
+            if (recovery === 'needs-review') Alert.alert(
+              'Session recovery needs review',
+              'Background time could not be verified. No group violation was added for that interval.',
+            );
+          },
+          onError: stage => setGroupDetection(current => ({
+            ...current,
+            persistenceError: stage === 'begin'
+              ? 'Could not save this background transition; its interval may not count.'
+              : 'Could not recover the background interval. It remains saved locally for retry.',
+          })),
+        });
+        void drain();
+        void refreshPending();
+      } catch {
+        if (!disposed) setGroupDetection(current => ({ ...current, persistenceError: 'Could not load this room’s local violation history.' }));
+      }
+    })();
+
+    let sensorSubscription: ReturnType<typeof accelerometerAdapter.subscribe> | undefined;
+    let timer: ReturnType<typeof setInterval> | undefined;
+    try {
+      accelerometerAdapter.setUpdateInterval(20);
+      sensorSubscription = accelerometerAdapter.subscribe(sample => { latestMeasurement = sample; void drain(); });
+      timer = setInterval(() => { tickRequested = true; void drain(); }, 200);
+    } catch {
+      setGroupDetection(state => ({ ...state, persistenceError: 'Could not start the accelerometer. Check sensor availability.' }));
+    }
+    const appStateSubscription = AppState.addEventListener('change', state => {
+      if (state === 'active') {
+        void lifecycleController?.handleChange(state);
+        void drain();
+        void groupViolationRepository.syncPending(roomId).then(refreshPending).catch(() => refreshPending());
+      } else {
+        void lifecycleController?.handleChange(state);
+      }
+    });
+    const networkSubscription = Network.addNetworkStateListener(state => {
+      const online = state.isConnected === true && state.isInternetReachable !== false;
+      setGroupIsOnline(online);
+      if (online) void groupViolationRepository.syncPending(roomId).then(refreshPending).catch((error: GroupViolationError) => {
+        if (error.code === 'failed-precondition') setGroupSyncMessage('A saved violation is waiting for room reconciliation.');
+        else void refreshPending();
+      });
+    });
+    void Network.getNetworkStateAsync().then(state => {
+      const online = state.isConnected === true && state.isInternetReachable !== false;
+      if (!disposed) setGroupIsOnline(online);
+      if (online) void groupViolationRepository.syncPending(roomId).then(refreshPending).catch(() => refreshPending());
+    }).catch(() => { if (!disposed) setGroupIsOnline(false); });
+
+    return () => {
+      disposed = true;
+      sensorSubscription?.remove();
+      if (timer) clearInterval(timer);
+      appStateSubscription.remove();
+      networkSubscription.remove();
+      lifecycleController?.dispose();
+    };
+  }, [groupRoomSnapshot?.roomId, profile.uid, groupViolationRepository]);
 
   // Bill State
   const [totalBillAmount, setTotalBillAmount] = useState<number>(550000);
@@ -925,14 +1102,10 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
         )}
 
         {currentScreen === '06-group-active' && (
-          <GroupActiveScreen
-            participants={participants}
-            groupTimerSeconds={groupTimerSeconds}
-            groupAlertVisible={groupAlertVisible}
-            groupGraceSeconds={groupGraceSeconds}
-            isHostRole={isHostRole}
-            onEndSession={() => setCurrentScreen('07-bill-allocation')}
-          />
+          groupRoomSnapshot
+            ? <GroupActiveScreen snapshot={groupRoomSnapshot} elapsedSeconds={groupTimerSeconds}
+                detection={groupDetection} isOnline={groupIsOnline} syncMessage={groupSyncMessage} />
+            : <Text accessibilityRole="alert">Waiting for the active room snapshot…</Text>
         )}
 
         {currentScreen === '07-bill-allocation' && (
