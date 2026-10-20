@@ -46,7 +46,10 @@ export function GroupLobbyScreen({ room, isCreating, errorMessage, onCreateRoom 
         <Text style={styles.pinLabel}>PIN PHÒNG</Text>
         <Text selectable style={styles.pin}>{room.pin}</Text>
         <Text selectable style={styles.invitation}>{room.invitation}</Text>
-        {!room.localCacheSaved ? (
+        {!room.localCacheSaved && room.createdAt === null ? (
+          <Text accessibilityRole="alert" style={styles.body}>Phòng đã lưu trên Firebase. Thời gian máy chủ đang chờ xác nhận nên chưa lưu cache cục bộ.</Text>
+        ) : null}
+        {!room.localCacheSaved && room.createdAt !== null ? (
           <Text accessibilityRole="alert" style={styles.error}>Phòng đã lưu trên Firebase, nhưng cache trên thiết bị chưa ghi được.</Text>
         ) : null}
         <PrimaryButton

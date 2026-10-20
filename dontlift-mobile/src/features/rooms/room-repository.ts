@@ -14,7 +14,7 @@ export type CreatedRoom = {
   invitation: string;
   hostUid: string;
   hostDisplayName: string;
-  createdAt: string;
+  createdAt: string | null;
   localCacheSaved: boolean;
 };
 
@@ -56,6 +56,7 @@ async function saveRoomProjection(
   database: SQLite.SQLiteDatabase,
   room: CreatedRoom,
 ): Promise<void> {
+  if (room.createdAt === null) throw new Error('room-server-timestamp-pending');
   await database.withExclusiveTransactionAsync(async (transaction) => {
     await transaction.runAsync(
       `INSERT OR REPLACE INTO rooms (room_id, host_uid, pin, status, created_at, updated_at)
@@ -156,13 +157,13 @@ export function createRoomRepository(dependencies: RoomCreateDependencies) {
 
         const persistedRoomId = typeof receipt.roomId === 'string' ? receipt.roomId : roomId;
         const persistedPin = typeof receipt.pin === 'string' ? receipt.pin : pin;
-        let createdAt = new Date().toISOString();
+        let createdAt: string | null = null;
         try {
           const committedRoom = await getDocFromServer(doc(firestore, 'rooms', persistedRoomId));
           const serverCreatedAt = committedRoom.data()?.createdAt;
           if (serverCreatedAt instanceof Timestamp) createdAt = serverCreatedAt.toDate().toISOString();
         } catch {
-          // Commit đã thành công; thời gian local chỉ làm timestamp cho projection khi read-after-write lỗi.
+          // Commit đã thành công; để trống timestamp cho đến khi đọc lại được giá trị từ server.
         }
         const created: CreatedRoom = {
           roomId: persistedRoomId,
@@ -175,11 +176,13 @@ export function createRoomRepository(dependencies: RoomCreateDependencies) {
         };
 
         let localCacheSaved = false;
-        try {
-          await saveRoomProjection(await dependencies.database, created);
-          localCacheSaved = true;
-        } catch {
-          // Cloud transaction đã commit; không biến lỗi cache local thành báo lỗi tạo room.
+        if (createdAt !== null) {
+          try {
+            await saveRoomProjection(await dependencies.database, created);
+            localCacheSaved = true;
+          } catch {
+            // Cloud transaction đã commit; không biến lỗi cache local thành báo lỗi tạo room.
+          }
         }
         return { ...created, localCacheSaved };
       } catch (error) {
