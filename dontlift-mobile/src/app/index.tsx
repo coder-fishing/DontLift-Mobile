@@ -53,6 +53,7 @@ import { getLocalDatabase } from '../features/local/database';
 import { createRoomRepository, persistEarlyExitProjection, persistRoomLobbyProjection, persistTerminalRoomProjection, restoreCachedActiveRoom, RoomCreateError, type CreatedRoom, type RoomCreateCommand, type JoinedRoom, RoomJoinError, roomJoinErrorMessage, RoomStartError, roomStartErrorMessage, type RoomStartCommand } from '../features/rooms/room-repository';
 import { listenToRoomLobby, type RoomLobbyState } from '../features/rooms/room-listener';
 import { createGroupViolationRepository, GroupViolationError } from '../features/rooms/group-violation-repository';
+import { createEarlyExitSyncRetry } from '../features/rooms/early-exit-sync-retry';
 import { createEarlyExitRepository, EarlyExitError, type EarlyExitDecision, type EarlyExitRequest } from '../features/rooms/early-exit-repository';
 import { listenToOpenEarlyExitRequests } from '../features/rooms/early-exit-listener';
 import { roomCreateErrorMessage } from '../features/rooms/room-create-error';
@@ -185,7 +186,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const pendingRoomStartCommand = useRef<RoomStartCommand | null>(null);
   const [openEarlyExitRequests, setOpenEarlyExitRequests] = useState<EarlyExitRequest[]>([]);
   const [isRequestingEarlyExit, setIsRequestingEarlyExit] = useState(false);
-  const [decidingEarlyExitRequestId, setDecidingEarlyExitRequestId] = useState<string | null>(null);
+  const [decidingEarlyExit, setDecidingEarlyExit] = useState<{ requestId: string; decision: EarlyExitDecision } | null>(null);
   const [earlyExitError, setEarlyExitError] = useState<string>();
   const pendingEarlyExitRequest = useRef<{ roomId: string; requestId: string } | null>(null);
   const earlyExitCleanupInFlight = useRef(new Set<string>());
@@ -267,35 +268,62 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     }
   }, [roomLobbyState, currentScreen, profile.uid, groupViolationRepository]);
 
+  const earlyExitSnapshot = roomLobbyState?.snapshot;
+  const earlyExitMember = earlyExitSnapshot?.members.find(member => member.uid === profile.uid);
+  const earlyExitCutoffUtcMs = earlyExitMember?.earlyExitAtUtcMs;
   useEffect(() => {
-    const snapshot = roomLobbyState?.snapshot;
-    const ownMember = snapshot?.members.find(member => member.uid === profile.uid);
-    const cutoffUtcMs = ownMember?.earlyExitAtUtcMs;
+    const snapshot = earlyExitSnapshot;
+    const ownMember = earlyExitMember;
+    const cutoffUtcMs = earlyExitCutoffUtcMs;
     if (!snapshot || snapshot.status !== 'ACTIVE' || ownMember?.status !== 'EARLY_EXIT'
       || cutoffUtcMs == null || snapshot.startedAtUtcMs == null
       || earlyExitCleanupInFlight.current.has(snapshot.roomId)) return;
 
     const roomId = snapshot.roomId;
+    const startedAtUtcMs = snapshot.startedAtUtcMs;
     earlyExitCleanupInFlight.current.add(roomId);
+    let disposed = false;
+    let online = false;
+    let networkSubscription: ReturnType<typeof Network.addNetworkStateListener> | undefined;
+    let retryController: ReturnType<typeof createEarlyExitSyncRetry> | undefined;
+    const updateConnection = (state: Awaited<ReturnType<typeof Network.getNetworkStateAsync>>) => {
+      online = state.isConnected === true && state.isInternetReachable !== false;
+      setGroupIsOnline(online);
+      retryController?.setOnline(online);
+    };
+    networkSubscription = Network.addNetworkStateListener(updateConnection);
+    void Network.getNetworkStateAsync().then(updateConnection).catch(() => undefined);
     void (async () => {
       try {
         // Chốt violation đang mở đúng tại cutoff server rồi đóng projection session cục bộ.
         await groupViolationRepository.finalizeOpenAtRoomEnd({ roomId, userId: profile.uid, endedAtUtcMs: cutoffUtcMs });
+        if (disposed) return;
         await persistEarlyExitProjection(getLocalDatabase(), {
-          roomId, userId: profile.uid, cutoffUtcMs, startedAtUtcMs: snapshot.startedAtUtcMs!,
+          roomId, userId: profile.uid, cutoffUtcMs, startedAtUtcMs,
         });
-        try {
-          await groupViolationRepository.syncPending(roomId);
-        } catch (error) {
-          if (!(error instanceof GroupViolationError) || error.code !== 'failed-precondition') throw error;
-          // Room đã terminal thì SL-020 giữ quyền reconciliation cho event vẫn còn pending.
-        }
+        if (disposed) return;
+        retryController = createEarlyExitSyncRetry(roomId, groupViolationRepository, {
+          onPending: count => setGroupSyncMessage(`${count} eligible violation${count === 1 ? '' : 's'} waiting to sync. The app will retry while connected.`),
+          onDrained: failed => setGroupSyncMessage(failed > 0
+            ? `${failed} violation${failed === 1 ? '' : 's'} could not sync and remain saved on this device.`
+            : undefined),
+          onReconciliation: () => setGroupSyncMessage('A saved violation is waiting for room reconciliation.'),
+          onRetrying: () => setGroupSyncMessage('Eligible violations are saved on this device. Sync will retry while connected.'),
+        });
+        retryController.setOnline(online);
       } catch {
         earlyExitCleanupInFlight.current.delete(roomId);
-        setGroupSyncMessage('The room approved your exit, but local session cleanup needs a retry. Keep the app connected.');
+        networkSubscription?.remove();
+        if (!disposed) setGroupSyncMessage('The room approved your exit, but local session cleanup needs a retry. Keep the app connected.');
       }
     })();
-  }, [roomLobbyState, profile.uid, groupViolationRepository]);
+    return () => {
+      disposed = true;
+      retryController?.dispose();
+      networkSubscription?.remove();
+    };
+  }, [earlyExitSnapshot?.roomId, earlyExitSnapshot?.status, earlyExitSnapshot?.startedAtUtcMs,
+    earlyExitMember?.status, earlyExitCutoffUtcMs, profile.uid, groupViolationRepository]);
 
   const handleCreateRoom = async () => {
     if (isCreatingRoom) return;
@@ -403,8 +431,8 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   };
 
   const handleDecideEarlyExit = async (request: EarlyExitRequest, decision: EarlyExitDecision) => {
-    if (!lobbyRoom || decidingEarlyExitRequestId) return;
-    setDecidingEarlyExitRequestId(request.requestId);
+    if (!lobbyRoom || decidingEarlyExit) return;
+    setDecidingEarlyExit({ requestId: request.requestId, decision });
     setEarlyExitError(undefined);
     try {
       await earlyExitRepository.decideEarlyExit({
@@ -413,7 +441,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     } catch (error) {
       setEarlyExitError(earlyExitErrorMessage(error));
     } finally {
-      setDecidingEarlyExitRequestId(null);
+      setDecidingEarlyExit(null);
     }
   };
 
@@ -1308,7 +1336,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
             ? <GroupActiveScreen snapshot={groupRoomSnapshot} elapsedSeconds={groupTimerSeconds}
                 detection={groupDetection} isOnline={groupIsOnline} syncMessage={groupSyncMessage}
                 actorUid={profile.uid} openEarlyExitRequests={openEarlyExitRequests}
-                isRequestingEarlyExit={isRequestingEarlyExit} decidingEarlyExitRequestId={decidingEarlyExitRequestId}
+                isRequestingEarlyExit={isRequestingEarlyExit} decidingEarlyExit={decidingEarlyExit}
                 earlyExitError={earlyExitError} onRequestEarlyExit={() => { void handleRequestEarlyExit(); }}
                 onDecideEarlyExit={(request, decision) => { void handleDecideEarlyExit(request, decision); }} />
             : <Text accessibilityRole="alert">Waiting for the active room snapshot…</Text>

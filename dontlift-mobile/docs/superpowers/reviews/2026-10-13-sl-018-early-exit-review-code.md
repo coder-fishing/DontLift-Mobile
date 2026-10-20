@@ -27,3 +27,31 @@
 - **Response:** Added a native confirmation alert with the required score-freeze explanation and Cancel/Request actions. The command runs only from Request. Added a UI test that verifies the alert, cancellation, and confirmed submission.
 
 **Execution record — 2026-10-20, review feedback batch:** `pnpm exec jest --runInBand __tests__/early-exit-repository.test.ts __tests__/group-active-screen.test.tsx` passed (2 suites, 7 tests). `pnpm exec tsc --noEmit`, `node --check functions/tests/early-exit-rules.emulator.test.cjs`, and `git diff --check` passed. The Firestore Rules Emulator regression was added but not run; Java is unavailable in this environment. No billing or Cloud Rules deployment was performed.
+
+## RC-003
+
+- **Status:** RESOLVED
+- **Severity:** Medium
+- **Category:** Retry lifecycle
+- **Location:** `src/app/index.tsx` — early-exit cleanup and eligible violation sync
+- **Problem:** A transient sync failure after Host approval could strand eligible pending violations because the active capture effect had already stopped and no retry trigger remained.
+- **Recommendation:** Keep a retry trigger alive for exited members until eligible outbox rows drain.
+- **Created At:** 2026-10-20
+- **Updated By:** Codex
+- **Updated At:** 2026-10-20
+- **Response:** Added an independent network-aware retry controller that runs every five seconds while connected, retries transient errors and pending outbox rows, and stops when the outbox drains. It hands pending rows to SL-020 when a terminal-room precondition is detected. Added unit tests for transient retry/drain and terminal reconciliation behavior.
+
+## RC-004
+
+- **Status:** RESOLVED
+- **Severity:** Medium
+- **Category:** UI feedback
+- **Location:** `src/screens/GroupActiveScreen.tsx` — Host decision buttons
+- **Problem:** The pending indicator always appeared beside Approve, even when the Host had selected Deny.
+- **Recommendation:** Show progress on the decision that is currently being submitted.
+- **Created At:** 2026-10-20
+- **Updated By:** Codex
+- **Updated At:** 2026-10-20
+- **Response:** Changed the pending state to carry both request ID and decision. The indicator now appears only on the selected Approve or Deny action; added a UI regression test for a pending denial.
+
+**Execution record — 2026-10-20, second review feedback batch:** `pnpm exec jest --runInBand __tests__/early-exit-sync-retry.test.ts __tests__/group-active-screen.test.tsx __tests__/early-exit-repository.test.ts` passed (3 suites, 10 tests). `pnpm exec tsc --noEmit` and `git diff --check` passed. Physical online/offline Expo Go behavior remains unverified.

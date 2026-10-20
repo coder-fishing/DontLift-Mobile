@@ -17,14 +17,14 @@ type Props = {
   actorUid: string;
   openEarlyExitRequests: EarlyExitRequest[];
   isRequestingEarlyExit: boolean;
-  decidingEarlyExitRequestId: string | null;
+  decidingEarlyExit: { requestId: string; decision: EarlyExitDecision } | null;
   earlyExitError?: string;
   onRequestEarlyExit: () => void;
   onDecideEarlyExit: (request: EarlyExitRequest, decision: EarlyExitDecision) => void;
 };
 
 export function GroupActiveScreen({ snapshot, elapsedSeconds, detection, isOnline, syncMessage, actorUid,
-  openEarlyExitRequests, isRequestingEarlyExit, decidingEarlyExitRequestId, earlyExitError,
+  openEarlyExitRequests, isRequestingEarlyExit, decidingEarlyExit, earlyExitError,
   onRequestEarlyExit, onDecideEarlyExit }: Props) {
   const members = rankGroupMembers(snapshot.members);
   const ownMember = snapshot.members.find(member => member.uid === actorUid);
@@ -97,21 +97,24 @@ export function GroupActiveScreen({ snapshot, elapsedSeconds, detection, isOnlin
           <Text style={styles.sectionTitle}>Early exit requests</Text>
           {openEarlyExitRequests.map(request => {
             const member = snapshot.members.find(candidate => candidate.uid === request.memberUid);
-            const busy = decidingEarlyExitRequestId !== null;
-            const isCurrentRequest = decidingEarlyExitRequestId === request.requestId;
+            const busy = decidingEarlyExit !== null;
+            const isCurrentRequest = decidingEarlyExit?.requestId === request.requestId;
             return (
               <GlassCard key={request.memberUid} style={styles.requestCard}>
                 <Text style={styles.name}>{member?.displayName || 'Participant'} wants to leave early</Text>
                 <View style={styles.actionRow}>
-                  <Pressable accessibilityRole="button" disabled={busy || !isOnline}
+                  <Pressable accessibilityRole="button" accessibilityLabel="Approve early exit request" disabled={busy || !isOnline}
                     onPress={() => onDecideEarlyExit(request, 'APPROVE')}
                     style={({ pressed }) => [styles.actionButton, pressed && styles.pressed, (busy || !isOnline) && styles.disabled]}>
-                    {isCurrentRequest ? <ActivityIndicator color={Colors.light.onPrimary} /> : null}
+                    {isCurrentRequest && decidingEarlyExit?.decision === 'APPROVE'
+                      ? <ActivityIndicator accessibilityLabel="Processing approval" color={Colors.light.onPrimary} /> : null}
                     <Text style={styles.actionText}>Approve</Text>
                   </Pressable>
-                  <Pressable accessibilityRole="button" disabled={busy || !isOnline}
+                  <Pressable accessibilityRole="button" accessibilityLabel="Deny early exit request" disabled={busy || !isOnline}
                     onPress={() => onDecideEarlyExit(request, 'DENY')}
                     style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed, (busy || !isOnline) && styles.disabled]}>
+                    {isCurrentRequest && decidingEarlyExit?.decision === 'DENY'
+                      ? <ActivityIndicator accessibilityLabel="Processing denial" color={Colors.light.primary} /> : null}
                     <Text style={styles.secondaryActionText}>Deny</Text>
                   </Pressable>
                 </View>

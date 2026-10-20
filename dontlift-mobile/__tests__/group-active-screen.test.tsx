@@ -38,7 +38,7 @@ test('asks for confirmation before submitting an early-exit request', async () =
       actorUid="member-id"
       openEarlyExitRequests={[]}
       isRequestingEarlyExit={false}
-      decidingEarlyExitRequestId={null}
+      decidingEarlyExit={null}
       onRequestEarlyExit={onRequestEarlyExit}
       onDecideEarlyExit={jest.fn()}
     />);
@@ -65,4 +65,29 @@ test('asks for confirmation before submitting an early-exit request', async () =
 
   await renderer.act(async () => mounted?.unmount());
   alert.mockRestore();
+});
+
+test('shows the pending indicator on the Host decision that was selected', async () => {
+  let mounted: Rendered | undefined;
+  await renderer.act(() => {
+    mounted = renderer.create(<GroupActiveScreen
+      snapshot={snapshot}
+      elapsedSeconds={10}
+      detection={{ orientation: 'UPRIGHT', violationsCount: 0, violationDurationSeconds: 0, isGraceActive: false, graceSeconds: 0, persistenceError: null } as never}
+      isOnline
+      actorUid="host-id"
+      openEarlyExitRequests={[{
+        requestId: 'request-id', memberUid: 'member-id',
+        status: 'OPEN', decision: null, requestedAtUtcMs: null, decidedAtUtcMs: null, cutoffUtcMs: null,
+      }]}
+      isRequestingEarlyExit={false}
+      decidingEarlyExit={{ requestId: 'request-id', decision: 'DENY' }}
+      onRequestEarlyExit={jest.fn()}
+      onDecideEarlyExit={jest.fn()}
+    />);
+  });
+
+  expect(() => mounted!.root.findByProps({ accessibilityLabel: 'Processing approval' })).toThrow();
+  expect(mounted!.root.findByProps({ accessibilityLabel: 'Processing denial' })).toBeDefined();
+  await renderer.act(async () => mounted?.unmount());
 });
