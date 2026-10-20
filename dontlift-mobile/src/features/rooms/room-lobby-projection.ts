@@ -1,5 +1,47 @@
 import type * as SQLite from 'expo-sqlite';
 import type { RoomLobbySnapshot } from './room-listener';
+import type { CreatedRoom } from './room-repository';
+import { encodeRoomInvitation } from './room-invite-contract';
+
+type RestorableRoomRow = {
+  room_id: string;
+  host_uid: string;
+  pin: string;
+  host_display_name: string;
+  created_at: string;
+};
+
+// Khôi phục room ACTIVE đã cache để app có thể gắn lại Firestore listener sau khi process bị tạo lại.
+export async function restoreCachedActiveRoom(
+  databasePromise: Promise<SQLite.SQLiteDatabase>,
+  userId: string,
+): Promise<CreatedRoom | null> {
+  const database = await databasePromise;
+  const row = await database.getFirstAsync<RestorableRoomRow>(
+    `SELECT r.room_id, r.host_uid, r.pin, host.display_name AS host_display_name, r.created_at
+     FROM rooms r
+     JOIN room_members mine ON mine.room_id = r.room_id AND mine.uid = ? AND mine.status = 'ACTIVE'
+     JOIN room_members host ON host.room_id = r.room_id AND host.role = 'HOST'
+     WHERE (r.status = 'ACTIVE'
+        OR EXISTS (
+          SELECT 1 FROM sessions s
+          WHERE s.id = r.room_id AND s.user_id = mine.uid AND s.mode = 'GROUP' AND s.status = 'ACTIVE'
+        ))
+     ORDER BY CASE WHEN r.status = 'ACTIVE' THEN 0 ELSE 1 END, r.updated_at DESC
+     LIMIT 1`,
+    userId,
+  );
+  if (!row) return null;
+  return {
+    roomId: row.room_id,
+    pin: row.pin,
+    invitation: encodeRoomInvitation(row.pin),
+    hostUid: row.host_uid,
+    hostDisplayName: row.host_display_name,
+    createdAt: row.created_at,
+    localCacheSaved: true,
+  };
+}
 
 export async function persistRoomLobbyProjection(
   databasePromise: Promise<SQLite.SQLiteDatabase>,

@@ -6,7 +6,7 @@ import {
 import type * as SQLite from 'expo-sqlite';
 import { getRandomBytes } from 'expo-crypto';
 import { encodeRoomInvitation } from './room-invite-contract';
-export { persistRoomLobbyProjection } from './room-lobby-projection';
+export { persistRoomLobbyProjection, restoreCachedActiveRoom } from './room-lobby-projection';
 import { mapRoomCreateError, RoomCreateError, type RoomCreateStage } from './room-create-error';
 export { RoomCreateError } from './room-create-error';
 

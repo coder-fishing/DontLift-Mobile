@@ -1,4 +1,4 @@
-import { persistRoomLobbyProjection } from '../src/features/rooms/room-lobby-projection';
+import { persistRoomLobbyProjection, restoreCachedActiveRoom } from '../src/features/rooms/room-lobby-projection';
 import type { RoomLobbySnapshot } from '../src/features/rooms/room-listener';
 
 describe('room lobby SQLite projection', () => {
@@ -48,5 +48,19 @@ describe('room lobby SQLite projection', () => {
     await expect(persistRoomLobbyProjection(Promise.resolve({ withExclusiveTransactionAsync } as never), snapshot))
       .rejects.toThrow('room-lobby-server-timestamp-pending');
     expect(withExclusiveTransactionAsync).not.toHaveBeenCalled();
+  });
+
+  it('restores the latest locally cached active membership after app relaunch', async () => {
+    const getFirstAsync = jest.fn().mockResolvedValue({
+      room_id: 'room-1', host_uid: 'host', pin: '12345678',
+      host_display_name: 'Host', created_at: '2026-10-20T00:00:00.000Z',
+    });
+
+    await expect(restoreCachedActiveRoom(Promise.resolve({ getFirstAsync } as never), 'member'))
+      .resolves.toEqual({
+        roomId: 'room-1', pin: '12345678', invitation: 'dontliftmobile://room/12345678',
+        hostUid: 'host', hostDisplayName: 'Host', createdAt: '2026-10-20T00:00:00.000Z', localCacheSaved: true,
+      });
+    expect(getFirstAsync).toHaveBeenCalledWith(expect.stringContaining("mine.uid = ? AND mine.status = 'ACTIVE'"), 'member');
   });
 });

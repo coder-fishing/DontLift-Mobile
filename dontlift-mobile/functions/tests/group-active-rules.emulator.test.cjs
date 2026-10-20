@@ -49,7 +49,7 @@ async function recordAtomically(db, uid, event = confirmedEvent(), targetUid = u
       liftCount: member.data().liftCount + 1,
       violationDurationSeconds: member.data().violationDurationSeconds + event.durationSeconds,
       penaltyScore: member.data().penaltyScore + 10 + event.durationSeconds,
-      lastViolationEventId: eventId,
+      lastViolationEventId: event.eventId,
     });
     return 'created';
   });

@@ -50,7 +50,7 @@ import { createSoloSyncWorker } from '../features/sync/sync-worker';
 import { createSyncEventsPort } from '../features/sync/sync-events-port';
 import { getConfiguredFirebaseRuntime } from '../features/auth/firebase-adapters';
 import { getLocalDatabase } from '../features/local/database';
-import { createRoomRepository, persistRoomLobbyProjection, RoomCreateError, type CreatedRoom, type RoomCreateCommand, type JoinedRoom, RoomJoinError, roomJoinErrorMessage, RoomStartError, roomStartErrorMessage, type RoomStartCommand } from '../features/rooms/room-repository';
+import { createRoomRepository, persistRoomLobbyProjection, restoreCachedActiveRoom, RoomCreateError, type CreatedRoom, type RoomCreateCommand, type JoinedRoom, RoomJoinError, roomJoinErrorMessage, RoomStartError, roomStartErrorMessage, type RoomStartCommand } from '../features/rooms/room-repository';
 import { listenToRoomLobby, type RoomLobbyState } from '../features/rooms/room-listener';
 import { createGroupViolationRepository, type GroupViolationError } from '../features/rooms/group-violation-repository';
 import { roomCreateErrorMessage } from '../features/rooms/room-create-error';
@@ -148,6 +148,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const [isHostRole, setIsHostRole] = useState<boolean>(true);
   const [showEmptyState, setShowEmptyState] = useState<boolean>(false);
   const [createdRoom, setCreatedRoom] = useState<CreatedRoom | null>(null);
+  const restoredGroupRoomId = useRef<string | null>(null);
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const [roomCreateError, setRoomCreateError] = useState<string | undefined>();
   const pendingRoomCommand = useRef<RoomCreateCommand | null>(null);
@@ -163,6 +164,21 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const lobbyRoom = joinedRoom ?? createdRoom;
 
   useEffect(() => {
+    let active = true;
+    void restoreCachedActiveRoom(getLocalDatabase(), profile.uid).then(room => {
+      if (!active || !room) return;
+      setCreatedRoom(current => {
+        if (current) return current;
+        restoredGroupRoomId.current = room.roomId;
+        return room;
+      });
+    }).catch(() => {
+      // Local restore không chặn đăng nhập; listener cloud vẫn có thể được gắn khi người dùng mở lại room.
+    });
+    return () => { active = false; };
+  }, [profile.uid]);
+
+  useEffect(() => {
     if (!lobbyRoom) {
       setRoomLobbyState(null);
       return undefined;
@@ -173,12 +189,16 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   }, [lobbyRoom?.roomId, roomRuntime.firestore]);
 
   useEffect(() => {
-    if (roomLobbyState?.snapshot?.status === 'ACTIVE' && roomLobbyState.snapshot.startedAtUtcMs !== null
+    const snapshot = roomLobbyState?.snapshot;
+    const ownMembershipIsActive = snapshot?.members.some(member => member.uid === profile.uid && member.status === 'ACTIVE') === true;
+    const isRestoredRoom = snapshot?.roomId === restoredGroupRoomId.current && currentScreen === '02-solo-select';
+    if (roomLobbyState && snapshot?.status === 'ACTIVE' && snapshot.startedAtUtcMs !== null && ownMembershipIsActive
       && ['live', 'cached'].includes(roomLobbyState.kind)
-      && currentScreen === '05-group-lobby') {
+      && (currentScreen === '05-group-lobby' || isRestoredRoom)) {
       setCurrentScreen('06-group-active');
+      restoredGroupRoomId.current = null;
     }
-  }, [roomLobbyState, currentScreen]);
+  }, [roomLobbyState, currentScreen, profile.uid]);
 
   const handleCreateRoom = async () => {
     if (isCreatingRoom) return;
@@ -192,6 +212,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       if (attemptId !== roomCreateAttempt.current) return;
       pendingRoomCommand.current = null;
       setJoinedRoom(null);
+      restoredGroupRoomId.current = null;
       setCreatedRoom(result);
     } catch (error) {
       if (!(error instanceof RoomCreateError) || error.code !== 'unavailable') pendingRoomCommand.current = null;
@@ -251,6 +272,8 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     try {
       const result = await roomRepository.joinRoomByPin(command);
       pendingRoomJoinCommand.current = null;
+      setCreatedRoom(null);
+      restoredGroupRoomId.current = null;
       setJoinedRoom(result);
     } catch (error) {
       if (!(error instanceof RoomJoinError) || error.code !== 'unavailable') pendingRoomJoinCommand.current = null;
@@ -391,6 +414,13 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     let initialized = false;
     let processing = false;
     let lifecyclePending = false;
+    let lifecycleReady = false;
+    const startupState = AppState.currentState;
+    let latestStartupState = startupState;
+    const startupTransitions: { state: typeof AppState.currentState; observedAt: ReturnType<typeof backgroundRecovery.captureTime> }[] = [];
+    if (startupState !== 'active') {
+      startupTransitions.push({ state: startupState, observedAt: backgroundRecovery.captureTime() });
+    }
     let lifecycleController: ReturnType<typeof createSessionLifecycleController> | undefined;
     let lastDetectionState = INITIAL_DETECTION_STATE;
     let latestMeasurement: AccelerometerMeasurement | undefined;
@@ -442,6 +472,22 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       }
     };
 
+    // Đệm AppState trong lúc mở SQLite/controller để không bỏ mất candidate nếu app chuyển nền sớm.
+    const appStateSubscription = AppState.addEventListener('change', state => {
+      const wasActive = latestStartupState === 'active';
+      latestStartupState = state;
+      const observedAt = backgroundRecovery.captureTime();
+      if (lifecycleController && lifecycleReady) {
+        void lifecycleController.handleChangeAt(state, observedAt);
+        if (state === 'active') {
+          void drain();
+          void groupViolationRepository.syncPending(roomId).then(refreshPending).catch(() => refreshPending());
+        }
+      } else if ((wasActive && state !== 'active') || (!wasActive && state === 'active')) {
+        startupTransitions.push({ state, observedAt });
+      }
+    });
+
     void (async () => {
       try {
         const db = await getLocalDatabase();
@@ -457,7 +503,8 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
         initialized = true;
         lifecycleController = createSessionLifecycleController({
           session: { sessionId: roomId, userId: profile.uid },
-          initialState: AppState.currentState,
+          // Mọi thay đổi kể từ lúc effect bắt đầu được replay từ trạng thái foreground này.
+          initialState: 'active',
           repository: backgroundRecovery,
           captureTime: backgroundRecovery.captureTime,
           getDetector: () => controller,
@@ -480,6 +527,24 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
               : 'Could not recover the background interval. It remains saved locally for retry.',
           })),
         });
+        let replayedStartupTransition = false;
+        let reconciledCurrentState = false;
+        while (!disposed) {
+          while (startupTransitions.length > 0 && !disposed) {
+            const transition = startupTransitions.shift()!;
+            replayedStartupTransition = true;
+            await lifecycleController.handleChangeAt(transition.state, transition.observedAt);
+          }
+          if (disposed) return;
+          if (!replayedStartupTransition && !reconciledCurrentState) {
+            reconciledCurrentState = true;
+            // Nếu AppState đổi trong lúc recovery đọc SQLite, vòng lặp xử lý mốc vừa được đệm.
+            await lifecycleController.reconcileCurrent();
+            continue;
+          }
+          if (startupTransitions.length === 0) break;
+        }
+        lifecycleReady = true;
         void drain();
         void refreshPending();
       } catch {
@@ -496,15 +561,6 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     } catch {
       setGroupDetection(state => ({ ...state, persistenceError: 'Could not start the accelerometer. Check sensor availability.' }));
     }
-    const appStateSubscription = AppState.addEventListener('change', state => {
-      if (state === 'active') {
-        void lifecycleController?.handleChange(state);
-        void drain();
-        void groupViolationRepository.syncPending(roomId).then(refreshPending).catch(() => refreshPending());
-      } else {
-        void lifecycleController?.handleChange(state);
-      }
-    });
     const networkSubscription = Network.addNetworkStateListener(state => {
       const online = state.isConnected === true && state.isInternetReachable !== false;
       setGroupIsOnline(online);
