@@ -496,9 +496,17 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     void (async () => {
       try {
         const db = await getLocalDatabase();
+        // Room ID là khóa chính cục bộ; khi đổi tài khoản, chuyển session đang hoạt động sang chủ tài khoản hiện tại.
         await db.runAsync(
-          `INSERT OR IGNORE INTO sessions (id, user_id, mode, status, duration_seconds, started_at, completed_at, synced_at)
-           VALUES (?, ?, 'GROUP', 'ACTIVE', 0, ?, NULL, NULL)`,
+          `INSERT INTO sessions (id, user_id, mode, status, duration_seconds, started_at, completed_at, synced_at)
+           VALUES (?, ?, 'GROUP', 'ACTIVE', 0, ?, NULL, NULL)
+           ON CONFLICT(id) DO UPDATE SET
+             user_id = excluded.user_id,
+             mode = 'GROUP',
+             status = 'ACTIVE',
+             started_at = excluded.started_at,
+             completed_at = NULL,
+             synced_at = NULL`,
           roomId, profile.uid, new Date(groupRoomSnapshot.startedAtUtcMs!).toISOString(),
         );
         const state = await controller.initialize();
