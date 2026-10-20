@@ -8,6 +8,32 @@ import { getLocalDatabase } from '../local/database';
 
 type Dependencies = { firestore: Firestore; auth: Auth; database?: () => Promise<SQLite.SQLiteDatabase>; createId?: () => string };
 type PendingRow = { event_id: string; room_id: string; user_id: string; started_at: string; ended_at: string; duration_seconds: number };
+type OpenViolationRow = { event_id: string; room_id: string; user_id: string; started_at: string; created_at: string };
+
+async function persistRoomViolationOutbox(
+  transaction: SQLite.SQLiteDatabase,
+  input: { eventId: string; roomId: string; userId: string; startedAtUtcMs: number; endedAtUtcMs: number; durationSeconds: number; createdAt: string },
+) {
+  const payload = JSON.stringify({
+    startedAtUtcMs: input.startedAtUtcMs,
+    endedAtUtcMs: input.endedAtUtcMs,
+    durationSeconds: input.durationSeconds,
+  });
+  await transaction.runAsync(
+    `INSERT INTO sync_outbox (event_id, event_type, schema_version, aggregate_type, aggregate_id, session_id, actor_uid, occurred_at_utc_ms, payload_json, sync_status, attempt_count, next_attempt_at, lease_expires_at, last_error_code, created_at, synced_at)
+     VALUES (?, 'VIOLATION_RECORDED', 1, 'ROOM', ?, ?, ?, ?, ?, 'PENDING', 0, NULL, NULL, NULL, ?, NULL)
+     ON CONFLICT(event_id) DO UPDATE SET
+       occurred_at_utc_ms = excluded.occurred_at_utc_ms,
+       payload_json = excluded.payload_json,
+       sync_status = 'PENDING',
+       attempt_count = 0,
+       next_attempt_at = NULL,
+       lease_expires_at = NULL,
+       last_error_code = NULL,
+       synced_at = NULL`,
+    input.eventId, input.roomId, input.roomId, input.userId, input.endedAtUtcMs, payload, input.createdAt,
+  );
+}
 
 export class GroupViolationError extends Error {
   constructor(public readonly code: 'unauthenticated' | 'invalid-argument' | 'failed-precondition' | 'unavailable' | 'permission-denied' | 'already-exists' | 'unknown') {
@@ -47,6 +73,11 @@ export function createGroupViolationRepository(dependencies: Dependencies) {
            VALUES (?, ?, ?, ?, ?, ?, NULL, ?, 'PENDING', ?, NULL)`,
           eventId, roomId, roomId, actor.uid, new Date(start).toISOString(), new Date(end).toISOString(), durationSeconds, createdAt,
         );
+        // Ghi outbox cùng violation ngay khi qua grace period để app bị đóng vẫn còn dấu chờ bền vững.
+        await persistRoomViolationOutbox(tx, {
+          eventId, roomId, userId: actor.uid, startedAtUtcMs: start,
+          endedAtUtcMs: end, durationSeconds, createdAt,
+        });
       });
       return { eventId, sessionId: roomId, startedAtUtcMs: start, endedAtUtcMs: null, durationSeconds };
     },
@@ -54,8 +85,8 @@ export function createGroupViolationRepository(dependencies: Dependencies) {
       const db = await database();
       let ended = false;
       await db.withExclusiveTransactionAsync(async tx => {
-        const row = await tx.getFirstAsync<{ room_id: string; user_id: string; started_at: string; ended_at: string | null }>(
-          'SELECT room_id, user_id, started_at, ended_at FROM violation_logs WHERE event_id = ?', input.eventId,
+        const row = await tx.getFirstAsync<{ room_id: string; user_id: string; started_at: string; ended_at: string | null; created_at: string }>(
+          'SELECT room_id, user_id, started_at, ended_at, created_at FROM violation_logs WHERE event_id = ?', input.eventId,
         );
         if (!row || row.ended_at !== null || !row.room_id) return;
         const startMs = Date.parse(row.started_at);
@@ -66,15 +97,46 @@ export function createGroupViolationRepository(dependencies: Dependencies) {
           new Date(endMs).toISOString(), durationSeconds, input.eventId,
         );
         if (result.changes !== 1) return;
-        const event = { startedAtUtcMs: startMs, endedAtUtcMs: endMs, durationSeconds };
-        await tx.runAsync(
-          `INSERT OR REPLACE INTO sync_outbox (event_id, event_type, schema_version, aggregate_type, aggregate_id, session_id, actor_uid, occurred_at_utc_ms, payload_json, sync_status, attempt_count, next_attempt_at, lease_expires_at, last_error_code, created_at, synced_at)
-           VALUES (?, 'VIOLATION_RECORDED', 1, 'ROOM', ?, ?, ?, ?, ?, 'PENDING', 0, NULL, NULL, NULL, ?, NULL)`,
-          input.eventId, row.room_id, row.room_id, row.user_id, endMs, JSON.stringify(event), new Date().toISOString(),
-        );
+        await persistRoomViolationOutbox(tx, {
+          eventId: input.eventId, roomId: row.room_id, userId: row.user_id,
+          startedAtUtcMs: startMs, endedAtUtcMs: endMs, durationSeconds,
+          createdAt: row.created_at,
+        });
         ended = true;
       });
       return ended;
+    },
+    async finalizeOpenAtRoomEnd(input: { roomId: string; userId: string; endedAtUtcMs: number }): Promise<number> {
+      const actor = dependencies.auth.currentUser;
+      if (!actor || actor.uid !== input.userId) throw new GroupViolationError('unauthenticated');
+      if (!Number.isFinite(input.endedAtUtcMs)) throw new GroupViolationError('invalid-argument');
+      const db = await database();
+      let finalized = 0;
+      await db.withExclusiveTransactionAsync(async tx => {
+        const openRows = await tx.getAllAsync<OpenViolationRow>(
+          `SELECT event_id, room_id, user_id, started_at, created_at FROM violation_logs
+           WHERE room_id = ? AND user_id = ? AND ended_at IS NULL AND confirmed_at IS NOT NULL`,
+          input.roomId, actor.uid,
+        );
+        for (const row of openRows) {
+          const startedAtUtcMs = Date.parse(row.started_at);
+          if (!Number.isFinite(startedAtUtcMs)) continue;
+          const endedAtUtcMs = Math.max(startedAtUtcMs, input.endedAtUtcMs);
+          const durationSeconds = Math.floor((endedAtUtcMs - startedAtUtcMs) / 1_000);
+          const result = await tx.runAsync(
+            `UPDATE violation_logs SET ended_at = ?, duration_seconds = ?
+             WHERE event_id = ? AND user_id = ? AND ended_at IS NULL`,
+            new Date(endedAtUtcMs).toISOString(), durationSeconds, row.event_id, actor.uid,
+          );
+          if (result.changes !== 1) continue;
+          await persistRoomViolationOutbox(tx, {
+            eventId: row.event_id, roomId: row.room_id, userId: actor.uid,
+            startedAtUtcMs, endedAtUtcMs, durationSeconds, createdAt: row.created_at,
+          });
+          finalized += 1;
+        }
+      });
+      return finalized;
     },
     async getSummary(roomId: string): Promise<ViolationSummary> {
       const actor = dependencies.auth.currentUser;

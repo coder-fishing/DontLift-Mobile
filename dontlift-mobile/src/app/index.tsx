@@ -50,7 +50,7 @@ import { createSoloSyncWorker } from '../features/sync/sync-worker';
 import { createSyncEventsPort } from '../features/sync/sync-events-port';
 import { getConfiguredFirebaseRuntime } from '../features/auth/firebase-adapters';
 import { getLocalDatabase } from '../features/local/database';
-import { createRoomRepository, persistRoomLobbyProjection, restoreCachedActiveRoom, RoomCreateError, type CreatedRoom, type RoomCreateCommand, type JoinedRoom, RoomJoinError, roomJoinErrorMessage, RoomStartError, roomStartErrorMessage, type RoomStartCommand } from '../features/rooms/room-repository';
+import { createRoomRepository, persistRoomLobbyProjection, persistTerminalRoomProjection, restoreCachedActiveRoom, RoomCreateError, type CreatedRoom, type RoomCreateCommand, type JoinedRoom, RoomJoinError, roomJoinErrorMessage, RoomStartError, roomStartErrorMessage, type RoomStartCommand } from '../features/rooms/room-repository';
 import { listenToRoomLobby, type RoomLobbyState } from '../features/rooms/room-listener';
 import { createGroupViolationRepository, type GroupViolationError } from '../features/rooms/group-violation-repository';
 import { roomCreateErrorMessage } from '../features/rooms/room-create-error';
@@ -149,6 +149,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const [showEmptyState, setShowEmptyState] = useState<boolean>(false);
   const [createdRoom, setCreatedRoom] = useState<CreatedRoom | null>(null);
   const restoredGroupRoomId = useRef<string | null>(null);
+  const terminalRoomCleanupInFlight = useRef(new Set<string>());
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const [roomCreateError, setRoomCreateError] = useState<string | undefined>();
   const pendingRoomCommand = useRef<RoomCreateCommand | null>(null);
@@ -190,6 +191,33 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
 
   useEffect(() => {
     const snapshot = roomLobbyState?.snapshot;
+    const isTerminalRoom = snapshot?.status === 'COMPLETED' || snapshot?.status === 'ABORTED';
+    if (roomLobbyState && snapshot && isTerminalRoom && snapshot.endedAtUtcMs !== null && snapshot.endedAtUtcMs !== undefined
+      && ['live', 'cached'].includes(roomLobbyState.kind)
+      && !terminalRoomCleanupInFlight.current.has(snapshot.roomId)) {
+      const roomId = snapshot.roomId;
+      const endedAtUtcMs = snapshot.endedAtUtcMs;
+      terminalRoomCleanupInFlight.current.add(roomId);
+      void (async () => {
+        try {
+          // Chốt violation đã xác nhận theo mốc kết thúc server, giữ outbox pending cho SL-020 reconciliation.
+          await groupViolationRepository.finalizeOpenAtRoomEnd({ roomId, userId: profile.uid, endedAtUtcMs });
+          await persistTerminalRoomProjection(getLocalDatabase(), {
+            roomId, userId: profile.uid, status: snapshot.status as 'COMPLETED' | 'ABORTED', endedAtUtcMs,
+          });
+          if (restoredGroupRoomId.current === roomId) restoredGroupRoomId.current = null;
+          setCreatedRoom(current => current?.roomId === roomId ? null : current);
+          setJoinedRoom(current => current?.roomId === roomId ? null : current);
+          setCurrentScreen(current => current === '06-group-active' ? '05-group-lobby' : current);
+        } catch {
+          terminalRoomCleanupInFlight.current.delete(roomId);
+          Alert.alert(
+            'Could not close group session',
+            'The room has ended, but its local session could not be finalized. Reopen the room while connected to retry.',
+          );
+        }
+      })();
+    }
     const ownMembershipIsActive = snapshot?.members.some(member => member.uid === profile.uid && member.status === 'ACTIVE') === true;
     const isRestoredRoom = snapshot?.roomId === restoredGroupRoomId.current && currentScreen === '02-solo-select';
     if (roomLobbyState && snapshot?.status === 'ACTIVE' && snapshot.startedAtUtcMs !== null && ownMembershipIsActive
@@ -198,7 +226,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       setCurrentScreen('06-group-active');
       restoredGroupRoomId.current = null;
     }
-  }, [roomLobbyState, currentScreen, profile.uid]);
+  }, [roomLobbyState, currentScreen, profile.uid, groupViolationRepository]);
 
   const handleCreateRoom = async () => {
     if (isCreatingRoom) return;

@@ -70,3 +70,23 @@ export async function persistRoomLobbyProjection(
     }
   });
 }
+
+export async function persistTerminalRoomProjection(
+  databasePromise: Promise<SQLite.SQLiteDatabase>,
+  input: { roomId: string; userId: string; status: 'COMPLETED' | 'ABORTED'; endedAtUtcMs: number },
+): Promise<void> {
+  const database = await databasePromise;
+  const endedAt = new Date(input.endedAtUtcMs).toISOString();
+  await database.withExclusiveTransactionAsync(async transaction => {
+    // Terminal room không được khôi phục như session đang chạy ở lần mở app kế tiếp.
+    await transaction.runAsync(
+      'UPDATE rooms SET status = ? WHERE room_id = ?',
+      input.status, input.roomId,
+    );
+    await transaction.runAsync(
+      `UPDATE sessions SET status = ?, completed_at = ?
+       WHERE id = ? AND user_id = ? AND mode = 'GROUP' AND status = 'ACTIVE'`,
+      input.status === 'COMPLETED' ? 'COMPLETED' : 'CANCELLED', endedAt, input.roomId, input.userId,
+    );
+  });
+}
