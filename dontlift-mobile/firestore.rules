@@ -69,6 +69,54 @@ service cloud.firestore {
         && receipt.createdAt == request.time;
     }
 
+    function hasRoomJoinLinks(roomId, uid, pin, requestId) {
+      let room = getAfter(roomPath(roomId)).data;
+      let member = getAfter(hostMemberPath(roomId, uid)).data;
+      let receipt = getAfter(receiptPath(uid, requestId)).data;
+      return !exists(hostMemberPath(roomId, uid))
+        && room.pin == pin
+        && room.status == 'WAITING'
+        && room.updatedAt == request.time
+        && room.lastJoinRequestId == requestId
+        && room.participantCount == get(roomPath(roomId)).data.participantCount + 1
+        && (get(roomPath(roomId)).data.participantCount < 5 || isServerPremium(room.hostId))
+        && member.role == 'MEMBER'
+        && member.status == 'ACTIVE'
+        && member.displayName == get(profilePath(uid)).data.displayName
+        && member.joinedAt == request.time
+        && member.penaltyScore == 0
+        && member.liftCount == 0
+        && member.violationDurationSeconds == 0
+        && receipt.requestId == requestId
+        && receipt.roomId == roomId
+        && receipt.pin == pin
+        && receipt.hostId == room.hostId
+        && receipt.status == 'WAITING'
+        && receipt.createdAt == request.time;
+    }
+
+    function validJoinReceipt(uid, data, requestId) {
+      return data.keys().hasAll(['version', 'requestId', 'roomId', 'pin', 'hostId', 'status', 'createdAt'])
+        && data.keys().hasOnly(['version', 'requestId', 'roomId', 'pin', 'hostId', 'status', 'createdAt'])
+        && data.version == 1
+        && data.requestId == requestId
+        && data.roomId is string
+        && data.pin is string
+        && data.pin.matches('^(?:[0-9]{4}|[0-9]{8})$')
+        && data.hostId is string
+        && data.status == 'WAITING'
+        && data.createdAt == request.time
+        && get(pinPath(data.pin)).data.roomId == data.roomId
+        && hasRoomJoinLinks(data.roomId, uid, data.pin, requestId);
+    }
+
+    function canReadRoom(roomId) {
+      return signedIn() && (
+        exists(hostMemberPath(roomId, request.auth.uid))
+        || (exists(pinPath(resource.data.pin)) && get(pinPath(resource.data.pin)).data.roomId == roomId)
+      );
+    }
+
     function validUsageCreate(uid) {
       let data = request.resource.data;
       return data.keys().hasAll(['bucketStart', 'count', 'lastRequestId', 'updatedAt'])
@@ -159,35 +207,33 @@ service cloud.firestore {
           && request.resource.data.keys().hasOnly(['version', 'requestId', 'roomId', 'pin', 'hostId', 'status', 'createdAt'])
           && request.resource.data.version == 1
           && request.resource.data.requestId == requestId
-          && request.resource.data.hostId == uid
           && request.resource.data.status == 'WAITING'
           && request.resource.data.createdAt == request.time
-          && hasRoomCreateLinks(
-            request.resource.data.roomId,
-            uid,
-            request.resource.data.pin,
-            requestId
-          );
+          && ((request.resource.data.hostId == uid && hasRoomCreateLinks(
+                request.resource.data.roomId,
+                uid,
+                request.resource.data.pin,
+                requestId
+              )) || validJoinReceipt(uid, request.resource.data, requestId));
         allow list, update, delete: if false;
       }
     }
 
     // Ngoại lệ create-only của SL-013; không cấp quyền join hoặc mutate lobby.
     match /rooms/{roomId} {
-      allow get: if signedIn()
-        && exists(/databases/$(database)/documents/rooms/$(roomId)/members/$(request.auth.uid));
+      allow get: if canReadRoom(roomId);
       allow create: if signedIn()
         && request.resource.data.keys().hasAll([
           'hostId', 'pin', 'status', 'participantCount', 'createdAt', 'updatedAt',
-          'hostHeartbeatAt', 'startedAt', 'endedAt'
+          'hostHeartbeatAt', 'startedAt', 'endedAt', 'lastJoinRequestId'
         ])
         && request.resource.data.keys().hasOnly([
           'hostId', 'pin', 'status', 'participantCount', 'createdAt', 'updatedAt',
-          'hostHeartbeatAt', 'startedAt', 'endedAt'
+          'hostHeartbeatAt', 'startedAt', 'endedAt', 'lastJoinRequestId'
         ])
         && request.resource.data.hostId == request.auth.uid
         && request.resource.data.pin is string
-        && request.resource.data.pin.matches('^[0-9]{4}$')
+        && request.resource.data.pin.matches('^[0-9]{8}$')
         && roomId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
         && request.resource.data.status == 'WAITING'
         && request.resource.data.participantCount == 1
@@ -196,13 +242,22 @@ service cloud.firestore {
         && request.resource.data.hostHeartbeatAt == request.time
         && request.resource.data.startedAt == null
         && request.resource.data.endedAt == null
+        && request.resource.data.lastJoinRequestId == null
         && hasRoomCreateLinks(
           roomId,
           request.auth.uid,
           request.resource.data.pin,
           getAfter(usagePath(request.auth.uid)).data.lastRequestId
         );
-      allow list, update, delete: if false;
+      allow update: if signedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participantCount', 'updatedAt', 'lastJoinRequestId'])
+        && request.resource.data.participantCount is int
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.status == 'WAITING'
+        && request.resource.data.lastJoinRequestId is string
+        && request.resource.data.lastJoinRequestId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
+        && hasRoomJoinLinks(roomId, request.auth.uid, resource.data.pin, request.resource.data.lastJoinRequestId);
+      allow list, delete: if false;
 
       match /members/{memberUid} {
         allow get: if signedIn() && memberUid == request.auth.uid;
@@ -217,7 +272,6 @@ service cloud.firestore {
             'violationDurationSeconds', 'joinedAt', 'earlyExitAt', 'syncedThroughAt', 'syncAcknowledgedAt'
           ])
           && request.resource.data.displayName == get(profilePath(memberUid)).data.displayName
-          && request.resource.data.role == 'HOST'
           && request.resource.data.status == 'ACTIVE'
           && request.resource.data.penaltyScore == 0
           && request.resource.data.liftCount == 0
@@ -226,20 +280,24 @@ service cloud.firestore {
           && request.resource.data.earlyExitAt == null
           && request.resource.data.syncedThroughAt == null
           && request.resource.data.syncAcknowledgedAt == null
-          && hasRoomCreateLinks(
-            roomId,
-            memberUid,
-            getAfter(roomPath(roomId)).data.pin,
-            getAfter(usagePath(memberUid)).data.lastRequestId
+          && (
+            (request.resource.data.role == 'HOST' && hasRoomCreateLinks(
+              roomId, memberUid, getAfter(roomPath(roomId)).data.pin,
+              getAfter(usagePath(memberUid)).data.lastRequestId
+            ))
+            || (request.resource.data.role == 'MEMBER' && hasRoomJoinLinks(
+              roomId, memberUid, getAfter(roomPath(roomId)).data.pin,
+              getAfter(roomPath(roomId)).data.lastJoinRequestId
+            ))
           );
         allow list, update, delete: if false;
       }
     }
 
-    // Không cho đọc reservation để tránh dò PIN; quyền create-only giữ tính duy nhất.
+    // Exact get tra PIN được phép cho user đăng nhập; collection listing vẫn bị chặn.
     match /roomPins/{pin} {
       allow create: if signedIn()
-        && pin.matches('^[0-9]{4}$')
+        && pin.matches('^[0-9]{8}$')
         && request.resource.data.keys().hasAll(['roomId', 'hostId', 'createdAt'])
         && request.resource.data.keys().hasOnly(['roomId', 'hostId', 'createdAt'])
         && request.resource.data.hostId == request.auth.uid
@@ -250,7 +308,8 @@ service cloud.firestore {
           pin,
           getAfter(usagePath(request.auth.uid)).data.lastRequestId
         );
-      allow read, update, delete: if false;
+      allow get: if signedIn() && pin.matches('^(?:[0-9]{4}|[0-9]{8})$');
+      allow list, update, delete: if false;
     }
 
     // Các document khác vẫn deny-by-default.

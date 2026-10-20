@@ -439,7 +439,7 @@ Development và production phải là hai dedicated DontLift Firebase projects; 
 | Background task không chạy đúng giờ | Delayed sync | Durable outbox + startup/resume/network triggers |
 | Client clock không đáng tin hoàn toàn | Timestamp manipulation | Session-window validation, server `receivedAt`, anomaly rejection |
 | Host override khi Member chưa sync | Late event không vào final bill | Explicit warning, audit reason, preserve late event in history |
-| 4-digit PIN chỉ có 10.000 giá trị | Collision/enumeration | Transactional reservation, server-only lookup, throttling |
+| PIN có không gian hữu hạn; Firestore Rules không rate-limit document reads | Collision/enumeration và read quota | Tám chữ số cho room mới, reservation transaction duy nhất, authenticated exact-document get, deny collection listing; còn residual enumeration risk theo ADR-012 |
 | Premium “unlimited participants” | Listener, vote và cost growth | Subcollections, pagination/virtualization, monitor production limits |
 | Offline checksum có thể reverse-engineer | Fake server premium claim | Chỉ mở Local Premium; server quota/capacity cần online redemption |
 | Receipt collection growth | Storage/index cost | Firestore TTL longer than maximum retry window |

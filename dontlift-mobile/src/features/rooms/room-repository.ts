@@ -4,9 +4,19 @@ import {
   Timestamp, type Firestore,
 } from 'firebase/firestore';
 import type * as SQLite from 'expo-sqlite';
+import { getRandomBytes } from 'expo-crypto';
 import { encodeRoomInvitation } from './room-invite-contract';
 import { mapRoomCreateError, RoomCreateError, type RoomCreateStage } from './room-create-error';
 export { RoomCreateError } from './room-create-error';
+
+type RoomJoinErrorCode = 'unauthenticated' | 'invalid-argument' | 'not-found' | 'failed-precondition' | 'unavailable' | 'already-exists' | 'rejected' | 'unknown';
+
+export class RoomJoinError extends Error {
+  constructor(public readonly code: RoomJoinErrorCode, public readonly firebaseCode?: string) {
+    super(code);
+    this.name = 'RoomJoinError';
+  }
+}
 
 export type CreatedRoom = {
   roomId: string;
@@ -19,6 +29,19 @@ export type CreatedRoom = {
 };
 
 export type RoomCreateCommand = { requestId: string; roomId: string; pin: string };
+export type JoinedRoom = {
+  roomId: string;
+  pin: string;
+  invitation: string;
+  hostUid: string;
+  status: 'WAITING';
+  participantCount: number;
+  roomCreatedAt: string | null;
+  roomUpdatedAt: string | null;
+  joinedAt: string | null;
+  alreadyMember: boolean;
+  localCacheSaved: boolean;
+};
 
 type RoomCreateDependencies = {
   firestore: Firestore;
@@ -28,6 +51,33 @@ type RoomCreateDependencies = {
   randomPin?: () => string;
 };
 
+type RoomJoinCommand = { requestId: string; pin: string };
+
+function mapJoinError(error: unknown): RoomJoinError {
+  if (error instanceof RoomJoinError) return error;
+  const code = typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string'
+    ? error.code.replace(/^firestore\//, '') : '';
+  if (code === 'unauthenticated') return new RoomJoinError('unauthenticated', code);
+  if (['unavailable', 'deadline-exceeded', 'network-request-failed'].includes(code)) return new RoomJoinError('unavailable', code);
+  if (code === 'permission-denied') return new RoomJoinError('rejected', code);
+  if (code === 'already-exists') return new RoomJoinError('already-exists', code);
+  return new RoomJoinError('unknown');
+}
+
+export function roomJoinErrorMessage(error: unknown): string {
+  if (!(error instanceof RoomJoinError)) return 'Không thể tham gia phòng lúc này. Hãy thử lại.';
+  switch (error.code) {
+    case 'unauthenticated': return 'Phiên đăng nhập không còn hiệu lực. Hãy đăng nhập lại rồi thử lại.';
+    case 'invalid-argument': return 'Mã phòng không hợp lệ. Hãy kiểm tra mã và thử lại.';
+    case 'not-found': return 'Không tìm thấy phòng đang chờ với mã này. Hãy kiểm tra mã và thử lại.';
+    case 'failed-precondition': return 'Phòng này không còn nhận người tham gia.';
+    case 'unavailable': return 'Không có kết nối tới Firebase. Mã vẫn được giữ để bạn thử lại.';
+    case 'rejected': return 'Không thể tham gia phòng. Phòng có thể đã đủ người hoặc không còn ở trạng thái chờ.';
+    case 'already-exists': return 'Yêu cầu này đã được dùng với mã khác. Hãy gửi lại mã phòng.';
+    default: return 'Không thể tham gia phòng lúc này. Hãy thử lại.';
+  }
+}
+
 function getServerMonthStart(serverTimeMs: number): Timestamp {
   // Chuyển sang giờ Việt Nam trước khi lấy ngày đầu tháng; Rules vẫn tự xác minh theo request.time.
   const local = new Date(serverTimeMs + 7 * 60 * 60 * 1000);
@@ -35,7 +85,13 @@ function getServerMonthStart(serverTimeMs: number): Timestamp {
 }
 
 function defaultRandomPin(): string {
-  return String(Math.floor(Math.random() * 10_000)).padStart(4, '0');
+  // Sinh từ nguồn ngẫu nhiên của hệ điều hành và loại phần dư để mỗi PIN có xác suất ngang nhau.
+  const limit = Math.floor(0x1_0000_0000 / 100_000_000) * 100_000_000;
+  while (true) {
+    const bytes = getRandomBytes(4);
+    const value = bytes[0] * 0x1000000 + bytes[1] * 0x10000 + bytes[2] * 0x100 + bytes[3];
+    if (value < limit) return String(value % 100_000_000).padStart(8, '0');
+  }
 }
 
 async function withProbeDeadline<T>(operation: () => Promise<T>): Promise<T> {
@@ -71,6 +127,24 @@ async function saveRoomProjection(
   });
 }
 
+async function saveJoinedRoomProjection(database: SQLite.SQLiteDatabase, room: JoinedRoom, uid: string, displayName: string): Promise<void> {
+  if (room.roomCreatedAt === null || room.roomUpdatedAt === null || room.joinedAt === null) {
+    throw new Error('room-server-timestamp-pending');
+  }
+  await database.withExclusiveTransactionAsync(async (transaction) => {
+    await transaction.runAsync(
+      `INSERT OR REPLACE INTO rooms (room_id, host_uid, pin, status, created_at, updated_at)
+       VALUES (?, ?, ?, 'WAITING', ?, ?)`,
+      room.roomId, room.hostUid, room.pin, room.roomCreatedAt, room.roomUpdatedAt,
+    );
+    await transaction.runAsync(
+      `INSERT OR REPLACE INTO room_members (room_id, uid, display_name, role, status, joined_at)
+       VALUES (?, ?, ?, 'MEMBER', 'ACTIVE', ?)`,
+      room.roomId, uid, displayName, room.joinedAt,
+    );
+  });
+}
+
 export function createRoomRepository(dependencies: RoomCreateDependencies) {
   return {
     createCommand(): RoomCreateCommand {
@@ -86,7 +160,7 @@ export function createRoomRepository(dependencies: RoomCreateDependencies) {
       const firestore = dependencies.firestore;
       const uid = actor.uid;
       const { requestId, roomId, pin } = command;
-      if (!/^\d{4}$/.test(pin) || !/^[0-9a-f-]{36}$/i.test(requestId) || !/^[0-9a-f-]{36}$/i.test(roomId)) {
+      if (!/^\d{8}$/.test(pin) || !/^[0-9a-f-]{36}$/i.test(requestId) || !/^[0-9a-f-]{36}$/i.test(roomId)) {
         throw new RoomCreateError('unknown');
       }
 
@@ -138,7 +212,7 @@ export function createRoomRepository(dependencies: RoomCreateDependencies) {
           transaction.set(roomRef, {
             hostId: uid, pin, status: 'WAITING', participantCount: 1,
             createdAt: timestamp, updatedAt: timestamp, hostHeartbeatAt: timestamp,
-            startedAt: null, endedAt: null,
+            startedAt: null, endedAt: null, lastJoinRequestId: null,
           });
           transaction.set(memberRef, {
             displayName: profile.data().displayName || hostDisplayName,
@@ -187,6 +261,100 @@ export function createRoomRepository(dependencies: RoomCreateDependencies) {
         return { ...created, localCacheSaved };
       } catch (error) {
         throw mapRoomCreateError(error, stage);
+      }
+    },
+    async joinRoomByPin(command: RoomJoinCommand): Promise<JoinedRoom> {
+      const actor = dependencies.auth.currentUser;
+      if (!actor) throw new RoomJoinError('unauthenticated');
+      const uid = actor.uid;
+      const { pin, requestId } = command;
+      if (!/^(?:\d{4}|\d{8})$/.test(pin) || !/^[0-9a-f-]{36}$/i.test(requestId)) throw new RoomJoinError('invalid-argument');
+
+      try {
+        const receiptRef = doc(dependencies.firestore, 'users', uid, 'commandReceipts', requestId);
+        const reservationRef = doc(dependencies.firestore, 'roomPins', pin);
+        const outcome = await runTransaction(dependencies.firestore, async (transaction): Promise<{
+          roomId: string; hostUid: string; participantCount: number; alreadyMember: boolean;
+        }> => {
+          const receipt = await transaction.get(receiptRef);
+          if (receipt.exists()) {
+            const saved = receipt.data();
+            if (saved.pin !== pin || typeof saved.roomId !== 'string' || typeof saved.hostId !== 'string') {
+              throw new RoomJoinError('already-exists');
+            }
+            const roomSnapshot = await transaction.get(doc(dependencies.firestore, 'rooms', saved.roomId));
+            if (!roomSnapshot.exists()) throw new RoomJoinError('not-found');
+            return {
+              roomId: saved.roomId,
+              hostUid: saved.hostId,
+              participantCount: Number(roomSnapshot.data().participantCount),
+              alreadyMember: true,
+            };
+          }
+
+          // Đọc đúng document PIN, tuyệt đối không query/list collection roomPins.
+          const reservation = await transaction.get(reservationRef);
+          if (!reservation.exists()) throw new RoomJoinError('not-found');
+          const roomId = reservation.data().roomId;
+          if (typeof roomId !== 'string') throw new RoomJoinError('not-found');
+          const roomRef = doc(dependencies.firestore, 'rooms', roomId);
+          const memberRef = doc(dependencies.firestore, 'rooms', roomId, 'members', uid);
+          const profileRef = doc(dependencies.firestore, 'users', uid);
+          const [roomSnapshot, memberSnapshot, profileSnapshot] = await Promise.all([
+            transaction.get(roomRef), transaction.get(memberRef), transaction.get(profileRef),
+          ]);
+          if (!roomSnapshot.exists() || !profileSnapshot.exists()) throw new RoomJoinError('not-found');
+          const room = roomSnapshot.data();
+          if (room.pin !== pin) throw new RoomJoinError('not-found');
+          if (memberSnapshot.exists()) {
+            return { roomId, hostUid: String(room.hostId), participantCount: Number(room.participantCount), alreadyMember: true };
+          }
+          if (room.status !== 'WAITING') throw new RoomJoinError('failed-precondition');
+          const hostUid = room.hostId;
+          if (typeof hostUid !== 'string') throw new RoomJoinError('not-found');
+          const timestamp = serverTimestamp();
+          transaction.set(memberRef, {
+            displayName: profileSnapshot.data().displayName,
+            role: 'MEMBER', status: 'ACTIVE', penaltyScore: 0, liftCount: 0,
+            violationDurationSeconds: 0, joinedAt: timestamp, earlyExitAt: null,
+            syncedThroughAt: null, syncAcknowledgedAt: null,
+          });
+          transaction.update(roomRef, {
+            participantCount: room.participantCount + 1, updatedAt: timestamp, lastJoinRequestId: requestId,
+          });
+          const receiptData = {
+            version: 1, requestId, roomId, pin, hostId: hostUid, status: 'WAITING', createdAt: timestamp,
+          };
+          transaction.set(receiptRef, receiptData);
+          return { roomId, hostUid, participantCount: room.participantCount + 1, alreadyMember: false };
+        });
+
+        const [roomSnapshot, memberSnapshot] = await Promise.all([
+          getDocFromServer(doc(dependencies.firestore, 'rooms', outcome.roomId)),
+          getDocFromServer(doc(dependencies.firestore, 'rooms', outcome.roomId, 'members', uid)),
+        ]);
+        const roomData = roomSnapshot.data();
+        const memberData = memberSnapshot.data();
+        const roomCreatedAt = roomData?.createdAt instanceof Timestamp ? roomData.createdAt.toDate().toISOString() : null;
+        const roomUpdatedAt = roomData?.updatedAt instanceof Timestamp ? roomData.updatedAt.toDate().toISOString() : null;
+        const joinedAt = memberData?.joinedAt instanceof Timestamp ? memberData.joinedAt.toDate().toISOString() : null;
+        const result: JoinedRoom = {
+          roomId: outcome.roomId, pin, invitation: encodeRoomInvitation(pin), hostUid: outcome.hostUid,
+          status: 'WAITING', participantCount: outcome.participantCount, roomCreatedAt, roomUpdatedAt, joinedAt,
+          alreadyMember: outcome.alreadyMember, localCacheSaved: false,
+        };
+        if (roomCreatedAt && roomUpdatedAt && joinedAt) {
+          try {
+            await saveJoinedRoomProjection(await dependencies.database, result, uid,
+              typeof memberData?.displayName === 'string' ? memberData.displayName : '');
+            result.localCacheSaved = true;
+          } catch {
+            // Join cloud đã commit; cache local có thể đồng bộ lại khi mở room sau.
+          }
+        }
+        return result;
+      } catch (error) {
+        throw mapJoinError(error);
       }
     },
   };

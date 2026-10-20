@@ -40,7 +40,7 @@ The authenticated Expo Go client executes one online Firestore transaction. Secu
 |---|---|---|---|
 | `requestId` | UUID string | yes | Idempotency key at `users/{uid}/commandReceipts/{requestId}` |
 | `roomId` | UUID string | yes | Client-generated; immutable after creation |
-| `pin` | four-digit string | yes | Client proposes a PIN; reservation create-only Rules enforce uniqueness; preserve leading zero |
+| `pin` | eight-digit string | yes | Client proposes a PIN; reservation create-only Rules enforce uniqueness; preserve all leading zeros |
 | `createdAt` | timestamp | yes | Must use `serverTimestamp()` and equal Security Rules `request.time` |
 | `quotaBucketStart` | timestamp | yes | First instant of the current `Asia/Ho_Chi_Minh` calendar month; Rules recompute it from server time |
 
@@ -48,7 +48,7 @@ The app first writes `users/{uid}/roomQuotaClock/current` with a server timestam
 
 **Result:** After commit, the repository returns the validated room, PIN, `WAITING` state, authenticated Host UID, and the committed server timestamp when it can read it from Firestore. If the read-after-write fails, `createdAt` remains unknown and the local projection is deferred; device time is never substituted. A matching existing receipt returns its saved result; a request-ID collision is rejected. A Free Host may create at most 7 rooms per calendar month. A rejected PIN candidate leaves no partial documents and can be retried.
 
-**Rules obligations:** authenticated owner only; exact field allowlists; Host UID comes from Auth; PIN is four decimal digits and reserved only if absent; all cross-document links agree through `getAfter()`; month bucket is derived from server `request.time` shifted by the approved fixed UTC+07:00 calendar; counter increments once or resets to 1 only when the server-derived month changes; count never exceeds 7 for a non-Premium Host; create-only receipt and documents; no update/delete paths for this command.
+**Rules obligations:** authenticated owner only; exact field allowlists; Host UID comes from Auth; new PIN is eight decimal digits and reserved only if absent; all cross-document links agree through `getAfter()`; new room starts with `lastJoinRequestId: null`, which Rules use to link a later participant-count update to its receipt; month bucket is derived from server `request.time` shifted by the approved fixed UTC+07:00 calendar; counter increments once or resets to 1 only when the server-derived month changes; count never exceeds 7 for a non-Premium Host; create-only receipt and documents; no update/delete paths for this command.
 
 **Errors:** unauthenticated; permission denied for a failed Rules invariant, including PIN collision; resource exhausted when the current server bucket has reached 7; unavailable for retryable network/service failure; already exists for request-ID collision. The client may pre-check quota for a clear message, but Rules remain authoritative if concurrent creates race. The client never reports success before commit.
 
@@ -60,13 +60,13 @@ The app first writes `users/{uid}/roomQuotaClock/current` with a server timestam
 |---|---|---|---|
 | `version` | integer | yes | `1` |
 | `requestId` | UUID string | yes | Common idempotency rule |
-| `pin` | string | yes | Exactly four decimal digits |
+| `pin` | string | yes | New invitations use eight digits; existing four-digit invitations remain accepted during migration |
 
-**Response schema:** common response plus `roomId: UUID`, `status: "WAITING"`, `memberUid: string`, `joinedAtUtcMs: integer`, `alreadyMember: boolean`.
+**Response schema:** The original callable common response plus `roomId: UUID`, `status: "WAITING"`, `memberUid: string`, `joinedAtUtcMs: integer`, `alreadyMember: boolean`. Under ADR-012's Spark client exception, the app stores `requestId` in the Firestore receipt and returns the committed room/member metadata after server reads; it does not claim a callable `serverTimeUtcMs` envelope.
 
-**Errors:** `unauthenticated`; `invalid-argument` for malformed PIN; `not-found` for an unknown or expired PIN without room internals; `failed-precondition` when room is not `WAITING`; `resource-exhausted` when verified Host entitlement does not permit another Member; `unavailable`; `already-exists` for request-ID collision.
+**Errors:** `unauthenticated`; `invalid-argument` for malformed PIN; `not-found` for an unknown or expired PIN without room internals; `failed-precondition` when room is not `WAITING`; `permission-denied` from Rules when verified Host capacity does not permit another Member; `unavailable`; `already-exists` for request-ID collision.
 
-**Transaction outputs:** resolve server-only PIN reservation, validate room/capacity, create membership only when absent, update `participantCount` and store command receipt atomically.
+**Transaction outputs:** resolve the PIN reservation, validate room/capacity, create membership only when absent, update `participantCount` and store command receipt atomically. The room's `lastJoinRequestId` links the count update to the exact member and receipt written in that transaction; Rules reject another count update once that UID already has membership. Under the Spark client transaction exception (ADR-012), the authenticated client reads one reservation document by PIN; collection listing remains denied. Eight digits reduce guessing probability, but Firestore Rules cannot enforce a read-attempt rate limit, so this lookup is not a complete anti-enumeration control.
 
 ## 4. `syncEvents`
 

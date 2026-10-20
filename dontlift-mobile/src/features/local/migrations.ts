@@ -262,6 +262,39 @@ const migrations: LocalMigration[] = [
       `);
     },
   },
+  {
+    version: 8,
+    async migrate(database) {
+      // Mở rộng độ dài PIN nhưng giữ nguyên phòng và membership đã cache.
+      await database.execAsync(`
+        DROP INDEX IF EXISTS idx_room_members_owner_status;
+        ALTER TABLE room_members RENAME TO room_members_v7;
+        ALTER TABLE rooms RENAME TO rooms_v7;
+        CREATE TABLE rooms (
+          room_id TEXT PRIMARY KEY NOT NULL,
+          host_uid TEXT NOT NULL,
+          pin TEXT NOT NULL CHECK(length(pin) IN (4, 8) AND pin NOT GLOB '*[^0-9]*'),
+          status TEXT NOT NULL CHECK(status IN ('CREATED', 'WAITING', 'ACTIVE', 'COMPLETED', 'CANCELLED', 'ABORTED')),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE TABLE room_members (
+          room_id TEXT NOT NULL REFERENCES rooms(room_id) ON DELETE CASCADE,
+          uid TEXT NOT NULL,
+          display_name TEXT NOT NULL,
+          role TEXT NOT NULL CHECK(role IN ('HOST', 'MEMBER')),
+          status TEXT NOT NULL CHECK(status IN ('ACTIVE', 'EARLY_EXIT', 'LEFT')),
+          joined_at TEXT NOT NULL,
+          PRIMARY KEY(room_id, uid)
+        );
+        INSERT INTO rooms SELECT * FROM rooms_v7;
+        INSERT INTO room_members SELECT * FROM room_members_v7;
+        DROP TABLE room_members_v7;
+        DROP TABLE rooms_v7;
+        CREATE INDEX idx_room_members_owner_status ON room_members(uid, status, room_id);
+      `);
+    },
+  },
 ];
 
 const latestSchemaVersion = migrations.at(-1)?.version ?? 0;

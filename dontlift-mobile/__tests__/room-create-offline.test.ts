@@ -17,7 +17,7 @@ jest.mock('firebase/firestore', () => ({
 
 const command = {
   requestId: '00000000-0000-4000-8000-000000000001',
-  roomId: '10000000-0000-4000-8000-000000000001', pin: '0007',
+  roomId: '10000000-0000-4000-8000-000000000001', pin: '00000007',
 };
 function repository() {
   return createRoomRepository({

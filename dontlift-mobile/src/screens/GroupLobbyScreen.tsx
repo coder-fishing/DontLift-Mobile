@@ -10,9 +10,10 @@ interface GroupLobbyScreenProps {
   isCreating: boolean;
   errorMessage?: string;
   onCreateRoom: () => void;
+  onJoinRoom: () => void;
 }
 
-export function GroupLobbyScreen({ room, isCreating, errorMessage, onCreateRoom }: GroupLobbyScreenProps) {
+export function GroupLobbyScreen({ room, isCreating, errorMessage, onCreateRoom, onJoinRoom }: GroupLobbyScreenProps) {
   if (!room) {
     return (
       <View style={styles.container}>
@@ -27,7 +28,10 @@ export function GroupLobbyScreen({ room, isCreating, errorMessage, onCreateRoom 
               <Text style={styles.body}>Đang tạo phòng…</Text>
             </View>
           ) : (
-            <PrimaryButton title="Create Room" onPress={onCreateRoom} />
+            <>
+              <PrimaryButton title="Create Room" onPress={onCreateRoom} />
+              <PrimaryButton title="Tham gia bằng PIN" variant="secondary" onPress={onJoinRoom} />
+            </>
           )}
         </View>
       </View>
@@ -39,7 +43,7 @@ export function GroupLobbyScreen({ room, isCreating, errorMessage, onCreateRoom 
       <View style={styles.card}>
         <Text style={styles.eyebrow}>ROOM ĐANG CHỜ</Text>
         <Text style={styles.title}>Phòng đã sẵn sàng</Text>
-        <Text style={styles.body}>Chia sẻ mã mời để người khác tham gia. Lobby realtime và tham gia bằng PIN sẽ có ở slice sau.</Text>
+        <Text style={styles.body}>Chia sẻ mã mời để người khác tham gia. Danh sách người tham gia realtime sẽ có ở slice sau.</Text>
         <View style={styles.qrCard} accessibilityLabel="Mã QR lời mời phòng">
           <RoomInvitationQr value={room.invitation} size={200} />
         </View>
@@ -74,6 +78,6 @@ const styles = StyleSheet.create({
   loading: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10 },
   qrCard: { backgroundColor: Colors.light.qrBackground, padding: 14, borderRadius: 16 },
   pinLabel: { color: Colors.light.textSecondary, fontSize: 11, fontWeight: '800' },
-  pin: { color: Colors.light.text, fontSize: 34, fontWeight: '900', letterSpacing: 8, fontVariant: ['tabular-nums'] },
+  pin: { color: Colors.light.text, fontSize: 30, fontWeight: '900', letterSpacing: 5, fontVariant: ['tabular-nums'] },
   invitation: { color: Colors.light.primary, fontSize: 13, textAlign: 'center' },
 });
