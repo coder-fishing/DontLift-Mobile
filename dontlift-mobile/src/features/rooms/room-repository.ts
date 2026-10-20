@@ -1,6 +1,6 @@
 import type { Auth, User } from 'firebase/auth';
 import {
-  doc, getDocFromServer, runTransaction, serverTimestamp, setDoc,
+  doc, getDocFromServer, runTransaction, serverTimestamp,
   Timestamp, type Firestore,
 } from 'firebase/firestore';
 import type * as SQLite from 'expo-sqlite';
@@ -36,6 +36,20 @@ function getServerMonthStart(serverTimeMs: number): Timestamp {
 
 function defaultRandomPin(): string {
   return String(Math.floor(Math.random() * 10_000)).padStart(4, '0');
+}
+
+async function withProbeDeadline<T>(operation: () => Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new RoomCreateError('unavailable', 'clock-write')), 10_000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function saveRoomProjection(
@@ -79,9 +93,15 @@ export function createRoomRepository(dependencies: RoomCreateDependencies) {
       try {
         // Probe để lấy bucket tháng theo giờ server, tránh phụ thuộc clock/timezone của điện thoại.
         const clockRef = doc(firestore, 'users', uid, 'roomQuotaClock', 'current');
-        await setDoc(clockRef, { checkedAt: serverTimestamp() });
-        stage = 'clock-read';
-        const clockSnapshot = await getDocFromServer(clockRef);
+        // Transaction không queue offline. Khi hết hạn, probe trả về muộn cũng không được tiếp tục tạo phòng.
+        const clockSnapshot = await withProbeDeadline(async () => {
+          await runTransaction(firestore, async transaction => {
+            await transaction.get(clockRef);
+            transaction.set(clockRef, { checkedAt: serverTimestamp() });
+          });
+          stage = 'clock-read';
+          return getDocFromServer(clockRef);
+        });
         const checkedAt = clockSnapshot.data()?.checkedAt;
         if (!(checkedAt instanceof Timestamp)) throw new RoomCreateError('unavailable');
         const bucketStart = getServerMonthStart(checkedAt.toMillis());

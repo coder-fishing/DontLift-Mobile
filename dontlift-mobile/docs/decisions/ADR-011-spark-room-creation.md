@@ -17,6 +17,7 @@ SL-013 cần tạo room, reserve PIN, thêm Host membership, tăng monthly quota
 - Quota projection là `users/{uid}/usage/current`, gồm `bucketStart` và `count`. Rules chỉ chấp nhận tăng đúng một lần hoặc reset về 1 khi bucket server đổi tháng; Free Host bị giới hạn 7.
 - Receipt `users/{uid}/commandReceipts/{requestId}` chứa `roomId`, `pin`, `hostId`, trạng thái và thời điểm tạo trong cùng transaction. Replay cùng request/payload trả kết quả cũ; tái sử dụng request ID với room hoặc PIN khác bị từ chối.
 - Local SQLite chỉ được cập nhật sau khi Firestore commit thành công. Offline create không queue.
+- Server-time probe dùng transaction đọc/ghi clock thay cho `setDoc` để không queue write offline. Toàn bộ probe có deadline 10 giây; khi hết hạn, kết quả probe trả muộn không được tiếp tục sang giao dịch tạo room. Người dùng phải bấm thử lại, giữ request ID cũ để kiểm tra receipt.
 - Canonical invite URI là `dontliftmobile://room/{PIN}`; PIN luôn là chuỗi bốn chữ số.
 
 ## Consequences
