@@ -191,7 +191,13 @@ export function createGroupViolationRepository(dependencies: Dependencies) {
         const memberRef = doc(dependencies.firestore, 'rooms', roomId, 'members', actor.uid);
         try {
           await runTransaction(dependencies.firestore, async tx => {
-            const [room, member, existing] = await Promise.all([tx.get(roomRef), tx.get(memberRef), tx.get(eventRef)]);
+            const [room, member] = await Promise.all([tx.get(roomRef), tx.get(memberRef)]);
+            if (!room.exists() || room.data().status !== 'ACTIVE' || !member.exists()
+              || !['ACTIVE', 'EARLY_EXIT'].includes(String(member.data().status))) {
+              throw new GroupViolationError('failed-precondition');
+            }
+            // Chỉ đọc event khi room còn ACTIVE; room terminal giữ outbox cho SL-020 reconciliation.
+            const existing = await tx.get(eventRef);
             if (existing.exists()) {
               const saved = existing.data();
               if (saved.actorUid !== actor.uid || !(saved.startedAt instanceof Timestamp) || !(saved.endedAt instanceof Timestamp)
@@ -200,8 +206,11 @@ export function createGroupViolationRepository(dependencies: Dependencies) {
               }
               return;
             }
-            if (!room.exists() || room.data().status !== 'ACTIVE' || !member.exists() || member.data().status !== 'ACTIVE') {
-              throw new GroupViolationError('failed-precondition');
+            const memberData = member.data();
+            if (memberData.status === 'EARLY_EXIT'
+              && (!(memberData.earlyExitAt instanceof Timestamp) || endedAt > memberData.earlyExitAt.toMillis())) {
+              // Event kết thúc sau cutoff không được tính; giữ log cục bộ nhưng không retry vô hạn.
+              throw new GroupViolationError('invalid-argument');
             }
             const serverStartedAt = room.data().startedAt;
             if (!(serverStartedAt instanceof Timestamp) || startedAt < serverStartedAt.toMillis()) {

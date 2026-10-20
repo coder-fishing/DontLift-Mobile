@@ -115,9 +115,9 @@
 3. **Lobby & Real-Time Listener (`US-08`):** Firestore real-time snapshot listener syncs participant list across all devices in real time and updates local `room_members` SQLite cache. Host sees "Start Session" button; Members see waiting banner.
 4. **Session Active (`US-09`):** Host starts session. All devices trigger local motion detection (`FR-01`). Each confirmed violation writes to local SQLite and syncs to Firestore `rooms/{roomId}/violations/{eventId}`. Penalty Leaderboard updates across all connected clients within $\le 2\text{s}$.
 5. **Early Exit Flow (`US-10`):**  
-   - Member taps "Request Early Exit". Firestore document written to `rooms/{roomId}/requests/{reqId}`.  
+   - Member taps "Request Early Exit". Firestore Rules authorize a client transaction that creates or replaces `rooms/{roomId}/earlyExitRequests/{memberUid}`.
    - Host receives banner prompt with "Approve" / "Deny".  
-   - On Host Approval: Member's state changes to `EARLY_EXIT`. Sensor detection stops. Penalty Score is frozen at exit timestamp. Member remains in participant pool for bill splitting.  
+   - On Host Approval: Member's state changes to `EARLY_EXIT` at the server timestamp. Sensor detection stops. Violations ending at or before that cutoff can still sync before SL-020 locks settlement; violations ending after it do not increase the score. Member remains in participant pool for bill splitting.
    - On Host Denial: Member remains `ACTIVE`.
 6. **Early Termination Vote (`US-11`):**  
    - Any active member taps "Initiate Termination Vote".  

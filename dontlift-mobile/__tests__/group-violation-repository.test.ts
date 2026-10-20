@@ -63,4 +63,31 @@ describe('group violation sync', () => {
       expect.objectContaining({ sql: expect.stringContaining("SET sync_status = 'SYNCED'"), params: expect.arrayContaining([rows[1].event_id, 'member']) }),
     ]));
   });
+
+  it('does not read a violation document after the room is terminal', async () => {
+    const database = {
+      getAllAsync: jest.fn().mockResolvedValue([rows[1]]),
+      withExclusiveTransactionAsync: jest.fn(),
+    };
+    const readPaths: unknown[] = [];
+    jest.mocked(runTransaction).mockImplementation(async (_firestore, callback) => callback({
+      get: async (reference: string) => {
+        readPaths.push(reference);
+        if (readPaths.length === 1) return { exists: () => true, data: () => ({ status: 'COMPLETED' }) };
+        if (readPaths.length === 2) return { exists: () => true, data: () => ({ status: 'ACTIVE' }) };
+        return { exists: () => false, data: () => undefined };
+      },
+      set: jest.fn(),
+      update: jest.fn(),
+    } as never));
+
+    const repository = createGroupViolationRepository({
+      firestore: {} as never,
+      auth: { currentUser: { uid: 'member' } } as never,
+      database: async () => database as never,
+    });
+
+    await expect(repository.syncPending('room-1')).rejects.toMatchObject({ code: 'failed-precondition' });
+    expect(readPaths).toHaveLength(2);
+  });
 });
