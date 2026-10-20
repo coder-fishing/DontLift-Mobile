@@ -21,6 +21,10 @@ service cloud.firestore {
       return /databases/$(database)/documents/rooms/$(roomId)/members/$(uid);
     }
 
+    function earlyExitRequestPath(roomId, memberUid) {
+      return /databases/$(database)/documents/rooms/$(roomId)/earlyExitRequests/$(memberUid);
+    }
+
     function pinPath(pin) {
       return /databases/$(database)/documents/roomPins/$(pin);
     }
@@ -124,16 +128,109 @@ service cloud.firestore {
         && get(hostMemberPath(roomId, uid)).data.status == 'ACTIVE';
     }
 
+    function activeRoomParticipant(roomId, uid) {
+      return exists(roomPath(roomId))
+        && get(roomPath(roomId)).data.status == 'ACTIVE'
+        && exists(hostMemberPath(roomId, uid))
+        && get(hostMemberPath(roomId, uid)).data.status in ['ACTIVE', 'EARLY_EXIT'];
+    }
+
     function roomParticipant(roomId, uid) {
       return exists(roomPath(roomId))
         // Giữ roster đọc được cho member đang hoạt động để client dọn session sau khi room kết thúc.
         && get(roomPath(roomId)).data.status in ['WAITING', 'ACTIVE', 'COMPLETED', 'CANCELLED', 'ABORTED']
         && exists(hostMemberPath(roomId, uid))
-        && get(hostMemberPath(roomId, uid)).data.status == 'ACTIVE';
+        && get(hostMemberPath(roomId, uid)).data.status in ['ACTIVE', 'EARLY_EXIT'];
+    }
+
+    function canRecordGroupViolation(roomId, memberUid, endedAt) {
+      let room = get(roomPath(roomId)).data;
+      let member = get(hostMemberPath(roomId, memberUid)).data;
+      return room.status == 'ACTIVE'
+        && (member.status == 'ACTIVE'
+          || (member.status == 'EARLY_EXIT' && member.earlyExitAt is timestamp && endedAt <= member.earlyExitAt));
+    }
+
+    function validEarlyExitRequest(roomId, memberUid, data, isUpdate) {
+      let member = get(hostMemberPath(roomId, memberUid)).data;
+      let room = get(roomPath(roomId)).data;
+      return signedIn()
+        && memberUid == request.auth.uid
+        && member.role == 'MEMBER'
+        && member.status == 'ACTIVE'
+        && member.earlyExitAt == null
+        && room.status == 'ACTIVE'
+        && data.keys().hasAll(['version', 'requestId', 'memberUid', 'status', 'requestedAt', 'decision', 'decidedBy', 'decidedAt', 'cutoffAt'])
+        && data.keys().hasOnly(['version', 'requestId', 'memberUid', 'status', 'requestedAt', 'decision', 'decidedBy', 'decidedAt', 'cutoffAt'])
+        && data.version == 1
+        && data.requestId is string
+        && data.requestId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
+        && data.memberUid == memberUid
+        && data.status == 'OPEN'
+        && data.requestedAt == request.time
+        && data.decision == null
+        && data.decidedBy == null
+        && data.decidedAt == null
+        && data.cutoffAt == null
+        && (!isUpdate || (resource.data.status == 'DENIED' && data.requestId != resource.data.requestId));
+    }
+
+    function validEarlyExitDecision(roomId, memberUid) {
+      let room = get(roomPath(roomId)).data;
+      let host = get(hostMemberPath(roomId, request.auth.uid)).data;
+      let before = resource.data;
+      let after = request.resource.data;
+      let memberPath = hostMemberPath(roomId, memberUid);
+      let memberBefore = get(memberPath).data;
+      let memberAfter = getAfter(memberPath).data;
+      let approved = after.decision == 'APPROVE';
+      return signedIn()
+        && room.status == 'ACTIVE'
+        && room.hostId == request.auth.uid
+        && host.role == 'HOST'
+        && host.status == 'ACTIVE'
+        && memberBefore.status == 'ACTIVE'
+        && memberBefore.role == 'MEMBER'
+        && memberBefore.earlyExitAt == null
+        && before.status == 'OPEN'
+        && before.memberUid == memberUid
+        && before.requestId is string
+        && after.diff(before).affectedKeys().hasOnly(['status', 'decision', 'decidedBy', 'decidedAt', 'cutoffAt'])
+        && after.requestId == before.requestId
+        && after.memberUid == memberUid
+        && after.status == (approved ? 'APPROVED' : 'DENIED')
+        && after.decision in ['APPROVE', 'DENY']
+        && after.decidedBy == request.auth.uid
+        && after.decidedAt == request.time
+        && after.cutoffAt == (approved ? request.time : null)
+        && (!approved || (memberAfter.status == 'EARLY_EXIT'
+          && memberAfter.earlyExitAt == request.time
+          && memberAfter.diff(memberBefore).affectedKeys().hasOnly(['status', 'earlyExitAt'])));
+    }
+
+    function validEarlyExitMemberApproval(roomId, memberUid) {
+      let requestPath = earlyExitRequestPath(roomId, memberUid);
+      let earlyExitRequest = getAfter(requestPath).data;
+      return signedIn()
+        && memberUid == earlyExitRequest.memberUid
+        && resource.data.status == 'ACTIVE'
+        && resource.data.earlyExitAt == null
+        && request.resource.data.status == 'EARLY_EXIT'
+        && request.resource.data.earlyExitAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'earlyExitAt'])
+        && earlyExitRequest.status == 'APPROVED'
+        && earlyExitRequest.decision == 'APPROVE'
+        && earlyExitRequest.decidedBy == request.auth.uid
+        && earlyExitRequest.decidedAt == request.time
+        && earlyExitRequest.cutoffAt == request.time
+        && get(requestPath).data.status == 'OPEN'
+        && get(roomPath(roomId)).data.status == 'ACTIVE'
+        && get(roomPath(roomId)).data.hostId == request.auth.uid;
     }
 
     function validGroupViolation(roomId, eventId, data) {
       let room = get(roomPath(roomId)).data;
+      let member = get(hostMemberPath(roomId, request.auth.uid)).data;
       let memberAfter = getAfter(hostMemberPath(roomId, request.auth.uid)).data;
       return data.keys().hasAll(['eventId', 'actorUid', 'startedAt', 'endedAt', 'durationSeconds', 'createdAt'])
         && data.keys().hasOnly(['eventId', 'actorUid', 'startedAt', 'endedAt', 'durationSeconds', 'createdAt'])
@@ -142,6 +239,8 @@ service cloud.firestore {
         && data.actorUid == request.auth.uid
         && data.startedAt is timestamp
         && data.endedAt is timestamp
+        && (member.status == 'ACTIVE' || (member.status == 'EARLY_EXIT'
+          && member.earlyExitAt is timestamp && data.endedAt <= member.earlyExitAt))
         && data.startedAt >= room.startedAt
         && data.endedAt >= data.startedAt
         && data.endedAt <= request.time
@@ -158,9 +257,9 @@ service cloud.firestore {
       let eventId = after.get('lastViolationEventId', null);
       let eventPath = /databases/$(database)/documents/rooms/$(roomId)/violations/$(eventId);
       let event = getAfter(eventPath).data;
-      let duration = event.durationSeconds;
+      let eventDuration = event.durationSeconds;
       return memberUid == request.auth.uid
-        && activeRoomMember(roomId, memberUid)
+        && canRecordGroupViolation(roomId, memberUid, event.endedAt)
         && eventId is string
         // Chỉ cho phép tăng điểm khi cùng transaction tạo event mới, không khi trỏ lại event cũ.
         && !exists(eventPath)
@@ -176,8 +275,8 @@ service cloud.firestore {
         && after.violationDurationSeconds is int
         && after.penaltyScore is int
         && after.liftCount == resource.data.liftCount + 1
-        && after.violationDurationSeconds == resource.data.violationDurationSeconds + duration
-        && after.penaltyScore == resource.data.penaltyScore + 10 + duration
+        && after.violationDurationSeconds == resource.data.violationDurationSeconds + eventDuration
+        && after.penaltyScore == resource.data.penaltyScore + 10 + eventDuration
         && after.penaltyScore == after.liftCount * 10 + after.violationDurationSeconds;
     }
 
@@ -378,14 +477,26 @@ service cloud.firestore {
             ))
           );
         allow list: if roomParticipant(roomId, request.auth.uid);
-        allow update: if signedIn() && validGroupViolationMemberUpdate(roomId, memberUid);
+        allow update: if signedIn() && (
+          validGroupViolationMemberUpdate(roomId, memberUid)
+          || validEarlyExitMemberApproval(roomId, memberUid)
+        );
+        allow delete: if false;
+      }
+
+      match /earlyExitRequests/{memberUid} {
+        allow get, list: if roomParticipant(roomId, request.auth.uid);
+        allow create: if validEarlyExitRequest(roomId, memberUid, request.resource.data, false);
+        allow update: if validEarlyExitRequest(roomId, memberUid, request.resource.data, true)
+          || validEarlyExitDecision(roomId, memberUid);
         allow delete: if false;
       }
 
       match /violations/{eventId} {
-        allow get, list: if activeRoomMember(roomId, request.auth.uid);
+        // Member đã được duyệt rời vẫn cần đọc event để transaction retry/replay trước khi room kết thúc.
+        allow get, list: if activeRoomParticipant(roomId, request.auth.uid);
         allow create: if signedIn()
-          && activeRoomMember(roomId, request.auth.uid)
+          && canRecordGroupViolation(roomId, request.auth.uid, request.resource.data.endedAt)
           && validGroupViolation(roomId, eventId, request.resource.data);
         allow update, delete: if false;
       }
