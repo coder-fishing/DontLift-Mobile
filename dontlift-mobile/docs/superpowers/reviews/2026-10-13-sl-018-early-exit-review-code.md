@@ -85,3 +85,18 @@
 - **Response:** Added a cleanup retry controller with capped exponential backoff and an immediate retry trigger on reconnect. It retries the idempotent cutoff finalization and local projection before starting outbox sync. The in-flight guard is released if the effect is disposed before cleanup succeeds. Added unit tests for transient failure and reconnect-triggered retry.
 
 **Execution record — 2026-10-20, fourth review feedback batch:** `pnpm exec jest --runInBand __tests__/early-exit-cleanup-retry.test.ts __tests__/group-capture-work.test.ts __tests__/early-exit-sync-retry.test.ts __tests__/group-active-screen.test.tsx __tests__/early-exit-repository.test.ts __tests__/group-violation-repository.test.ts __tests__/room-lobby-projection.test.ts` passed (7 suites, 19 tests). `pnpm exec tsc --noEmit` and `git diff --check` passed. Local SQLite failure/recovery remains to be exercised on Expo Go.
+
+## RC-007
+
+- **Status:** RESOLVED
+- **Severity:** High
+- **Category:** Terminal cleanup ordering
+- **Location:** `src/app/index.tsx` — terminal room cleanup for an `EARLY_EXIT` member
+- **Problem:** If the first observed approval snapshot was already terminal, the ACTIVE-only early-exit effect skipped the member cutoff. Terminal cleanup could close an open violation at the later room end and persist the local session with the wrong completion time.
+- **Recommendation:** Apply the member cutoff before terminal-room finalization, including when the observed room snapshot is terminal.
+- **Created At:** 2026-10-21
+- **Updated By:** Codex
+- **Updated At:** 2026-10-21
+- **Response:** Early-exit cleanup now also accepts terminal snapshots. Both the early-exit and terminal effects share one per-room cleanup promise, which waits for queued capture work, finalizes violations at `earlyExitAt`, and persists the early-exit projection before terminal cleanup uses the room's `endedAt`.
+
+**Execution record — 2026-10-21:** `pnpm exec tsc --noEmit` and `git diff --check` passed. Tests were not run. Expo Go approval/terminal ordering remains unverified on device.

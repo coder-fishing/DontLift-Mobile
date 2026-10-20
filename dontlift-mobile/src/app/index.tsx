@@ -174,6 +174,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const [createdRoom, setCreatedRoom] = useState<CreatedRoom | null>(null);
   const restoredGroupRoomId = useRef<string | null>(null);
   const terminalRoomCleanupInFlight = useRef(new Set<string>());
+  const earlyExitCutoffCleanupTasks = useRef(new Map<string, Promise<void>>());
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const [roomCreateError, setRoomCreateError] = useState<string | undefined>();
   const pendingRoomCommand = useRef<RoomCreateCommand | null>(null);
@@ -194,6 +195,34 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const earlyExitCleanupInFlight = useRef(new Set<string>());
   const groupCaptureWork = useRef(new Map<string, ReturnType<typeof createGroupCaptureWorkTracker>>());
   const lobbyRoom = joinedRoom ?? createdRoom;
+
+  const runEarlyExitCutoffCleanup = useCallback((input: {
+    roomId: string;
+    userId: string;
+    cutoffUtcMs: number;
+    startedAtUtcMs: number;
+  }) => {
+    const existingTask = earlyExitCutoffCleanupTasks.current.get(input.roomId);
+    if (existingTask) return existingTask;
+
+    const task = (async () => {
+      // Chờ capture/recovery đã xếp hàng ghi xong trước khi chốt cutoff.
+      await groupCaptureWork.current.get(input.roomId)?.waitForIdle();
+      await groupViolationRepository.finalizeOpenAtRoomEnd({
+        roomId: input.roomId, userId: input.userId, endedAtUtcMs: input.cutoffUtcMs,
+      });
+      await persistEarlyExitProjection(getLocalDatabase(), input);
+      groupCaptureWork.current.delete(input.roomId);
+    })();
+    earlyExitCutoffCleanupTasks.current.set(input.roomId, task);
+    const clearTask = () => {
+      if (earlyExitCutoffCleanupTasks.current.get(input.roomId) === task) {
+        earlyExitCutoffCleanupTasks.current.delete(input.roomId);
+      }
+    };
+    void task.then(clearTask, clearTask);
+    return task;
+  }, [groupViolationRepository]);
 
   useEffect(() => {
     let active = true;
@@ -239,9 +268,18 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       && !terminalRoomCleanupInFlight.current.has(snapshot.roomId)) {
       const roomId = snapshot.roomId;
       const endedAtUtcMs = snapshot.endedAtUtcMs;
+      const ownMember = snapshot.members.find(member => member.uid === profile.uid);
+      const earlyExitCutoffUtcMs = ownMember?.status === 'EARLY_EXIT' ? ownMember.earlyExitAtUtcMs : null;
+      const startedAtUtcMs = snapshot.startedAtUtcMs;
       terminalRoomCleanupInFlight.current.add(roomId);
       void (async () => {
         try {
+          if (earlyExitCutoffUtcMs != null && startedAtUtcMs != null) {
+            // Nếu đây là snapshot đầu tiên sau khi Host duyệt, áp cutoff trước giờ kết thúc phòng.
+            await runEarlyExitCutoffCleanup({
+              roomId, userId: profile.uid, cutoffUtcMs: earlyExitCutoffUtcMs, startedAtUtcMs,
+            });
+          }
           // Chốt violation đã xác nhận theo mốc kết thúc server, giữ outbox pending cho SL-020 reconciliation.
           await groupViolationRepository.finalizeOpenAtRoomEnd({ roomId, userId: profile.uid, endedAtUtcMs });
           await persistTerminalRoomProjection(getLocalDatabase(), {
@@ -269,7 +307,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       setCurrentScreen('06-group-active');
       restoredGroupRoomId.current = null;
     }
-  }, [roomLobbyState, currentScreen, profile.uid, groupViolationRepository]);
+  }, [roomLobbyState, currentScreen, profile.uid, groupViolationRepository, runEarlyExitCutoffCleanup]);
 
   const earlyExitSnapshot = roomLobbyState?.snapshot;
   const earlyExitMember = earlyExitSnapshot?.members.find(member => member.uid === profile.uid);
@@ -278,7 +316,8 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     const snapshot = earlyExitSnapshot;
     const ownMember = earlyExitMember;
     const cutoffUtcMs = earlyExitCutoffUtcMs;
-    if (!snapshot || snapshot.status !== 'ACTIVE' || ownMember?.status !== 'EARLY_EXIT'
+    if (!snapshot || !['ACTIVE', 'COMPLETED', 'ABORTED'].includes(snapshot.status)
+      || ownMember?.status !== 'EARLY_EXIT'
       || cutoffUtcMs == null || snapshot.startedAtUtcMs == null
       || earlyExitCleanupInFlight.current.has(snapshot.roomId)) return;
 
@@ -300,17 +339,9 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     };
     cleanupRetryController = createEarlyExitCleanupRetry(
       async () => {
-        // capture cleanup có thể còn drain/tick/recovery đã ghi violation trước khi kết thúc.
-        await groupCaptureWork.current.get(roomId)?.waitForIdle();
+        // Dùng cùng cleanup với terminal path để hai snapshot không chốt sai thứ tự.
+        await runEarlyExitCutoffCleanup({ roomId, userId: profile.uid, cutoffUtcMs, startedAtUtcMs });
         if (disposed) return;
-        // Chốt violation đang mở đúng tại cutoff server rồi đóng projection session cục bộ.
-        await groupViolationRepository.finalizeOpenAtRoomEnd({ roomId, userId: profile.uid, endedAtUtcMs: cutoffUtcMs });
-        if (disposed) return;
-        await persistEarlyExitProjection(getLocalDatabase(), {
-          roomId, userId: profile.uid, cutoffUtcMs, startedAtUtcMs,
-        });
-        if (disposed) return;
-        groupCaptureWork.current.delete(roomId);
       },
       {
         onRetrying: () => setGroupSyncMessage('The room approved your exit, but local session cleanup failed. The app will retry automatically.'),
@@ -339,7 +370,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       networkSubscription?.remove();
     };
   }, [earlyExitSnapshot?.roomId, earlyExitSnapshot?.status, earlyExitSnapshot?.startedAtUtcMs,
-    earlyExitMember?.status, earlyExitCutoffUtcMs, profile.uid, groupViolationRepository]);
+    earlyExitMember?.status, earlyExitCutoffUtcMs, profile.uid, groupViolationRepository, runEarlyExitCutoffCleanup]);
 
   const handleCreateRoom = async () => {
     if (isCreatingRoom) return;
