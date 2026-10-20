@@ -65,13 +65,14 @@ describe('room creation does not resume after an offline probe', () => {
     jest.mocked(doc).mockImplementation(((...parts: unknown[]) => parts.slice(1).join('/')) as unknown as typeof doc);
     const profile = { exists: () => true, data: () => ({ displayName: 'Host', isPremium: false }) };
     const missing = { exists: () => false, data: () => undefined };
+    const transactionWrites = { set: jest.fn() };
     jest.mocked(runTransaction)
       .mockImplementationOnce(async (_firestore, callback) => callback({
-        get: async () => missing, set: jest.fn(),
+        get: async () => missing, ...transactionWrites,
       } as never) as never)
       .mockImplementationOnce(async (_firestore, callback) => callback({
         get: async (reference: string) => reference === 'users/host' ? profile : missing,
-        set: jest.fn(),
+        ...transactionWrites,
       } as never) as never);
     jest.mocked(getDocFromServer)
       .mockResolvedValueOnce({ data: () => ({ checkedAt: Timestamp.now() }) } as Awaited<ReturnType<typeof getDocFromServer>>)
@@ -88,6 +89,8 @@ describe('room creation does not resume after an offline probe', () => {
 
     expect(result.createdAt).toBeNull();
     expect(result.localCacheSaved).toBe(false);
+    const memberWrite = transactionWrites.set.mock.calls.find(([path]) => path === `rooms/${command.roomId}/members/host`);
+    expect(memberWrite?.[1]).not.toHaveProperty('lastViolationEventId');
     expect(withExclusiveTransactionAsync).not.toHaveBeenCalled();
   });
 });

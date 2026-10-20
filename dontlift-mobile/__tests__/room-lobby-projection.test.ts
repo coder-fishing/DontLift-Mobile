@@ -17,8 +17,8 @@ describe('room lobby SQLite projection', () => {
       participantCount: 2, startedAtUtcMs: null,
       createdAt: joinedAt, updatedAt: joinedAt,
       members: [
-        { uid: 'host', displayName: 'Host', role: 'HOST', status: 'ACTIVE', penaltyScore: 0, liftCount: 0, joinedAt },
-        { uid: 'member', displayName: 'Member', role: 'MEMBER', status: 'ACTIVE', penaltyScore: 0, liftCount: 0, joinedAt },
+        { uid: 'host', displayName: 'Host', role: 'HOST', status: 'ACTIVE', penaltyScore: 0, liftCount: 0, violationDurationSeconds: 0, joinedAt },
+        { uid: 'member', displayName: 'Member', role: 'MEMBER', status: 'ACTIVE', penaltyScore: 0, liftCount: 0, violationDurationSeconds: 0, joinedAt },
       ],
     };
 
