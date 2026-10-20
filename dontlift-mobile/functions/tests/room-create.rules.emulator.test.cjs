@@ -65,7 +65,7 @@ async function createRoom(db, { uid, requestId, roomId, pin, bucketStart, count 
     transaction.set(roomRef, {
       hostId: uid, pin, status: 'WAITING', participantCount: 1,
       createdAt: timestamp, updatedAt: timestamp, hostHeartbeatAt: timestamp,
-      startedAt: null, endedAt: null, lastJoinRequestId: null,
+      startedAt: null, endedAt: null, lastJoinRequestId: null, lastStartRequestId: null,
     });
     transaction.set(memberRef, {
       displayName, role: 'HOST', status: 'ACTIVE', penaltyScore: 0,

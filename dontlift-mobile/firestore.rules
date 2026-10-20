@@ -219,17 +219,17 @@ service cloud.firestore {
       }
     }
 
-    // Ngoại lệ create-only của SL-013; không cấp quyền join hoặc mutate lobby.
+    // Ngoại lệ client Spark giới hạn cho create/join và Host start theo ADR-013.
     match /rooms/{roomId} {
       allow get: if canReadRoom(roomId);
       allow create: if signedIn()
         && request.resource.data.keys().hasAll([
           'hostId', 'pin', 'status', 'participantCount', 'createdAt', 'updatedAt',
-          'hostHeartbeatAt', 'startedAt', 'endedAt', 'lastJoinRequestId'
+          'hostHeartbeatAt', 'startedAt', 'endedAt', 'lastJoinRequestId', 'lastStartRequestId'
         ])
         && request.resource.data.keys().hasOnly([
           'hostId', 'pin', 'status', 'participantCount', 'createdAt', 'updatedAt',
-          'hostHeartbeatAt', 'startedAt', 'endedAt', 'lastJoinRequestId'
+          'hostHeartbeatAt', 'startedAt', 'endedAt', 'lastJoinRequestId', 'lastStartRequestId'
         ])
         && request.resource.data.hostId == request.auth.uid
         && request.resource.data.pin is string
@@ -243,24 +243,44 @@ service cloud.firestore {
         && request.resource.data.startedAt == null
         && request.resource.data.endedAt == null
         && request.resource.data.lastJoinRequestId == null
+        && request.resource.data.lastStartRequestId == null
         && hasRoomCreateLinks(
           roomId,
           request.auth.uid,
           request.resource.data.pin,
           getAfter(usagePath(request.auth.uid)).data.lastRequestId
         );
-      allow update: if signedIn()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participantCount', 'updatedAt', 'lastJoinRequestId'])
-        && request.resource.data.participantCount is int
-        && request.resource.data.updatedAt == request.time
-        && request.resource.data.status == 'WAITING'
-        && request.resource.data.lastJoinRequestId is string
-        && request.resource.data.lastJoinRequestId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
-        && hasRoomJoinLinks(roomId, request.auth.uid, resource.data.pin, request.resource.data.lastJoinRequestId);
+      allow update: if signedIn() && (
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participantCount', 'updatedAt', 'lastJoinRequestId'])
+          && request.resource.data.participantCount is int
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.status == 'WAITING'
+          && request.resource.data.lastJoinRequestId is string
+          && request.resource.data.lastJoinRequestId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
+          && hasRoomJoinLinks(roomId, request.auth.uid, resource.data.pin, request.resource.data.lastJoinRequestId)
+        ) || (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'startedAt', 'updatedAt', 'lastStartRequestId'])
+          && request.resource.data.hostId == request.auth.uid
+          && resource.data.status == 'WAITING'
+          && resource.data.startedAt == null
+          && resource.data.lastStartRequestId == null
+          && request.resource.data.status == 'ACTIVE'
+          && request.resource.data.startedAt == request.time
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.lastStartRequestId is string
+          && request.resource.data.lastStartRequestId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
+          && exists(hostMemberPath(roomId, request.auth.uid))
+          && get(hostMemberPath(roomId, request.auth.uid)).data.role == 'HOST'
+          && get(hostMemberPath(roomId, request.auth.uid)).data.status == 'ACTIVE'
+        )
+      );
       allow list, delete: if false;
 
       match /members/{memberUid} {
-        allow get: if signedIn() && memberUid == request.auth.uid;
+        allow get: if signedIn() && (
+          memberUid == request.auth.uid || exists(hostMemberPath(roomId, request.auth.uid))
+        );
         allow create: if signedIn()
           && memberUid == request.auth.uid
           && request.resource.data.keys().hasAll([
@@ -290,7 +310,8 @@ service cloud.firestore {
               getAfter(roomPath(roomId)).data.lastJoinRequestId
             ))
           );
-        allow list, update, delete: if false;
+        allow list: if signedIn() && exists(hostMemberPath(roomId, request.auth.uid));
+        allow update, delete: if false;
       }
     }
 
