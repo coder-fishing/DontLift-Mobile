@@ -1,5 +1,5 @@
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { GlassCard } from '../components/GlassCard';
 import { Colors } from '../constants/theme';
 import { formatTime } from '../constants';
@@ -30,6 +30,14 @@ export function GroupActiveScreen({ snapshot, elapsedSeconds, detection, isOnlin
   const ownMember = snapshot.members.find(member => member.uid === actorUid);
   const isHost = ownMember?.role === 'HOST';
   const ownRequest = openEarlyExitRequests.find(request => request.memberUid === actorUid);
+  const confirmEarlyExitRequest = () => Alert.alert(
+    'Request early exit?',
+    'Your score will freeze at current time.',
+    [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Request', onPress: onRequestEarlyExit },
+    ],
+  );
   return (
     <View style={styles.container}>
       <GlassCard style={styles.timerCard}>
@@ -72,8 +80,9 @@ export function GroupActiveScreen({ snapshot, elapsedSeconds, detection, isOnlin
           {earlyExitError ? <Text accessibilityRole="alert" style={styles.error}>{earlyExitError}</Text> : null}
           <Pressable
             accessibilityRole="button"
+            accessibilityLabel="Request early exit"
             disabled={isRequestingEarlyExit || Boolean(ownRequest) || !isOnline}
-            onPress={onRequestEarlyExit}
+            onPress={confirmEarlyExitRequest}
             style={({ pressed }) => [styles.actionButton, pressed && styles.pressed, (isRequestingEarlyExit || Boolean(ownRequest) || !isOnline) && styles.disabled]}
           >
             {isRequestingEarlyExit ? <ActivityIndicator color={Colors.light.onPrimary} /> : null}

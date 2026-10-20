@@ -139,9 +139,8 @@ export function createEarlyExitRepository(dependencies: Dependencies) {
           const [room, host, member, request] = await Promise.all([
             transaction.get(roomRef), transaction.get(hostRef), transaction.get(memberRef), transaction.get(requestRef),
           ]);
-          if (!room.exists() || !member.exists() || !request.exists()) throw new EarlyExitError('not-found');
-          if (room.data().status !== 'ACTIVE' || room.data().hostId !== actor.uid
-            || !host.exists() || host.data().role !== 'HOST' || host.data().status !== 'ACTIVE') {
+          if (!room.exists() || !host.exists() || !request.exists()) throw new EarlyExitError('not-found');
+          if (room.data().hostId !== actor.uid || host.data().role !== 'HOST') {
             throw new EarlyExitError('permission-denied');
           }
 
@@ -150,6 +149,10 @@ export function createEarlyExitRepository(dependencies: Dependencies) {
             if (saved.decision === input.decision) return toResult(input.roomId, input.memberUid, saved);
             throw new EarlyExitError('failed-precondition');
           }
+          if (room.data().status !== 'ACTIVE' || host.data().status !== 'ACTIVE') {
+            throw new EarlyExitError('permission-denied');
+          }
+          if (!member.exists()) throw new EarlyExitError('not-found');
           if (saved.requestId !== input.requestId || saved.status !== 'OPEN'
             || member.data().status !== 'ACTIVE' || member.data().earlyExitAt !== null) {
             throw new EarlyExitError('failed-precondition');

@@ -141,6 +141,25 @@ test('Host approval changes request and membership atomically; denial keeps memb
   assert.equal(await assertSucceeds(decideExit(hostDb, hostId, memberId, '00000000-0000-4000-8000-000000000084', 'APPROVE')), 'APPROVED');
 });
 
+test('Host can read and replay the committed decision after the room is terminal', async t => {
+  const env = await createRulesEnvironment();
+  t.after(() => env.cleanup());
+  await seedRoom(env);
+  const memberDb = env.authenticatedContext(memberId).firestore();
+  const hostDb = env.authenticatedContext(hostId).firestore();
+  await assertSucceeds(requestExit(memberDb, memberId));
+  assert.equal(await assertSucceeds(decideExit(hostDb, hostId, memberId, requestId, 'APPROVE')), 'APPROVED');
+
+  await env.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await updateDoc(doc(db, `rooms/${roomId}`), { status: 'COMPLETED' });
+    await updateDoc(doc(db, `rooms/${roomId}/members/${hostId}`), { status: 'INACTIVE' });
+  });
+
+  assert.equal(await assertSucceeds(decideExit(hostDb, hostId, memberId, requestId, 'APPROVE')), 'APPROVED');
+  await assertFails(decideExit(hostDb, hostId, memberId, requestId, 'DENY'));
+});
+
 test('non-Host cannot decide and client cannot write an exit cutoff directly', async t => {
   const env = await createRulesEnvironment();
   t.after(() => env.cleanup());

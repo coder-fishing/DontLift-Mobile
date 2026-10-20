@@ -143,6 +143,15 @@ service cloud.firestore {
         && get(hostMemberPath(roomId, uid)).data.status in ['ACTIVE', 'EARLY_EXIT'];
     }
 
+    function terminalRoomHost(roomId, uid) {
+      return signedIn()
+        && exists(roomPath(roomId))
+        && get(roomPath(roomId)).data.status in ['COMPLETED', 'CANCELLED', 'ABORTED']
+        && get(roomPath(roomId)).data.hostId == uid
+        && exists(hostMemberPath(roomId, uid))
+        && get(hostMemberPath(roomId, uid)).data.role == 'HOST';
+    }
+
     function canRecordGroupViolation(roomId, memberUid, endedAt) {
       let room = get(roomPath(roomId)).data;
       let member = get(hostMemberPath(roomId, memberUid)).data;
@@ -485,7 +494,9 @@ service cloud.firestore {
       }
 
       match /earlyExitRequests/{memberUid} {
-        allow get, list: if roomParticipant(roomId, request.auth.uid);
+        // Host cần đọc lại một quyết định đã lưu để retry idempotent sau khi room kết thúc.
+        allow get: if roomParticipant(roomId, request.auth.uid) || terminalRoomHost(roomId, request.auth.uid);
+        allow list: if roomParticipant(roomId, request.auth.uid);
         allow create: if validEarlyExitRequest(roomId, memberUid, request.resource.data, false);
         allow update: if validEarlyExitRequest(roomId, memberUid, request.resource.data, true)
           || validEarlyExitDecision(roomId, memberUid);

@@ -111,6 +111,41 @@ describe('early-exit Spark repository', () => {
     expect(records.get(`rooms/${roomId}/members/${memberUid}`)?.status).toBe('EARLY_EXIT');
   });
 
+  it('replays the same committed decision after the room and Host are no longer active', async () => {
+    const { writes } = installTransaction({
+      [`rooms/${roomId}`]: { ...roomData(), status: 'COMPLETED' },
+      [`rooms/${roomId}/members/${hostUid}`]: memberData('HOST', 'INACTIVE'),
+      [`rooms/${roomId}/members/${memberUid}`]: memberData('MEMBER', 'EARLY_EXIT'),
+      [`rooms/${roomId}/earlyExitRequests/${memberUid}`]: {
+        requestId: firstRequestId, memberUid, status: 'APPROVED', decision: 'APPROVE',
+        requestedAt: new Timestamp(40, 0), decidedAt: new Timestamp(50, 0), cutoffAt: new Timestamp(50, 0),
+      },
+    });
+    const repository = createEarlyExitRepository({ firestore: {} as never, auth: { currentUser: { uid: hostUid } } as never });
+
+    const result = await repository.decideEarlyExit({ roomId, memberUid, requestId: firstRequestId, decision: 'APPROVE' });
+
+    expect(result).toMatchObject({ status: 'APPROVED', decision: 'APPROVE', cutoffUtcMs: 50_000 });
+    expect(writes).toHaveLength(0);
+  });
+
+  it('does not replay a committed decision for a different decision', async () => {
+    const { writes } = installTransaction({
+      [`rooms/${roomId}`]: { ...roomData(), status: 'COMPLETED' },
+      [`rooms/${roomId}/members/${hostUid}`]: memberData('HOST', 'INACTIVE'),
+      [`rooms/${roomId}/members/${memberUid}`]: memberData('MEMBER', 'EARLY_EXIT'),
+      [`rooms/${roomId}/earlyExitRequests/${memberUid}`]: {
+        requestId: firstRequestId, memberUid, status: 'APPROVED', decision: 'APPROVE',
+        requestedAt: new Timestamp(40, 0), decidedAt: new Timestamp(50, 0), cutoffAt: new Timestamp(50, 0),
+      },
+    });
+    const repository = createEarlyExitRepository({ firestore: {} as never, auth: { currentUser: { uid: hostUid } } as never });
+
+    await expect(repository.decideEarlyExit({ roomId, memberUid, requestId: firstRequestId, decision: 'DENY' }))
+      .rejects.toMatchObject({ code: 'failed-precondition' });
+    expect(writes).toHaveLength(0);
+  });
+
   it('maps malformed IDs and Firestore authorization failures to stable errors', async () => {
     const repository = createEarlyExitRepository({ firestore: {} as never, auth: { currentUser: { uid: memberUid } } as never });
     await expect(repository.requestEarlyExit({ roomId, requestId: 'bad-id' }))
