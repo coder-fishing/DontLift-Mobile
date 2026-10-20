@@ -101,12 +101,28 @@ export function createGroupViolationRepository(dependencies: Dependencies) {
          WHERE v.room_id = ? AND v.user_id = ? AND v.ended_at IS NOT NULL AND o.sync_status = 'PENDING'
          ORDER BY v.started_at ASC`, roomId, actor.uid,
       );
+      const markFailed = async (row: PendingRow, errorCode: string) => {
+        await db.withExclusiveTransactionAsync(async tx => {
+          await tx.runAsync(
+            `UPDATE sync_outbox SET sync_status = 'FAILED', last_error_code = ?,
+               lease_expires_at = NULL, next_attempt_at = NULL
+             WHERE event_id = ? AND actor_uid = ? AND sync_status = 'PENDING'`,
+            errorCode, row.event_id, actor.uid,
+          );
+          await tx.runAsync(
+            `UPDATE violation_logs SET sync_status = 'FAILED'
+             WHERE event_id = ? AND user_id = ? AND sync_status = 'PENDING'`,
+            row.event_id, actor.uid,
+          );
+        });
+      };
       for (const row of rows) {
         const startedAt = Date.parse(row.started_at);
         const endedAt = Date.parse(row.ended_at);
         const durationSeconds = Math.floor((endedAt - startedAt) / 1_000);
         if (!Number.isFinite(startedAt) || !Number.isFinite(endedAt) || durationSeconds !== row.duration_seconds) {
-          throw new GroupViolationError('invalid-argument');
+          await markFailed(row, 'invalid-argument');
+          continue;
         }
         const eventRef = doc(dependencies.firestore, 'rooms', roomId, 'violations', row.event_id);
         const roomRef = doc(dependencies.firestore, 'rooms', roomId);
@@ -125,6 +141,11 @@ export function createGroupViolationRepository(dependencies: Dependencies) {
             if (!room.exists() || room.data().status !== 'ACTIVE' || !member.exists() || member.data().status !== 'ACTIVE') {
               throw new GroupViolationError('failed-precondition');
             }
+            const serverStartedAt = room.data().startedAt;
+            if (!(serverStartedAt instanceof Timestamp) || startedAt < serverStartedAt.toMillis()) {
+              // Event xảy ra trước mốc room phía server sẽ không hợp lệ cả trong reconciliation.
+              throw new GroupViolationError('invalid-argument');
+            }
             tx.set(eventRef, {
               eventId: row.event_id, actorUid: actor.uid, startedAt: Timestamp.fromMillis(startedAt),
               endedAt: Timestamp.fromMillis(endedAt), durationSeconds, createdAt: serverTimestamp(),
@@ -141,7 +162,18 @@ export function createGroupViolationRepository(dependencies: Dependencies) {
             await tx.runAsync("UPDATE violation_logs SET sync_status = 'SYNCED', synced_at = ? WHERE event_id = ? AND user_id = ?", new Date().toISOString(), row.event_id, actor.uid);
           });
         } catch (error) {
-          throw mapError(error);
+          const mapped = mapError(error);
+          if (['invalid-argument', 'already-exists'].includes(mapped.code)) {
+            // Event bị từ chối vĩnh viễn không được chặn các event hợp lệ phía sau; bản ghi local vẫn được giữ.
+            await markFailed(row, mapped.code);
+            continue;
+          }
+          if (mapped.code === 'permission-denied') {
+            // Rules có thể chưa được deploy; giữ PENDING để không mất cơ hội retry sau khi cấu hình được sửa.
+            continue;
+          }
+          // failed-precondition giữ nguyên PENDING cho reconciliation; lỗi tạm thời dừng retry để tránh lặp vô ích.
+          throw mapped;
         }
       }
     },
@@ -151,6 +183,15 @@ export function createGroupViolationRepository(dependencies: Dependencies) {
       const result = await (await database()).getFirstAsync<{ count: number }>(
         `SELECT COUNT(*) AS count FROM sync_outbox
          WHERE aggregate_id = ? AND aggregate_type = 'ROOM' AND actor_uid = ? AND sync_status = 'PENDING'`, roomId, actor.uid,
+      );
+      return result?.count ?? 0;
+    },
+    async getFailedCount(roomId: string): Promise<number> {
+      const actor = dependencies.auth.currentUser;
+      if (!actor) return 0;
+      const result = await (await database()).getFirstAsync<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM sync_outbox
+         WHERE aggregate_id = ? AND aggregate_type = 'ROOM' AND actor_uid = ? AND sync_status = 'FAILED'`, roomId, actor.uid,
       );
       return result?.count ?? 0;
     },

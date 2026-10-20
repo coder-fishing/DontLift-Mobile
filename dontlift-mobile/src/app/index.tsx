@@ -428,8 +428,13 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
 
     const refreshPending = async () => {
       try {
-        const pending = await groupViolationRepository.getPendingCount(roomId);
-        if (!disposed) setGroupSyncMessage(pending > 0 ? `${pending} violation${pending === 1 ? '' : 's'} waiting to sync` : undefined);
+        const [pending, failed] = await Promise.all([
+          groupViolationRepository.getPendingCount(roomId),
+          groupViolationRepository.getFailedCount(roomId),
+        ]);
+        if (!disposed) setGroupSyncMessage(failed > 0
+          ? `${failed} violation${failed === 1 ? '' : 's'} could not sync and remain saved on this device.`
+          : pending > 0 ? `${pending} violation${pending === 1 ? '' : 's'} waiting to sync` : undefined);
       } catch {
         if (!disposed) setGroupSyncMessage('Could not check pending sync yet.');
       }
