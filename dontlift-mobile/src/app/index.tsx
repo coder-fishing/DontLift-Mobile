@@ -54,6 +54,7 @@ import { createRoomRepository, persistEarlyExitProjection, persistRoomLobbyProje
 import { listenToRoomLobby, type RoomLobbyState } from '../features/rooms/room-listener';
 import { createGroupViolationRepository, GroupViolationError } from '../features/rooms/group-violation-repository';
 import { createEarlyExitSyncRetry } from '../features/rooms/early-exit-sync-retry';
+import { createEarlyExitCleanupRetry } from '../features/rooms/early-exit-cleanup-retry';
 import { createGroupCaptureWorkTracker } from '../features/rooms/group-capture-work';
 import { createEarlyExitRepository, EarlyExitError, type EarlyExitDecision, type EarlyExitRequest } from '../features/rooms/early-exit-repository';
 import { listenToOpenEarlyExitRequests } from '../features/rooms/early-exit-listener';
@@ -285,22 +286,23 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     const startedAtUtcMs = snapshot.startedAtUtcMs;
     earlyExitCleanupInFlight.current.add(roomId);
     let disposed = false;
+    let localCleanupComplete = false;
     let online = false;
     let networkSubscription: ReturnType<typeof Network.addNetworkStateListener> | undefined;
+    let cleanupRetryController: ReturnType<typeof createEarlyExitCleanupRetry> | undefined;
     let retryController: ReturnType<typeof createEarlyExitSyncRetry> | undefined;
     const updateConnection = (state: Awaited<ReturnType<typeof Network.getNetworkStateAsync>>) => {
+      if (disposed) return;
       online = state.isConnected === true && state.isInternetReachable !== false;
       setGroupIsOnline(online);
+      if (online) cleanupRetryController?.retryNow();
       retryController?.setOnline(online);
     };
-    networkSubscription = Network.addNetworkStateListener(updateConnection);
-    void Network.getNetworkStateAsync().then(updateConnection).catch(() => undefined);
-    void (async () => {
-      try {
+    cleanupRetryController = createEarlyExitCleanupRetry(
+      async () => {
         // capture cleanup có thể còn drain/tick/recovery đã ghi violation trước khi kết thúc.
         await groupCaptureWork.current.get(roomId)?.waitForIdle();
         if (disposed) return;
-        groupCaptureWork.current.delete(roomId);
         // Chốt violation đang mở đúng tại cutoff server rồi đóng projection session cục bộ.
         await groupViolationRepository.finalizeOpenAtRoomEnd({ roomId, userId: profile.uid, endedAtUtcMs: cutoffUtcMs });
         if (disposed) return;
@@ -308,23 +310,31 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
           roomId, userId: profile.uid, cutoffUtcMs, startedAtUtcMs,
         });
         if (disposed) return;
-        retryController = createEarlyExitSyncRetry(roomId, groupViolationRepository, {
-          onPending: count => setGroupSyncMessage(`${count} eligible violation${count === 1 ? '' : 's'} waiting to sync. The app will retry while connected.`),
-          onDrained: failed => setGroupSyncMessage(failed > 0
-            ? `${failed} violation${failed === 1 ? '' : 's'} could not sync and remain saved on this device.`
-            : undefined),
-          onReconciliation: () => setGroupSyncMessage('A saved violation is waiting for room reconciliation.'),
-          onRetrying: () => setGroupSyncMessage('Eligible violations are saved on this device. Sync will retry while connected.'),
-        });
-        retryController.setOnline(online);
-      } catch {
-        earlyExitCleanupInFlight.current.delete(roomId);
-        networkSubscription?.remove();
-        if (!disposed) setGroupSyncMessage('The room approved your exit, but local session cleanup needs a retry. Keep the app connected.');
-      }
-    })();
+        groupCaptureWork.current.delete(roomId);
+      },
+      {
+        onRetrying: () => setGroupSyncMessage('The room approved your exit, but local session cleanup failed. The app will retry automatically.'),
+        onComplete: () => {
+          localCleanupComplete = true;
+          retryController = createEarlyExitSyncRetry(roomId, groupViolationRepository, {
+            onPending: count => setGroupSyncMessage(`${count} eligible violation${count === 1 ? '' : 's'} waiting to sync. The app will retry while connected.`),
+            onDrained: failed => setGroupSyncMessage(failed > 0
+              ? `${failed} violation${failed === 1 ? '' : 's'} could not sync and remain saved on this device.`
+              : undefined),
+            onReconciliation: () => setGroupSyncMessage('A saved violation is waiting for room reconciliation.'),
+            onRetrying: () => setGroupSyncMessage('Eligible violations are saved on this device. Sync will retry while connected.'),
+          });
+          retryController.setOnline(online);
+        },
+      },
+    );
+    networkSubscription = Network.addNetworkStateListener(updateConnection);
+    void Network.getNetworkStateAsync().then(updateConnection).catch(() => undefined);
+    cleanupRetryController.start();
     return () => {
       disposed = true;
+      if (!localCleanupComplete) earlyExitCleanupInFlight.current.delete(roomId);
+      cleanupRetryController?.dispose();
       retryController?.dispose();
       networkSubscription?.remove();
     };

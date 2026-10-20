@@ -70,3 +70,18 @@
 - **Response:** Added a per-room work tracker for drain, initialization and lifecycle operations. The capture effect registers its tracker; on EARLY_EXIT, cutoff finalization first waits for tracked work to settle, then closes all remaining confirmed rows and starts the existing outbox retry. Added a focused tracker test proving that shutdown waits for current work and nested recovery work queued during drain.
 
 **Execution record — 2026-10-20, third review feedback batch:** `pnpm exec jest --runInBand __tests__/group-capture-work.test.ts __tests__/early-exit-sync-retry.test.ts __tests__/group-active-screen.test.tsx __tests__/early-exit-repository.test.ts __tests__/group-violation-repository.test.ts __tests__/room-lobby-projection.test.ts` passed (6 suites, 17 tests). `pnpm exec tsc --noEmit` and `git diff --check` passed. Expo Go cutoff-race behavior remains unverified on device.
+
+## RC-006
+
+- **Status:** RESOLVED
+- **Severity:** Medium
+- **Category:** Retry lifecycle
+- **Location:** `src/app/index.tsx` — early-exit local cleanup failure path
+- **Problem:** A transient SQLite failure in `finalizeOpenAtRoomEnd` or `persistEarlyExitProjection` removed the in-flight guard but did not retrigger the effect, leaving local state unfinished until restart or an unrelated room snapshot.
+- **Recommendation:** Schedule another cleanup attempt or add a retry trigger.
+- **Created At:** 2026-10-20
+- **Updated By:** Codex
+- **Updated At:** 2026-10-20
+- **Response:** Added a cleanup retry controller with capped exponential backoff and an immediate retry trigger on reconnect. It retries the idempotent cutoff finalization and local projection before starting outbox sync. The in-flight guard is released if the effect is disposed before cleanup succeeds. Added unit tests for transient failure and reconnect-triggered retry.
+
+**Execution record — 2026-10-20, fourth review feedback batch:** `pnpm exec jest --runInBand __tests__/early-exit-cleanup-retry.test.ts __tests__/group-capture-work.test.ts __tests__/early-exit-sync-retry.test.ts __tests__/group-active-screen.test.tsx __tests__/early-exit-repository.test.ts __tests__/group-violation-repository.test.ts __tests__/room-lobby-projection.test.ts` passed (7 suites, 19 tests). `pnpm exec tsc --noEmit` and `git diff --check` passed. Local SQLite failure/recovery remains to be exercised on Expo Go.
