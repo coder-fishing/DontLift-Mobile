@@ -107,13 +107,28 @@ The transaction reads `rooms/{roomId}` and `rooms/{roomId}/members/{authenticate
 | `events[].occurredAtUtcMs` | integer | yes | Device-observed UTC timestamp |
 | `events[].payload` | object | yes | Must match `eventType` schema |
 
-`VIOLATION_RECORDED.payload` requires `startedAtUtcMs`, `endedAtUtcMs`, `durationSeconds` and optional `roomId`. `SOLO_SESSION_COMPLETED.payload` requires `durationSeconds`, `liftCount`, `violationDurationSeconds`, `penaltyScore`, `startedAtUtcMs` and `completedAtUtcMs`. `GROUP_SESSION_LOCAL_SUMMARY.payload` requires `roomId`, `liftCount`, `violationDurationSeconds`, `penaltyScore` and `completedAtUtcMs`.
+`VIOLATION_RECORDED.payload` requires `startedAtUtcMs`, `endedAtUtcMs`, `durationSeconds` and optional `roomId`. Group violations use the Spark transaction in §5.1 rather than this callable. `SOLO_SESSION_COMPLETED.payload` requires `durationSeconds`, `liftCount`, `violationDurationSeconds`, `penaltyScore`, `startedAtUtcMs` and `completedAtUtcMs`. `GROUP_SESSION_LOCAL_SUMMARY.payload` requires `roomId`, `liftCount`, `violationDurationSeconds`, `penaltyScore` and `completedAtUtcMs`.
 
 **Response schema:** `version: 1`, `serverTimeUtcMs`, and one `outcomes[]` item per event with `eventId`, `status: "SYNCED" | "FAILED"`, `retryable: boolean`, optional stable `errorCode`, and optional `destinationRef`.
 
 **Errors:** request-level `unauthenticated`, `invalid-argument`, `resource-exhausted`, `unavailable`. Event-level failures use `permission-denied`, `invalid-argument`, `failed-precondition`, `not-found` or `already-exists`. A transport failure leaves local status `PENDING`; a permanent event failure maps to local `FAILED`.
 
 **Transaction outputs per new event:** validate actor/ownership/session window; read receipt; write destination domain document; update aggregate where applicable; write `users/{uid}/syncReceipts/{eventId}` in one transaction. A matching receipt returns its previous outcome without another domain effect.
+
+### 5.1 Group violation — Firestore transaction on Spark
+
+This boundary is for a single confirmed group violation and does not call `syncEvents` or a Cloud Function. Local capture first commits `violation_logs` and a `sync_outbox` row in one SQLite transaction. The row stays `PENDING` while offline.
+
+| Transaction record | Required fields | Rule |
+|---|---|---|
+| Room violation document at `rooms/{roomId}/violations/{eventId}` | `eventId`, `actorUid`, `startedAt`, `endedAt`, `durationSeconds`, `createdAt` | `eventId` is UUIDv4 and is also the document ID; actor is the signed-in UID; `createdAt == request.time`; document is immutable. |
+| Member aggregate at `rooms/{roomId}/members/{uid}` | Existing member fields plus updated `liftCount`, `violationDurationSeconds`, `penaltyScore`, and `lastViolationEventId` | Only the actor's active membership can change; values must equal the previous aggregate plus this exact event, with `penaltyScore = liftCount * 10 + violationDurationSeconds`. The event ID marker lets Rules verify the atomic event/member linkage. |
+
+The client transaction reads the room, the actor's member document, and the event document before writing. Rules require the room and member to be `ACTIVE`, the event interval to start at or after the server `startedAt`, the end to be no later than `request.time`, at least three seconds to have elapsed, and `durationSeconds` to equal the interval floored to whole seconds. Event creation and the exact member aggregate increment must be atomic. Other writes remain denied.
+
+The event document is the idempotency receipt. A retry with the same ID and identical payload returns the committed outcome without another increment. Reusing an ID with different content fails with `already-exists`. If room status is no longer `ACTIVE`, the local event remains `PENDING` for SL-020 reconciliation; it is not permanently failed or written outside this transaction.
+
+Members of the room may read its violation documents. The leaderboard reads room member documents and sorts by ascending `penaltyScore`, then ascending UID for a stable tie. Outsiders and cross-room users remain denied. Firestore listeners provide updates after the transaction commits.
 
 ## 6. Reconciliation callables
 
