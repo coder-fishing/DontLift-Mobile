@@ -38,12 +38,17 @@ export function listenToRoomLobby(
   let membersReady = false;
   let roomFromCache = true;
   let membersFromCache = true;
+  let roomListenerFailed = false;
+  let membersListenerFailed = false;
   let latest: RoomLobbySnapshot | null = null;
   const publish = () => {
     if (!active) return;
     if (roomReady && membersReady && roomValue) {
       latest = { ...roomValue, members };
-      onState({ kind: roomFromCache || membersFromCache ? 'cached' : 'live', snapshot: latest });
+      const kind = roomListenerFailed || membersListenerFailed
+        ? 'error'
+        : roomFromCache || membersFromCache ? 'cached' : 'live';
+      onState({ kind, snapshot: latest });
     }
   };
 
@@ -67,7 +72,10 @@ export function listenToRoomLobby(
     roomReady = true;
     publish();
   }, () => {
-    if (active) onState({ kind: 'error', snapshot: latest });
+    if (active) {
+      roomListenerFailed = true;
+      onState({ kind: 'error', snapshot: latest });
+    }
   });
   const stopMembers = onSnapshot(
     query(collection(firestore, 'rooms', roomId, 'members'), orderBy('joinedAt', 'asc')),
@@ -89,7 +97,10 @@ export function listenToRoomLobby(
       membersReady = true;
       publish();
     }, () => {
-      if (active) onState({ kind: 'error', snapshot: latest });
+      if (active) {
+        membersListenerFailed = true;
+        onState({ kind: 'error', snapshot: latest });
+      }
     },
   );
   return () => {

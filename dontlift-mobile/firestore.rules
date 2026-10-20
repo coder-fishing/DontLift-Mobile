@@ -264,7 +264,8 @@ service cloud.firestore {
           && request.resource.data.hostId == request.auth.uid
           && resource.data.status == 'WAITING'
           && resource.data.startedAt == null
-          && resource.data.lastStartRequestId == null
+          // Room từ bản cũ chưa có marker được xem như chưa bắt đầu.
+          && resource.data.get('lastStartRequestId', null) == null
           && request.resource.data.status == 'ACTIVE'
           && request.resource.data.startedAt == request.time
           && request.resource.data.updatedAt == request.time

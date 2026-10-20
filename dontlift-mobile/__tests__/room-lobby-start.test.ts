@@ -70,4 +70,14 @@ describe('startRoom Spark transaction', () => {
     await expect(repository.startRoom({ version: 1, roomId, requestId })).rejects.toBeInstanceOf(RoomStartError);
     expect(update).not.toHaveBeenCalled();
   });
+
+  it('returns committed success with a pending timestamp when server readback fails', async () => {
+    const { repository, update } = makeRepository('WAITING');
+    firestoreMocks.getDocFromServer.mockRejectedValueOnce(new Error('network lost after commit'));
+
+    await expect(repository.startRoom({ version: 1, roomId, requestId })).resolves.toEqual({
+      roomId, requestId, status: 'ACTIVE', startedAtUtcMs: null,
+    });
+    expect(update).toHaveBeenCalledTimes(1);
+  });
 });

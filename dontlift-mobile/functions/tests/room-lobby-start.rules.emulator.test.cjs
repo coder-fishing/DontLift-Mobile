@@ -10,15 +10,16 @@ const roomId = '10000000-0000-4000-8000-000000000016';
 const hostId = 'sl016-host';
 const memberId = 'sl016-member';
 
-async function seedRoom(env) {
+async function seedRoom(env, { omitStartMarker = false } = {}) {
   await env.withSecurityRulesDisabled(async context => {
     const db = context.firestore();
-    await setDoc(doc(db, `rooms/${roomId}`), {
+    const room = {
       hostId, pin: '00000016', status: 'WAITING', participantCount: 2,
       createdAt: serverTimestamp(), updatedAt: serverTimestamp(), hostHeartbeatAt: serverTimestamp(),
       startedAt: null, endedAt: null, lastJoinRequestId: '00000000-0000-4000-8000-000000000017',
-      lastStartRequestId: null,
-    });
+    };
+    if (!omitStartMarker) room.lastStartRequestId = null;
+    await setDoc(doc(db, `rooms/${roomId}`), room);
     for (const [uid, role] of [[hostId, 'HOST'], [memberId, 'MEMBER']]) {
       await setDoc(doc(db, `rooms/${roomId}/members/${uid}`), {
         displayName: uid, role, status: 'ACTIVE', penaltyScore: 0, liftCount: 0,
@@ -60,6 +61,15 @@ test('room members can read the room and realtime roster; outsiders cannot', asy
   await assertFails(getDoc(doc(crossRoomDb, `rooms/${roomId}`)));
   await assertFails(getDocs(collection(crossRoomDb, `rooms/${roomId}/members`)));
   await assertFails(getDocs(collection(env.unauthenticatedContext().firestore(), `rooms/${roomId}/members`)));
+});
+
+test('Host can start a legacy WAITING room without the start marker field', async t => {
+  const env = await createRulesEnvironment();
+  t.after(() => env.cleanup());
+  await seedRoom(env, { omitStartMarker: true });
+  const hostDb = env.authenticatedContext(hostId).firestore();
+  const requestId = '00000000-0000-4000-8000-000000000020';
+  assert.equal(await assertSucceeds(startTransaction(hostDb, hostId, requestId)), 'started');
 });
 
 test('only the Host can start WAITING once, with a safe same-request replay', async t => {

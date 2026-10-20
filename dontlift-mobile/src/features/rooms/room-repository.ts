@@ -335,10 +335,16 @@ export function createRoomRepository(dependencies: RoomCreateDependencies) {
           });
           return { roomId: command.roomId, requestId: command.requestId, status: 'ACTIVE' as const };
         });
-        // State sent to UI is confirmed from server; unresolved timestamp remains null until snapshot catches up.
-        const committed = await getDocFromServer(roomRef);
-        const startedAt = committed.data()?.startedAt;
-        return { ...result, startedAtUtcMs: startedAt instanceof Timestamp ? startedAt.toMillis() : null };
+        // Transaction đã commit; lỗi đọc lại chỉ làm timestamp tạm thời chưa xác định.
+        let startedAtUtcMs: number | null = null;
+        try {
+          const committed = await getDocFromServer(roomRef);
+          const startedAt = committed.data()?.startedAt;
+          if (startedAt instanceof Timestamp) startedAtUtcMs = startedAt.toMillis();
+        } catch {
+          // Listener/retry có thể bổ sung timestamp sau; không báo transaction đã thất bại.
+        }
+        return { ...result, startedAtUtcMs };
       } catch (error) {
         throw mapRoomStartError(error);
       }
