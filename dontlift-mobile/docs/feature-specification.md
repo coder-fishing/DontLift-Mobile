@@ -79,7 +79,7 @@
 |---------------|--------------|---------------|-----------|--------------|
 | `None` | `WAITING` | Host creates room | Authenticated client transaction -> Firestore Rules | Unique eight-digit PIN reservation and Host membership committed atomically. |
 | `CREATED` | `WAITING` | Room doc written to Firestore | Firestore | Lobby live; QR Code rendered; Members can join. |
-| `WAITING` | `ACTIVE` | Host taps "Start Session" | Cloud Function | Motion detection activated on all member devices; local SQLite timer started. |
+| `WAITING` | `ACTIVE` | Host taps "Start Session" | Authenticated Firestore transaction guarded by Security Rules (ADR-013) | Canonical room state changes once; active tracking is handled by SL-017. |
 | `ACTIVE` | `COMPLETED` | Host taps "End Session" | Cloud Function | Final Penalty Scores frozen; Host navigated to Total Bill entry (`US-13`). |
 | `ACTIVE` | `CANCELLED` | 100% consensus on Early Termination Vote | Cloud Function | Session terminated early; Penalty calculation and Bill Settlement bypassed (`US-11`). |
 | `ACTIVE` | `ABORTED` | Host offline timeout / drop > 15m | Cloud Function Cron | Room marked stale; participant stats saved locally. |

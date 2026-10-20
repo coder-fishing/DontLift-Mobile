@@ -4,6 +4,8 @@
 
 > Room-creation update 2026-10-20: [ADR-011](decisions/ADR-011-spark-room-creation.md) replaces the `createRoom` callable with one authenticated Firestore client transaction guarded by Security Rules. This exception is designed for Firebase Spark and does not change the remaining callable contracts.
 
+> Room-start update 2026-10-20: [ADR-013](decisions/ADR-013-spark-room-start.md) adds a narrowly scoped Rules-authorized `startRoom` Firestore transaction for Firebase Spark. It does not add a callable or alter other lifecycle commands.
+
 > **Owner:** Software architecture package  
 > **Status:** APPROVED  
 > **Wire version:** `1`  
@@ -11,7 +13,7 @@
 
 ## 1. Common envelope
 
-Every callable requires Firebase Authentication. Functions derive `actorUid` from the verified ID token and never trust a UID supplied by the client. `createRoom` is the Rules-authorized transaction exception defined in §2.
+Every callable requires Firebase Authentication. Functions derive `actorUid` from the verified ID token and never trust a UID supplied by the client. `createRoom` (§2), `startRoom` (§3), and `joinRoomByPin` (§4) are Rules-authorized transaction exceptions defined by their corresponding ADRs.
 
 Every side-effecting request contains:
 
@@ -52,7 +54,27 @@ The app first writes `users/{uid}/roomQuotaClock/current` with a server timestam
 
 **Errors:** unauthenticated; permission denied for a failed Rules invariant, including PIN collision; resource exhausted when the current server bucket has reached 7; unavailable for retryable network/service failure; already exists for request-ID collision. The client may pre-check quota for a clear message, but Rules remain authoritative if concurrent creates race. The client never reports success before commit.
 
-## 3. `joinRoomByPin`
+## 3. `startRoom` — Firestore transaction (Spark)
+
+The authenticated Expo Go client executes one online Firestore transaction guarded by Security Rules. No UID is accepted from the request. This is the SL-016-only lifecycle exception in [ADR-013](decisions/ADR-013-spark-room-start.md); it does not deploy Cloud Functions or require Cloud Billing.
+
+**Request schema**
+
+| Field | Type | Required | Rule |
+|---|---|---|---|
+| `version` | integer | yes | `1` |
+| `requestId` | UUIDv4 string | yes | Idempotency marker for the room's single start transition |
+| `roomId` | UUIDv4 string | yes | Existing room document ID |
+
+The transaction reads `rooms/{roomId}` and `rooms/{roomId}/members/{authenticatedUid}` before writes. Rules require `room.hostId == request.auth.uid`, the membership role/status to be `HOST`/`ACTIVE`, and the current room state to be `WAITING`. The only allowed update changes `status` to `ACTIVE`, sets `startedAt` and `updatedAt` to `serverTimestamp()`, and sets `lastStartRequestId` to the request ID. Rules require both timestamps to equal `request.time`; every other room field remains unchanged.
+
+**Replay and concurrency:** `lastStartRequestId` is the durable marker for the room's one start transition. If the room is already `ACTIVE` with the same marker, return the existing outcome. If it is `ACTIVE` with another marker, return `failed-precondition`. Concurrent transactions serialize on the room document; a retry with the same ID receives the committed outcome, while a different ID cannot produce a second transition. No separate command receipt is created.
+
+**Response:** `{ version: 1, requestId, roomId, status: "ACTIVE", startedAtUtcMs }`, where `startedAtUtcMs` is read from the committed server timestamp. If the write committed but its server readback is unavailable, retain the same request ID; the room listener remains authoritative and a retry reconciles the committed state.
+
+**Errors:** `unauthenticated`; `invalid-argument` for malformed IDs/envelope; `not-found` for a missing room; `failed-precondition` for a room already started by a different request; `permission-denied` for wrong role or a Rules-rejected/raced update; `unavailable` for network/service failure. Rules cannot return application-specific error codes, so ambiguous denials remain `permission-denied`. Offline transactions are not queued.
+
+## 4. `joinRoomByPin`
 
 **Request schema**
 
@@ -68,7 +90,7 @@ The app first writes `users/{uid}/roomQuotaClock/current` with a server timestam
 
 **Transaction outputs:** resolve the PIN reservation, validate room/capacity, create membership only when absent, update `participantCount` and store command receipt atomically. The room's `lastJoinRequestId` links the count update to the exact member and receipt written in that transaction; Rules reject another count update once that UID already has membership. Under the Spark client transaction exception (ADR-012), the authenticated client reads one reservation document by PIN; collection listing remains denied. Eight digits reduce guessing probability, but Firestore Rules cannot enforce a read-attempt rate limit, so this lookup is not a complete anti-enumeration control.
 
-## 4. `syncEvents`
+## 5. `syncEvents`
 
 **Request schema**
 
@@ -93,7 +115,7 @@ The app first writes `users/{uid}/roomQuotaClock/current` with a server timestam
 
 **Transaction outputs per new event:** validate actor/ownership/session window; read receipt; write destination domain document; update aggregate where applicable; write `users/{uid}/syncReceipts/{eventId}` in one transaction. A matching receipt returns its previous outcome without another domain effect.
 
-## 5. Reconciliation callables
+## 6. Reconciliation callables
 
 ### 5.1 `completeRoom`
 
@@ -125,7 +147,7 @@ The app first writes `users/{uid}/roomQuotaClock/current` with a server timestam
 
 **Transaction outputs:** freeze score snapshot, finalize reconciliation, append `reconciliationAudits/{auditId}` with Host/request/unsynced-member evidence, and store command receipt. Later valid events remain history-only with `excludedFromFinalScore = true` and `exclusionReason = "HOST_OVERRIDE"`.
 
-## 6. Bill and settlement callables
+## 7. Bill and settlement callables
 
 ### 6.1 `setSettlementDetails`
 
@@ -167,7 +189,7 @@ The app first writes `users/{uid}/roomQuotaClock/current` with a server timestam
 
 **Transaction outputs:** perform the one-way payment-status transition and store command receipt. No bank API or automatic verification is called.
 
-## 7. Activation callable
+## 8. Activation callable
 
 ### 7.1 `redeemActivationCode`
 
@@ -179,7 +201,7 @@ The app first writes `users/{uid}/roomQuotaClock/current` with a server timestam
 
 **Transaction outputs:** read `activationCodes/{codeHash}`, verify unused code, set `redeemedBy` and `redeemedAt`, set `users/{uid}.isPremium = true`, and store command receipt atomically. Plaintext activation codes are never document IDs or logs.
 
-## 8. `completeRegistrationProfile`
+## 9. `completeRegistrationProfile`
 
 **Purpose:** Initialize the authenticated user's profile after Firebase Email/Password account creation. This is a callable Cloud Function and requires Firebase Authentication.
 
@@ -219,7 +241,7 @@ Both client and Function trim and validate `displayName`. The Function is author
 
 ---
 
-## 9. Contract validation obligations
+## 10. Contract validation obligations
 
 - Functions tests cover every required field, error code, idempotent replay and payload-hash collision.
 - `completeRegistrationProfile` tests cover Auth-derived identity, trimmed-name validation, create-only profile initialization, same-request replay, request-ID payload collision, existing-profile preservation, and retryable failure.
