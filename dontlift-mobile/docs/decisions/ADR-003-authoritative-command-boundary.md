@@ -20,7 +20,7 @@ Dùng hybrid boundary:
 - Commands có `requestId`; events có `eventId`.
 - `syncEvents` là canonical ingestion path; client không direct `setDoc` violation hoặc Solo summary.
 
-**Ngoại lệ có giới hạn:** `createRoom` dùng Firestore client transaction được Security Rules authorize theo [ADR-011](ADR-011-spark-room-creation.md); `joinRoomByPin` theo [ADR-012](ADR-012-spark-room-join.md); và `startRoom` theo [ADR-013](ADR-013-spark-room-start.md). Mỗi exception chỉ cho phép exact transaction được nêu trong ADR riêng; không mở direct writes cho lifecycle, membership, score, quota khác, vote hoặc bill commands ngoài các contract đó.
+**Ngoại lệ có giới hạn:** `createRoom` dùng Firestore client transaction được Security Rules authorize theo [ADR-011](ADR-011-spark-room-creation.md); `joinRoomByPin` theo [ADR-012](ADR-012-spark-room-join.md); `startRoom` theo [ADR-013](ADR-013-spark-room-start.md); và early-exit request/decision theo [ADR-015](ADR-015-spark-early-exit.md). Mỗi exception chỉ cho phép exact transaction được nêu trong ADR riêng; không mở direct writes cho lifecycle, membership, score, quota khác, vote hoặc bill commands ngoài các contract đó.
 
 ADR-014 bổ sung ngoại lệ hẹp cho một confirmed group violation: client transaction được Rules kiểm tra chỉ có thể ghi event bất biến của chính member và tăng đúng các bộ đếm/điểm của member đó trong cùng room. Các outbox event khác vẫn đi qua `syncEvents`; client không được ghi điểm của người khác hoặc aggregate tùy ý.
 

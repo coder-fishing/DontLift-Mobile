@@ -114,10 +114,10 @@ Trên Android, lifecycle observer persist candidate tại `ON_STOP`; WorkManager
 |---|---|---|
 | `users/{uid}` | Chính user | User chỉ sửa profile allowlist; Functions sửa entitlement |
 | `users/{uid}/sessions/{sessionId}` | Chính user | `syncEvents` Function |
-| `rooms/{roomId}` | Host hoặc Member có membership | Rules-authorized createRoom transaction (initial create only); Functions for later authoritative mutations |
-| `members/{uid}` | Thành viên room | Functions |
-| `violations/{eventId}` | Thành viên room | `syncEvents` Function |
-| early-exit requests | Thành viên room | Request/decision Functions |
+| `rooms/{roomId}` | Host hoặc Member có membership | Rules-authorized transactions for create/start/early-exit; Functions for other lifecycle mutations |
+| `members/{uid}` | Thành viên room | Rules-authorized exact violation aggregate and early-exit transitions; Functions for other authoritative changes |
+| `violations/{eventId}` | Thành viên room | ADR-014 Spark transaction for group violations; `syncEvents` for other event types |
+| early-exit requests | Thành viên room | Rules-authorized request/decision transactions per ADR-015 |
 | termination votes | Thành viên room | Vote Functions |
 | `billShares/{uid}` | Thành viên room | Settlement Functions |
 | `settlementDetails/current` | Thành viên room | `setSettlementDetails` Host-only Function |
@@ -174,7 +174,7 @@ History query của US-16 đọc collection này theo owner path, sắp xếp `c
 
 #### `rooms/{roomId}/members/{uid}`
 
-`displayName`, `role`, `status`, `liftCount`, `violationDurationSeconds`, `penaltyScore`, `joinedAt`, `earlyExitAt`, `syncedThroughAt`, `syncAcknowledgedAt`.
+`displayName`, `role`, `status` (`ACTIVE` or `EARLY_EXIT` while room is active), `liftCount`, `violationDurationSeconds`, `penaltyScore`, `joinedAt`, `earlyExitAt`, `syncedThroughAt`, `syncAcknowledgedAt`, and optional `lastViolationEventId`.
 
 #### `rooms/{roomId}/violations/{eventId}`
 
@@ -182,7 +182,7 @@ History query của US-16 đọc collection này theo owner path, sắp xếp `c
 
 #### Other room subcollections
 
-- `earlyExitRequests/{requestId}`
+- `earlyExitRequests/{memberUid}` (one current request per member; see ADR-015)
 - `terminationVotes/{voteId}`
 - `terminationVotes/{voteId}/ballots/{uid}`
 - `billShares/{uid}`
@@ -247,8 +247,8 @@ Wire-level request, response, required-field, response-version, per-command erro
 | `joinRoomByPin` | WAITING state, capacity, idempotent membership |
 | `startRoom` | Host-only `WAITING → ACTIVE`; Rules-authorized Firestore transaction per ADR-013 |
 | `syncEvents` | Batch validation, receipts, idempotent domain effects |
-| `requestEarlyExit` | Active Member, one open request |
-| `decideEarlyExit` | Host-only, freeze Member stats on approval |
+| `requestEarlyExit` | Active Member, one open request; Rules-authorized Spark transaction per ADR-015 |
+| `decideEarlyExit` | Host-only approval/denial; server-time cutoff and atomic Member transition per ADR-015 |
 | `openTerminationVote` | Active Member, one active vote, 30-second expiry |
 | `castTerminationVote` | Active Member, unexpired vote, idempotent ballot |
 | `completeRoom` | Host-only `ACTIVE → COMPLETED`, open reconciliation |

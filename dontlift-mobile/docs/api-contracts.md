@@ -6,6 +6,8 @@
 
 > Room-start update 2026-10-20: [ADR-013](decisions/ADR-013-spark-room-start.md) adds a narrowly scoped Rules-authorized `startRoom` Firestore transaction for Firebase Spark. It does not add a callable or alter other lifecycle commands.
 
+> Early-exit update 2026-10-20: [ADR-015](decisions/ADR-015-spark-early-exit.md) adds narrowly scoped Rules-authorized transactions for early-exit requests and decisions, plus the per-Member cutoff used by SL-017 violation sync. No Cloud Functions or billing are added.
+
 > **Owner:** Software architecture package  
 > **Status:** APPROVED  
 > **Wire version:** `1`  
@@ -74,6 +76,40 @@ The transaction reads `rooms/{roomId}` and `rooms/{roomId}/members/{authenticate
 
 **Errors:** `unauthenticated`; `invalid-argument` for malformed IDs/envelope; `not-found` for a missing room; `failed-precondition` for a room already started by a different request; `permission-denied` for wrong role or a Rules-rejected/raced update; `unavailable` for network/service failure. Rules cannot return application-specific error codes, so ambiguous denials remain `permission-denied`. Offline transactions are not queued.
 
+## 3.1 Early exit — Firestore transactions (Spark)
+
+Both commands require a signed-in user and a live connection. The authenticated Expo Go client runs the Firestore transaction; the UID is always derived from Firebase Auth. Security Rules check the room, membership, request state and atomic cross-document links. Offline commands are not queued.
+
+### `requestEarlyExit`
+
+| Field | Type | Required | Rule |
+|---|---|---|---|
+| `version` | integer | yes | `1` |
+| `roomId` | UUIDv4 string | yes | Existing ACTIVE room |
+| `requestId` | UUIDv4 string | yes | Idempotency key for this request |
+
+The transaction reads the room, the authenticated Member document and `rooms/{roomId}/earlyExitRequests/{memberUid}`. It creates or replaces the request only when the Member is ACTIVE, has not already exited, and has no OPEN request. The document records `version`, `requestId`, `memberUid`, `status`, `requestedAt`, `decision`, `decidedBy`, `decidedAt`, and `cutoffAt`. New requests start OPEN; timestamps use `serverTimestamp()`. Retrying the same ID returns the saved outcome. A new ID may replace a DENIED request; previous attempts are not retained as an audit trail.
+
+### `decideEarlyExit`
+
+| Field | Type | Required | Rule |
+|---|---|---|---|
+| `version` | integer | yes | `1` |
+| `roomId` | UUIDv4 string | yes | Existing ACTIVE room |
+| `memberUid` | string | yes | Member who owns the request |
+| `requestId` | UUIDv4 string | yes | Must match the current OPEN request |
+| `decision` | enum | yes | `APPROVE` or `DENY` |
+
+Only the ACTIVE room Host may decide. The transaction updates the request and, on approval, the Member document atomically. Approval sets request status APPROVED, decision APPROVE, `decidedBy`, `decidedAt`, and `cutoffAt` to the Host UID/server time; it changes membership to EARLY_EXIT and sets `earlyExitAt` to the same server time. Denial sets status DENIED and decision DENY, leaves membership ACTIVE and has no cutoff. Replaying the same decision and request ID returns the committed outcome; a different decision after a terminal result returns `failed-precondition`.
+
+**Response:** `{ version: 1, requestId, roomId, memberUid, status, decision, requestedAtUtcMs, decidedAtUtcMs, cutoffUtcMs }`. Timestamp values may be `null` only while the corresponding server timestamp is unresolved; a successful command is not shown before the transaction commits.
+
+**Errors:** `unauthenticated`, `invalid-argument`, `not-found`, `failed-precondition` for a non-ACTIVE room/member or a non-current request, `permission-denied` for wrong role or a Rules-rejected/raced write, `unavailable` for network/service failure, and `already-exists` for request-ID collision. Offline transactions are not queued.
+
+### Early-exit cutoff and group violation sync
+
+`earlyExitAt` is the authoritative per-Member cutoff. A group violation contributes to score only when its full recorded interval ends at or before this timestamp; equality is eligible. An event ending after the cutoff is kept in the local log and does not change the shared score. A late event ending at or before the cutoff may use the ADR-014 Rules-authorized transaction while the room is ACTIVE, including after the Member status becomes EARLY_EXIT. If the room is terminal, the event remains pending for SL-020 reconciliation. A transaction racing Host approval is re-evaluated against the committed cutoff before it can update score.
+
 ## 4. `joinRoomByPin`
 
 **Request schema**
@@ -124,7 +160,7 @@ This boundary is for a single confirmed group violation and does not call `syncE
 | Room violation document at `rooms/{roomId}/violations/{eventId}` | `eventId`, `actorUid`, `startedAt`, `endedAt`, `durationSeconds`, `createdAt` | `eventId` is UUIDv4 and is also the document ID; actor is the signed-in UID; `createdAt == request.time`; document is immutable. |
 | Member aggregate at `rooms/{roomId}/members/{uid}` | Existing member fields plus updated `liftCount`, `violationDurationSeconds`, `penaltyScore`, and `lastViolationEventId` | Only the actor's active membership can change; values must equal the previous aggregate plus this exact event, with `penaltyScore = liftCount * 10 + violationDurationSeconds`. The event ID marker lets Rules verify the atomic event/member linkage. |
 
-The client transaction reads the room, the actor's member document, and the event document before writing. Rules require the room and member to be `ACTIVE`, the event interval to start at or after the server `startedAt`, the end to be no later than `request.time`, at least three seconds to have elapsed, and `durationSeconds` to equal the interval floored to whole seconds. Event creation and the exact member aggregate increment must be atomic. Other writes remain denied.
+The client transaction reads the room, the actor's member document, and the event document before writing. Rules require the room to be `ACTIVE`, the member to be `ACTIVE` or EARLY_EXIT with the event ending no later than `earlyExitAt`, the event interval to start at or after the server `startedAt`, the end to be no later than `request.time`, at least three seconds to have elapsed, and `durationSeconds` to equal the interval floored to whole seconds. Event creation and the exact member aggregate increment must be atomic. Other writes remain denied.
 
 The event document is the idempotency receipt. A retry with the same ID and identical payload returns the committed outcome without another increment. Reusing an ID with different content fails with `already-exists`. If room status is no longer `ACTIVE`, the local event remains `PENDING` for SL-020 reconciliation; it is not permanently failed or written outside this transaction.
 
