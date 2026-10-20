@@ -55,3 +55,18 @@
 - **Response:** Changed the pending state to carry both request ID and decision. The indicator now appears only on the selected Approve or Deny action; added a UI regression test for a pending denial.
 
 **Execution record — 2026-10-20, second review feedback batch:** `pnpm exec jest --runInBand __tests__/early-exit-sync-retry.test.ts __tests__/group-active-screen.test.tsx __tests__/early-exit-repository.test.ts` passed (3 suites, 10 tests). `pnpm exec tsc --noEmit` and `git diff --check` passed. Physical online/offline Expo Go behavior remains unverified.
+
+## RC-005
+
+- **Status:** RESOLVED
+- **Severity:** High
+- **Category:** Capture shutdown ordering
+- **Location:** `src/app/index.tsx` — ACTIVE capture cleanup and EARLY_EXIT cutoff finalization
+- **Problem:** An in-flight foreground drain or lifecycle recovery could finish writing a confirmed violation after cutoff finalization had already queried open local rows. The new sync retry only drains ended outbox rows and could not close that late open row.
+- **Recommendation:** Await queued capture/lifecycle work before cutoff finalization, or finalize again after it drains.
+- **Created At:** 2026-10-20
+- **Updated By:** Codex
+- **Updated At:** 2026-10-20
+- **Response:** Added a per-room work tracker for drain, initialization and lifecycle operations. The capture effect registers its tracker; on EARLY_EXIT, cutoff finalization first waits for tracked work to settle, then closes all remaining confirmed rows and starts the existing outbox retry. Added a focused tracker test proving that shutdown waits for current work and nested recovery work queued during drain.
+
+**Execution record — 2026-10-20, third review feedback batch:** `pnpm exec jest --runInBand __tests__/group-capture-work.test.ts __tests__/early-exit-sync-retry.test.ts __tests__/group-active-screen.test.tsx __tests__/early-exit-repository.test.ts __tests__/group-violation-repository.test.ts __tests__/room-lobby-projection.test.ts` passed (6 suites, 17 tests). `pnpm exec tsc --noEmit` and `git diff --check` passed. Expo Go cutoff-race behavior remains unverified on device.
