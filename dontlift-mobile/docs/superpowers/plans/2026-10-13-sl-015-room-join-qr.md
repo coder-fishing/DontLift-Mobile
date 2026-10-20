@@ -2,15 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use the qskill-executing-plans skill to implement this plan task-by-task. Steps use checkbox tracking.
 > Kế hoạch chỉ mô tả file, unit, hành vi, quy tắc, đầu ra và test cases; không có implementation code hoặc signatures. Đọc source thật trước mỗi task.
-> **Gate:** Không execute kế hoạch khi trạng thái còn DRAFT hoặc khi blocker/dependency chưa giải quyết. Việc tạo file này không phê duyệt backlog hay P6.2.
+> **Gate:** Execution được human duyệt riêng cho SL-015 ngày 2026-10-20; kiểm chứng camera trên thiết bị thật vẫn là evidence cần bổ sung.
 
 **Mục tiêu:** Member join bằng QR: Validated PIN được chuyển vào join boundary SL-014 hoặc safe invalid invitation.
 
 **Slice:** SL-015. **Ưu tiên đề xuất:** P1. **Release:** MVP + activation/Premium; post-MVP deferred. SL-036 chỉ được tính release sau D6.
 
-**Trạng thái kế hoạch:** DRAFT — chưa được human duyệt; bị chặn bởi D13 và E1.
-**Trạng thái implementation quan sát:** Không có scanner/deep-link resolver. Chưa có evidence nghiệm thu slice.
-**Baseline khảo sát:** docs/p6.0-implementation-slices tại 57ca1eb28a2952c66d01f89b9b89bf755ab4812a.
+**Trạng thái kế hoạch:** APPROVED FOR EXECUTION — human duyệt scope, tasks và acceptance ngày 2026-10-20; D13 đã giải quyết.
+**Trạng thái implementation quan sát:** Đang triển khai trên `feature/sl-015-join-room-by-qr`; chưa có device evidence.
+**Baseline khảo sát:** `main` tại `441e225` (sau khi merge SL-014).
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Plan slug:** `2026-10-13-sl-015-room-join-qr`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-015-room-join-qr]`.
 **Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13, chưa được phê duyệt. User đã yêu cầu ghi draft P6.1 cho cả 37 slice; không suy thành approval thực thi.
@@ -34,8 +34,8 @@ Trong slice này, camera chỉ được dùng để quét QR invitation có cons
 
 ## 2. Blocker, risk và quyết định cần duyệt
 
-- **E1:** Cần Development Build, Android/iOS physical devices, toolchains và Emulator Suite để có native/integration evidence.
-- **D13:** Canonical invitation scheme/payload phải được duyệt và do SL-013 sở hữu; không chốt riêng format trong parser.
+- **E1 — DEVICE EVIDENCE PENDING:** `expo-camera ~57.0.6` được Expo SDK 57 hỗ trợ trong Expo Go; slice không cần Development Build riêng. Cần thiết bị Android/iOS thật để xác minh permission và camera, chưa có evidence cho đến khi chạy trên thiết bị.
+- **D13 — RESOLVED 2026-10-20:** Reuse canonical invitation do SL-013 sở hữu: `dontliftmobile://room/{PIN}`; PIN mới tám chữ số và legacy bốn chữ số.
 
 **Rủi ro cụ thể:** Scheme dontliftmobile hiện khác dontlift example; cần duyệt một canonical format.
 
@@ -56,7 +56,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | `__tests__/room-join-qr.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
 
 **Unit:** room invitation parser.
-**Nhận:** Scanned QR hoặc app deep link đúng scheme đã duyệt.
+**Nhận:** Scanned QR có đúng scheme đã duyệt.
 **Trả:** Validated PIN được chuyển vào join boundary SL-014 hoặc safe invalid invitation.
 **Đầu vào từ dependency:** capabilities/records/commands đã nghiệm thu theo các plan liên kết; chưa có dependency output thì không giả coi integration có thật.
 **Đầu ra cho slice sau:** outcome và invariants trong mục tiêu/nghiệm thu dưới đây; tên internal unit là đề xuất, wire names chỉ dùng theo API/ADR đã duyệt.
@@ -83,15 +83,15 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 **Nhận/trả:** Nhận Scanned QR hoặc app deep link đúng scheme đã duyệt; trả Validated PIN được chuyển vào join boundary SL-014 hoặc safe invalid invitation. Với contract đang bị chặn, chưa có quyền thêm schema dù test outcome đã được nêu.
 
-- [ ] Đọc lại source/spec và xác nhận tất cả blocker cùng dependency cho task đã được giải quyết; nếu chưa, dừng execution và báo đúng blocker.
-- [ ] Viết focused failing cases sau đây; runner không tìm thấy hoặc thiếu dependency không được tính là red nghiệp vụ.
+- [x] Đọc lại source/spec, xác nhận SL-014 đã merge vào main và D13 đã được giải quyết; E1 còn yêu cầu evidence thiết bị thật.
+- [x] Viết focused failing cases sau đây; runner không tìm thấy hoặc thiếu dependency không được tính là red nghiệp vụ.
 
-- [ ] Invitation QR hợp lệ → resolve PIN và join boundary.
-- [ ] QR banking hoặc link không đúng scheme → invalid invitation.
-- [ ] PIN length không đúng → reject trước network.
+- [x] Invitation QR hợp lệ → resolve PIN và join boundary.
+- [x] QR banking hoặc link không đúng scheme → invalid invitation.
+- [x] PIN length không đúng → reject trước network.
 
-- [ ] Chạy focused command trong mục 7; xác nhận failure đúng behavior đang thiếu, không từ toolchain lỗi.
-- [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
+- [x] Chạy focused command trong mục 7; test ban đầu fail vì parser chưa tồn tại.
+- [x] Xây hành vi theo thứ tự sau:
 
 1. Kiểm tra D13 và reuse canonical payload/app scheme cùng encoder SL-013; chỉ decode PIN rồi đi qua join boundary SL-014, QR không chứng minh membership hoặc bypass capacity.
 2. Xác minh package camera/QR tương thích Expo SDK và native targets hiện tại; sau đó SL-015 thêm dependency cùng cập nhật cả hai lockfile.
@@ -99,8 +99,8 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 4. Chỉ chấp nhận room invitation shape được duyệt; QR banking/unknown link không join.
 5. Reuse join PIN command; không tạo endpoint thứ hai hoặc client-side capacity rule.
 
-- [ ] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
-- [ ] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-015-room-join-qr]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-015-room-join-qr.md` và `Task: 1`.
+- [x] Chạy lại parser cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
+- [ ] Review/commit task: commit được hoãn theo yêu cầu của human; chưa tạo commit.
 
 ### Task 2 — Journey tích hợp và recovery
 
@@ -108,35 +108,35 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 **Nhận:** Output task 1 đã kiểm chứng. **Trả:** Journey/bằng chứng có thể nghiệm thu; error/offline không false-success.
 
-- [ ] Viết các failing cases về integration/recovery sau; không viết tests chỉ mirror implementation.
+- [x] Viết các failing cases về integration/recovery sau; test ban đầu fail vì scanner chưa có.
 
-- [ ] Permission denied → scanner không chạy, có recovery.
-- [ ] Package scanner và cấu hình native tương thích Android/iOS; cả hai lockfile phản ánh cùng dependency.
-- [ ] Repeated frame cùng QR → một inflight join.
-- [ ] Offline scanning → không queue membership mutation.
+- [x] Permission denied → scanner không chạy, có recovery.
+- [x] Package scanner và cấu hình native tương thích Android/iOS; cả hai lockfile phản ánh cùng dependency.
+- [x] Repeated frame cùng QR → một lần gọi join; scanner đóng ngay sau frame đầu.
+- [x] Offline join reuse SL-014 boundary không queue membership mutation.
 
-- [ ] Chạy focused checks, xác nhận failure đúng behavior; giữ fixtures tách khỏi device evidence.
-- [ ] Tích hợp theo thứ tự:
+- [x] Chạy focused checks; giữ fixtures tách khỏi device evidence.
+- [x] Tích hợp theo thứ tự:
 
 1. Permission camera denied có recovery; scanner chỉ active trên màn join.
 2. Repeated scans khi request đang chạy không gửi duplicate; result vẫn đi qua idempotent backend.
 3. QR invalid không expose raw sensitive text; offline giữ thông báo network cần thiết.
 
-- [ ] Thực hiện các kịch bản nghiệm thu trực tiếp trong mục 6; thu logs an toàn/device timestamps khi cần.
-- [ ] Review kết quả; một branch fail hoặc thiếu required device/emulator evidence thì slice chưa hoàn thành.
-- [ ] Commit task sau review nếu execution được phép. Subject dùng `[2026-10-13-sl-015-room-join-qr]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-015-room-join-qr.md` và `Task: 2`.
+- [ ] Thực hiện các kịch bản nghiệm thu trực tiếp trên Expo Go/thiết bị thật; hiện chưa có device evidence.
+- [ ] Review kết quả native; slice chưa được tuyên bố hoàn tất khi thiếu camera evidence trên thiết bị.
+- [ ] Commit task được hoãn theo yêu cầu của human. Nếu được yêu cầu sau, subject dùng `[2026-10-13-sl-015-room-join-qr]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-015-room-join-qr.md` và `Task: 2`.
 
 ## 6. Nghiệm thu và failure outcomes
 
-- [ ] Invitation QR hợp lệ → resolve PIN và join boundary.
-- [ ] QR banking hoặc link không đúng scheme → invalid invitation.
-- [ ] PIN length không đúng → reject trước network.
-- [ ] Permission denied → scanner không chạy, có recovery.
-- [ ] Repeated frame cùng QR → một inflight join.
-- [ ] Offline scanning → không queue membership mutation.
-- [ ] Hai devices share/scan invitation thật → đúng WAITING room.
-- [ ] Round-trip payload do SL-013 encode → parser SL-015 trả đúng PIN gồm leading zero; scan QR do Host lobby SL-013 render trên thiết bị thứ hai → đúng WAITING room, không dùng QR fixture thay producer.
-- [ ] QR scan chỉ phục vụ join; không làm camera-based phone detection.
+- [x] Invitation QR hợp lệ → resolve PIN và gọi join boundary; screen test xác nhận một lần gọi.
+- [x] QR banking hoặc link không đúng scheme → invalid invitation, không hiển thị raw QR content.
+- [x] PIN length không đúng → parser loại trước khi gọi join boundary.
+- [x] Permission denied → scanner không chạy, có hướng dẫn nhập PIN và mở Settings khi cần.
+- [x] Repeated frame cùng QR → một lần gọi join trong lúc scanner đóng.
+- [x] Offline join reuse SL-014 command, không queue membership mutation; covered by `room-join-pin.test.ts`.
+- [ ] Hai thiết bị share/scan invitation thật → UNVERIFIED, cần Expo Go trên device.
+- [ ] Round-trip payload thật từ Host lobby SL-013 trên thiết bị thứ hai → UNVERIFIED, cần thiết bị thứ hai.
+- [x] QR scanner chỉ dùng barcode QR và join PIN; không thêm camera-based phone detection.
 
 Mỗi case phải có actual result. Unit cases dùng controlled fixtures để chứng minh domain; Firebase boundary cần Rules/Functions emulator tests cho allowed/denied/replay/concurrency khi áp dụng. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.
 
@@ -144,14 +144,14 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 
 ## 7. Verification và ghi nhận evidence
 
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/room-join-qr.test.ts`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+App focused tests: `pnpm exec jest --runInBand __tests__/room-join-qr.test.ts __tests__/room-join-qr-screen.test.tsx`. Full unit suite: `pnpm exec jest --runInBand`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 
-Ghi trong kết quả execution: baseline/commit mới, command, exit status, số cases, emulator/device/runtime version, date, actual outcomes và remaining gaps. Các checklist hiện đều chưa chạy.
+**Evidence 2026-10-20:** Baseline `main` `441e225`; implementation branch `feature/sl-015-join-room-by-qr`. `pnpm exec jest --runInBand` — PASS, 23 suites / 169 tests; parser + screen focused tests — PASS, 12 cases; `pnpm exec tsc --noEmit` — PASS; `pnpm exec expo config --type public --json` — PASS; `git diff --check` — PASS. Không có ESLint config nên lint không chạy. Expo Go camera/permission flow và QR round-trip hai thiết bị — UNVERIFIED, cần human chạy trên device. Không thay Firestore, Rules, Functions; không bật billing/deploy. Không commit/push theo yêu cầu hiện tại.
 
 ## 8. Human review và bàn giao P6.2
 
-Human phải duyệt scope, non-goals, tasks, acceptance cases, dependencies và các quyết định còn mở của **SL-015** trước implementation. Duyệt một slice không duyệt tất cả 37; duyệt authoring batch không duyệt code.
+Human đã duyệt scope, non-goals, tasks và acceptance cases của **SL-015** ngày 2026-10-20. External OS deep-link routing không nằm trong scope QR scanner này; parser chỉ xác nhận payload của QR rồi chuyển PIN qua SL-014. Duyệt một slice không duyệt tất cả 37.
 
-Sau approval, cập nhật trạng thái/date/decision evidence trong đúng plan; kế hoạch mới chỉ đủ execution-ready khi blocker đã được giải quyết và baseline được re-inspect. Dùng qskill-executing-plans khi user yêu cầu execute plan đã duyệt. Không tự bắt đầu P6.2 từ file draft hoặc từ prompt batch.
+Sau approval, cập nhật trạng thái/date/decision evidence trong đúng plan; kiểm chứng physical device còn pending. Dùng qskill-executing-plans khi user yêu cầu execute plan đã duyệt. Không tự bắt đầu P6.2 từ file draft hoặc từ prompt batch.
