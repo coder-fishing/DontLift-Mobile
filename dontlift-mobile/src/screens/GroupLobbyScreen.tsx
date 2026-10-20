@@ -69,7 +69,7 @@ const styles = StyleSheet.create({
   body: { color: Colors.light.textSecondary, fontSize: 14, lineHeight: 20, textAlign: 'center' },
   error: { color: Colors.light.error, fontSize: 13, textAlign: 'center' },
   loading: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  qrCard: { backgroundColor: '#FFFFFF', padding: 14, borderRadius: 16 },
+  qrCard: { backgroundColor: Colors.light.qrBackground, padding: 14, borderRadius: 16 },
   pinLabel: { color: Colors.light.textSecondary, fontSize: 11, fontWeight: '800' },
   pin: { color: Colors.light.text, fontSize: 34, fontWeight: '900', letterSpacing: 8, fontVariant: ['tabular-nums'] },
   invitation: { color: Colors.light.primary, fontSize: 13, textAlign: 'center' },

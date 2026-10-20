@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { Text } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { toQR } from 'toqr';
+import { Colors } from '../constants/theme';
 
 export function RoomInvitationQr({ value, size = 200 }: { value: string; size?: number }) {
   const result = useMemo(() => {
@@ -26,8 +27,8 @@ export function RoomInvitationQr({ value, size = 200 }: { value: string; size?: 
 
   return (
     <Svg width={size} height={size} viewBox={`-4 -4 ${result.dimension + 8} ${result.dimension + 8}`} accessibilityLabel="Room invitation QR code">
-      <Path d={`M-4 -4h${result.dimension + 8}v${result.dimension + 8}H-4z`} fill="#FFFFFF" />
-      <Path d={result.path} fill="#000000" />
+      <Path d={`M-4 -4h${result.dimension + 8}v${result.dimension + 8}H-4z`} fill={Colors.light.qrBackground} />
+      <Path d={result.path} fill={Colors.light.qrForeground} />
     </Svg>
   );
 }
