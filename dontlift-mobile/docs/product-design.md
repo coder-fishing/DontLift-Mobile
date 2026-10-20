@@ -66,11 +66,11 @@ DontLift is designed to solve phone distraction in focus and social contexts thr
 ## 4. Group Room Mode UX
 
 ### 4.1 Room Creation (Host)
-- Host taps "Create Room". An authenticated Firestore transaction proposes a unique 4-digit PIN (e.g. `4829`), while Security Rules enforce the Host, PIN reservation and quota atomically. Room enters `WAITING` state. After commit, the app caches the SQLite room row and displays a QR for `dontliftmobile://room/4829`.
+- Host taps "Create Room". An authenticated Firestore transaction proposes a unique eight-digit PIN, while Security Rules enforce the Host, PIN reservation and quota atomically. Room enters `WAITING` state. After commit, the app caches the SQLite room row and displays a QR for `dontliftmobile://room/{8-digit-PIN}`.
 - **Free Tier Limit:** If Host is on Free Tier and has created 7 rooms in the current calendar month, creation is blocked with inline modal: `"Monthly room limit reached (7/month). Upgrade to Premium for unlimited creations."`
 
 ### 4.2 Room Join (Member)
-- Member enters 4-digit PIN or scans QR code. Idempotent action resolves room metadata in `WAITING` state. Local SQLite `rooms` and `room_members` cached.
+- Member enters an eight-digit PIN (legacy four-digit invitations remain accepted). Idempotent action resolves room metadata in `WAITING` state. Local SQLite `rooms` and `room_members` cached. Camera scanning remains outside SL-014.
 - **Free Tier Capacity Limit:** If room Host is on Free Tier and participant count is 5, additional joins are blocked with inline modal: `"Room capacity limit reached (5 participants). Upgrade to Premium for larger rooms."`
 
 ### 4.3 Lobby & Real-Time Sync

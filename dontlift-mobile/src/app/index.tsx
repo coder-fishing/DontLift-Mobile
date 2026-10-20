@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import type { AccelerometerMeasurement } from 'expo-sensors';
 import {
   ActivityIndicator,
@@ -50,8 +50,9 @@ import { createSoloSyncWorker } from '../features/sync/sync-worker';
 import { createSyncEventsPort } from '../features/sync/sync-events-port';
 import { getConfiguredFirebaseRuntime } from '../features/auth/firebase-adapters';
 import { getLocalDatabase } from '../features/local/database';
-import { createRoomRepository, RoomCreateError, type CreatedRoom, type RoomCreateCommand } from '../features/rooms/room-repository';
+import { createRoomRepository, RoomCreateError, type CreatedRoom, type RoomCreateCommand, type JoinedRoom, RoomJoinError, roomJoinErrorMessage } from '../features/rooms/room-repository';
 import { roomCreateErrorMessage } from '../features/rooms/room-create-error';
+import { JoinRoomScreen } from '../screens/JoinRoomScreen';
 import { createBackgroundRecoveryRepository } from '../features/solo/background-recovery';
 import { createSessionLifecycleController } from '../features/solo/session-lifecycle-controller';
 import {
@@ -146,6 +147,10 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const [roomCreateError, setRoomCreateError] = useState<string | undefined>();
   const pendingRoomCommand = useRef<RoomCreateCommand | null>(null);
+  const [isJoiningRoom, setIsJoiningRoom] = useState(false);
+  const [joinedRoom, setJoinedRoom] = useState<JoinedRoom | null>(null);
+  const [roomJoinError, setRoomJoinError] = useState<string | undefined>();
+  const pendingRoomJoinCommand = useRef<{ requestId: string; pin: string } | null>(null);
 
   const handleCreateRoom = async () => {
     if (isCreatingRoom) return;
@@ -169,6 +174,45 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       setIsCreatingRoom(false);
     }
   };
+
+  const handleJoinRoom = async (pin: string) => {
+    if (isJoiningRoom) return;
+    setIsJoiningRoom(true);
+    setRoomJoinError(undefined);
+    const command = pendingRoomJoinCommand.current?.pin === pin
+      ? pendingRoomJoinCommand.current
+      : { requestId: Crypto.randomUUID(), pin };
+    pendingRoomJoinCommand.current = command;
+    try {
+      const result = await roomRepository.joinRoomByPin(command);
+      pendingRoomJoinCommand.current = null;
+      setJoinedRoom(result);
+    } catch (error) {
+      if (!(error instanceof RoomJoinError) || error.code !== 'unavailable') pendingRoomJoinCommand.current = null;
+      if (__DEV__ && error instanceof RoomJoinError) {
+        console.warn('[room-join] failed', JSON.stringify({ code: error.code, firebaseCode: error.firebaseCode }));
+      }
+      setRoomJoinError(roomJoinErrorMessage(error));
+    } finally {
+      setIsJoiningRoom(false);
+    }
+  };
+
+  const cancelRoomJoin = useCallback(() => {
+    if (isJoiningRoom) return;
+    setCurrentScreen('05-group-lobby');
+    setRoomJoinError(undefined);
+    pendingRoomJoinCommand.current = null;
+  }, [isJoiningRoom]);
+
+  useEffect(() => {
+    if (currentScreen !== '12-join-room') return undefined;
+    const back = BackHandler.addEventListener('hardwareBackPress', () => {
+      cancelRoomJoin();
+      return true;
+    });
+    return () => back.remove();
+  }, [currentScreen, cancelRoomJoin]);
 
   // Solo State
   const [selectedDuration, setSelectedDuration] = useState<number>(25);
@@ -797,6 +841,22 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
             isCreating={isCreatingRoom}
             errorMessage={roomCreateError}
             onCreateRoom={() => { void handleCreateRoom(); }}
+            onJoinRoom={() => {
+              setJoinedRoom(null);
+              setRoomJoinError(undefined);
+              pendingRoomJoinCommand.current = null;
+              setCurrentScreen('12-join-room');
+            }}
+          />
+        )}
+
+        {currentScreen === '12-join-room' && (
+          <JoinRoomScreen
+            result={joinedRoom}
+            isJoining={isJoiningRoom}
+            errorMessage={roomJoinError}
+            onJoin={(pin) => { void handleJoinRoom(pin); }}
+            onCancel={cancelRoomJoin}
           />
         )}
 

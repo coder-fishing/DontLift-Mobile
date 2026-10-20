@@ -8,12 +8,12 @@
 
 **Slice:** SL-014. **Ưu tiên đề xuất:** P0. **Release:** MVP + activation/Premium; post-MVP deferred. SL-036 chỉ được tính release sau D6.
 
-**Trạng thái kế hoạch:** DRAFT — chưa được human duyệt.
-**Trạng thái implementation quan sát:** Chưa có PIN form/join backend. Chưa có evidence nghiệm thu slice.
+**Trạng thái kế hoạch:** APPROVED — human duyệt scope triển khai và architecture Spark ngày 2026-10-20.
+**Trạng thái implementation quan sát:** Join form, client repository transaction, SQLite projection và Rules đã được triển khai trong working tree ngày 2026-10-20. Emulator và app automated checks đã chạy; UI thực tế trên Expo Go vẫn cần human xác nhận.
 **Baseline khảo sát:** docs/p6.0-implementation-slices tại 57ca1eb28a2952c66d01f89b9b89bf755ab4812a.
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Plan slug:** `2026-10-13-sl-014-room-join-pin`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-014-room-join-pin]`.
-**Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13, chưa được phê duyệt. User đã yêu cầu ghi draft P6.1 cho cả 37 slice; không suy thành approval thực thi.
+**Đầu vào phạm vi:** Backlog P6.0 v0.1; scope SL-014 được human yêu cầu triển khai và duyệt trong hội thoại ngày 2026-10-20.
 **Traceability:** US-07; API §3; ADR-004; V05.
 **Phụ thuộc bắt buộc:** [SL-013](./2026-10-13-sl-013-room-create.md)
 **Ưu tiên mềm:** Theo thứ tự đề xuất trong [mục lục](../../implementation-plan.md); thứ tự không tạo thêm hard dependency.
@@ -26,15 +26,16 @@ V01–V10 chỉ các màn tương ứng tại `design/concepts/concept-final/scr
 
 **Kiến trúc:** joinRoomByPin sở hữu hành vi của slice. Presentation đọc kết quả qua controller/repository; không tự trở thành nguồn authoritative. Units và đường dẫn mới bên dưới là đề xuất, chưa tồn tại trên baseline; nếu prerequisite đã tạo cùng trách nhiệm thì reuse, không thêm convention thứ hai.
 
-**Stack:** Expo SDK 57 / React Native / TypeScript. SQLite cho local-first khi slice có persistence; React Native Firebase Auth/Firestore Standard/Functions cho boundary có Firebase. Không bắt slice thuần local phải có network.
+**Stack:** Expo SDK 57 / React Native / TypeScript. Firebase JS SDK Auth/Firestore trong Expo Go; join dùng Firestore client transaction guarded by Rules theo ADR-012, không triển khai Functions. SQLite cache chỉ ghi sau commit. Join là thao tác online.
 
 **Không gồm:** Camera QR, roster realtime, bypass capacity bằng Local Premium.
 
 ## 2. Blocker, risk và quyết định cần duyệt
 
-- Không có blocker riêng được xác nhận trong draft; dependency và quyền/runtime vẫn phải đạt gate trước thực thi.
+- **Resolved 2026-10-20:** Không dùng Cloud Function để giữ Firebase Spark. Client đọc trực tiếp reservation theo PIN và thực hiện membership/count/receipt trong một Firestore transaction được Rules kiểm soát.
+- **Resolved 2026-10-20:** PIN mới có đúng tám chữ số; lời mời legacy bốn số vẫn được nhận để giữ các phòng đã tạo trước khi đổi contract.
 
-**Rủi ro cụ thể:** Concurrent capacity, enumeration/rate limiting và query-compatible Rules.
+**Rủi ro cụ thể:** Concurrent capacity và query-compatible Rules. Firestore Rules không thể rate-limit document reads; tám chữ số giảm xác suất đoán nhưng không ngăn enumeration tuyệt đối. Authenticated direct get được mở riêng cho `roomPins/{pin}`, collection listing vẫn bị deny.
 
 Nếu một contract chỉ có responsibility mà chưa có schema, task đầu là trình bày missing decision với nguồn; không tự tạo endpoint/field mới. Các hành vi test bên dưới mô tả outcome cần đạt, không thay thế wire approval. Ngưỡng/range/default chưa được spec xác định phải có quyết định ghi lại trước khi implement.
 
@@ -51,14 +52,12 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | `src/types.ts` | Thêm ScreenId cho hành trình join PIN. |
 | `src/constants.ts` | Thêm screen title theo ScreenId. |
 | `src/screens/GroupLobbyScreen.tsx` | Thêm user-facing “join with PIN” entry từ Group tab/lobby; không dựa vào prototype Control Deck. |
-| `functions/src/join-room-by-pin.cjs` | Backend boundary của slice; server identity/validation/transaction. |
-| `functions/index.js` | Backend boundary của slice; server identity/validation/transaction. |
 | `__tests__/room-join-pin.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
 | `__tests__/room-join-pin-navigation.test.ts` | Kiểm chứng Group entry mở JoinRoom state và quay lại được khi cancel/error. |
-| `functions/tests/room-join-pin.test.cjs` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
+| `functions/tests/room-join-pin.rules.emulator.test.cjs` | Kiểm thử Firestore Rules bằng Emulator Suite. |
 
 **Unit:** joinRoomByPin.
-**Nhận:** Current Auth UID và PIN bốn decimal digits, common envelope.
+**Nhận:** Current Auth UID, PIN mới tám chữ số hoặc PIN legacy bốn chữ số, và UUID requestId.
 **Trả:** WAITING membership canonical và cached room/member metadata.
 **Đầu vào từ dependency:** capabilities/records/commands đã nghiệm thu theo các plan liên kết; chưa có dependency output thì không giả coi integration có thật.
 **Đầu ra cho slice sau:** outcome và invariants trong mục tiêu/nghiệm thu dưới đây; tên internal unit là đề xuất, wire names chỉ dùng theo API/ADR đã duyệt.
@@ -71,7 +70,7 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 |---|---|---|
 | version | Bắt buộc | 1, theo common envelope. |
 | requestId | Bắt buộc | UUID; cùng actor/payload replay trả prior outcome, payload khác bị collision. |
-| pin | Bắt buộc | Đúng bốn chữ số thập phân. |
+| pin | Bắt buộc | PIN mới tám chữ số; PIN legacy bốn chữ số vẫn được nhận. |
 
 ## 4. Ràng buộc xuyên suốt
 
@@ -79,7 +78,7 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - Không sao chép Firebase token vào SQLite, AsyncStorage hoặc SecureStore; SDK quản lý session.
 - Event offline-capable dùng SQLite domain record và sync_outbox trong một transaction; syncEvents là ingestion authority.
 - Command lifecycle/vote/bill/payment không queue để replay muộn. Firestore cache không thay thế outbox.
-- Membership authority là rooms/{roomId}/members/{uid}. Functions derive actor từ Auth và tự authorization; Admin SDK bypass Rules.
+- Membership authority là rooms/{roomId}/members/{uid}. SL-014 derives actor from Firebase Auth; Firestore Rules authorize client transactions; slice này không dùng Functions/Admin SDK.
 - Giữ 3-Second Grace Period ở cả foreground/background theo ADR-008.
 - Local Premium không cấp server quota/capacity; chỉ verified Server Premium cấp server benefits.
 - Bill dùng integer VND, deterministic residual và tổng exact theo ADR-005; VietQR non-custodial, không bank polling.
@@ -93,23 +92,22 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 
 **Files:** Dùng units/config/backend/repositories trong bảng mục 3; khi test source đã được chỉ định, đặt cases thuộc boundary vào đúng app/backend target. Không thay presentation chưa cần cho task này.
 
-**Nhận/trả:** Nhận Current Auth UID và PIN bốn decimal digits, common envelope; trả WAITING membership canonical và cached room/member metadata. Với contract đang bị chặn, chưa có quyền thêm schema dù test outcome đã được nêu.
+**Nhận/trả:** Nhận Current Auth UID, PIN mới tám chữ số hoặc legacy bốn chữ số, và requestId; trả WAITING membership canonical và cached room/member metadata. ADR-012 đã duyệt contract Spark.
 
-- [ ] Đọc lại source/spec và xác nhận tất cả blocker cùng dependency cho task đã được giải quyết; nếu chưa, dừng execution và báo đúng blocker.
 - [ ] Viết focused failing cases sau đây; runner không tìm thấy hoặc thiếu dependency không được tính là red nghiệp vụ.
 
-- [ ] Valid WAITING PIN → membership một lần.
-- [ ] PIN sai/expired → safe not-found.
-- [ ] Room ACTIVE → failed-precondition.
+- [x] Valid WAITING PIN → membership một lần (Firestore Rules Emulator + repository unit test).
+- [x] PIN sai/expired → safe not-found (repository unit test với reservation không tồn tại).
+- [x] Room ACTIVE → failed-precondition (repository unit test; Rules emulator từ chối write).
 
 - [ ] Chạy focused command trong mục 7; xác nhận failure đúng behavior đang thiếu, không từ toolchain lỗi.
 - [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
 
-1. Validate PIN trước network; server-only lookup, không client query PIN collection.
-2. Server kiểm tra WAITING và verified Host entitlement/capacity; 5 participants Free gồm Host.
+1. Validate PIN trước network; đọc đúng document reservation theo PIN, không query/list collection.
+2. Client transaction đọc room/membership; Rules kiểm tra WAITING và verified Host entitlement/capacity; Free tối đa 5 participants gồm Host.
 3. Membership/count/receipt atomically; đã là Member thì không duplicate và không tăng count.
 
-- [ ] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
+- [x] Chạy lại focused cases; không tuyên bố native/integration PASS từ mock.
 - [ ] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-014-room-join-pin]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-014-room-join-pin.md` và `Task: 1`.
 
 ### Task 2 — Journey tích hợp và recovery
@@ -120,9 +118,9 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 
 - [ ] Viết các failing cases về integration/recovery sau; không viết tests chỉ mirror implementation.
 
-- [ ] Free room có 5 → join bị chặn.
-- [ ] Hai người tranh slot cuối → chỉ một join.
-- [ ] Scan/retry user đã Member → count không tăng.
+- [x] Free room có 5 → join bị chặn (Rules Emulator).
+- [x] Hai người tranh slot cuối → chỉ một join (Rules Emulator).
+- [x] Retry user đã Member → count không tăng (Rules Emulator).
 
 - [ ] Chạy focused checks, xác nhận failure đúng behavior; giữ fixtures tách khỏi device evidence.
 - [ ] Tích hợp theo thứ tự:
@@ -154,14 +152,19 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 
 ## 7. Verification và ghi nhận evidence
 
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/room-join-pin.test.ts __tests__/room-join-pin-navigation.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/room-join-pin.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+App focused tests: `pnpm test --runTestsByPath __tests__/room-join-pin.test.ts __tests__/room-join-pin-navigation.test.ts`. Firestore Rules emulator: `node --test functions/tests/room-join-pin.rules.emulator.test.cjs functions/tests/room-create.rules.emulator.test.cjs` using the existing emulator config. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
 
-Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
+Evidence 2026-10-20, working tree trên `feature/sl-014-join-room-by-pin`:
 
-Ghi trong kết quả execution: baseline/commit mới, command, exit status, số cases, emulator/device/runtime version, date, actual outcomes và remaining gaps. Các checklist hiện đều chưa chạy.
+- `node_modules/.bin/tsc.cmd --noEmit` — PASS.
+- `node_modules/.bin/jest.cmd --runInBand` — PASS, 21 suites / 156 tests.
+- Firestore Emulator Standard, project `demo-dontlift-expo-go`, `node --test functions/tests/room-create.rules.emulator.test.cjs functions/tests/room-join-pin.rules.emulator.test.cjs` — PASS, 10 tests.
+- `expo lint` — UNAVAILABLE: chưa có ESLint config; Expo thử cấu hình và bị chặn do network access.
+- Expo Go physical UI flow — NOT YET VERIFIED; cần mở Group, join PIN 8 số và thử PIN legacy 4 số trên thiết bị thật.
+- Không deploy Firestore Rules hoặc Cloud Functions; không bật billing.
 
 ## 8. Human review và bàn giao P6.2
 
-Human phải duyệt scope, non-goals, tasks, acceptance cases, dependencies và các quyết định còn mở của **SL-014** trước implementation. Duyệt một slice không duyệt tất cả 37; duyệt authoring batch không duyệt code.
+Human đã duyệt scope, non-goals, tasks, acceptance cases, dependency SL-013, Spark direct lookup, tám chữ số mới và residual enumeration risk ngày 2026-10-20. Duyệt một slice không duyệt tất cả 37; duyệt authoring batch không duyệt code.
 
 Sau approval, cập nhật trạng thái/date/decision evidence trong đúng plan; kế hoạch mới chỉ đủ execution-ready khi blocker đã được giải quyết và baseline được re-inspect. Dùng qskill-executing-plans khi user yêu cầu execute plan đã duyệt. Không tự bắt đầu P6.2 từ file draft hoặc từ prompt batch.

@@ -19,6 +19,7 @@ export function BottomNav({ currentScreen, onNavigate }: BottomNavProps) {
 
   const isGroup =
     currentScreen === '05-group-lobby' ||
+    currentScreen === '12-join-room' ||
     currentScreen === '06-group-active' ||
     currentScreen === '07-bill-allocation' ||
     currentScreen === '08-vietqr-settlement';

@@ -98,7 +98,7 @@ As a solo user, I want to see a summary when my session ends so I can review my 
 As a Host, I want to create a room so participants can join and I can manage the session.
 
 *Acceptance Criteria:*
-- Room is created with a unique 4-digit PIN and scannable QR code.
+- Room is created with a unique eight-digit PIN and scannable QR code. Existing four-digit invitations remain accepted during migration.
 - Room transitions: `CREATED → WAITING` on creation.
 - Host identity is stored in Firestore and cannot be changed mid-session.
 - If Host is on Free tier and has reached the limit of 7 created rooms in the current calendar month, room creation is blocked with a clear prompt to upgrade to Premium.

@@ -165,7 +165,7 @@ describe('local database initialization', () => {
     expect(roomMembersTable?.name).toBe('room_members');
     expect(sessionColumns.map(({ name }) => name)).toContain('user_id');
     expect(sessionColumns.map(({ name }) => name)).toContain('duration_seconds');
-    expect(version?.user_version).toBe(7);
+    expect(version?.user_version).toBe(8);
     expect(columns?.map(({ name }) => name)).toEqual([
       'uid',
       'email',
@@ -194,7 +194,7 @@ describe('local database initialization', () => {
       .toEqual({ uid: 'owner-1', display_name: 'Owner' });
     expect(await reopened.getFirstAsync('SELECT id, user_id FROM sessions WHERE id = ?', 'session-1'))
       .toEqual({ id: 'session-1', user_id: 'owner-1' });
-    expect(await reopened.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 7 });
+    expect(await reopened.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 8 });
     expect(await reopened.getFirstAsync("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sync_outbox'"))
       .toEqual({ name: 'sync_outbox' });
     await reopened.closeAsync();
@@ -355,7 +355,7 @@ describe('local database initialization', () => {
     const version = await reopened.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
 
     expect(profile).toEqual({ uid: 'owner-1', display_name: 'Owner' });
-    expect(version?.user_version).toBe(7);
+    expect(version?.user_version).toBe(8);
     await reopened.closeAsync();
   });
 
@@ -387,7 +387,50 @@ describe('local database initialization', () => {
 
     expect(profile).toEqual({ uid: 'owner-1', display_name: 'Owner' });
     expect(sessionsTable?.name).toBe('sessions');
-    expect(version?.user_version).toBe(7);
+    expect(version?.user_version).toBe(8);
+    await upgraded.closeAsync();
+  });
+
+  test('PIN length migration preserves a cached legacy room and membership', async () => {
+    const existing = harness?.open();
+    if (!existing) throw new Error('SQLite test harness was not initialized.');
+    await existing.execAsync(`
+      CREATE TABLE rooms (
+        room_id TEXT PRIMARY KEY NOT NULL, host_uid TEXT NOT NULL,
+        pin TEXT NOT NULL CHECK(length(pin) = 4 AND pin NOT GLOB '*[^0-9]*'),
+        status TEXT NOT NULL CHECK(status IN ('CREATED', 'WAITING', 'ACTIVE', 'COMPLETED', 'CANCELLED', 'ABORTED')),
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      );
+      CREATE TABLE room_members (
+        room_id TEXT NOT NULL REFERENCES rooms(room_id) ON DELETE CASCADE,
+        uid TEXT NOT NULL, display_name TEXT NOT NULL,
+        role TEXT NOT NULL CHECK(role IN ('HOST', 'MEMBER')),
+        status TEXT NOT NULL CHECK(status IN ('ACTIVE', 'EARLY_EXIT', 'LEFT')),
+        joined_at TEXT NOT NULL, PRIMARY KEY(room_id, uid)
+      );
+      CREATE INDEX idx_room_members_owner_status ON room_members(uid, status, room_id);
+      PRAGMA user_version = 7;
+    `);
+    await existing.runAsync(
+      `INSERT INTO rooms (room_id, host_uid, pin, status, created_at, updated_at) VALUES (?, ?, ?, 'WAITING', ?, ?)`,
+      'legacy-room', 'legacy-host', '0042', '2026-10-01T00:00:00.000Z', '2026-10-01T00:00:00.000Z',
+    );
+    await existing.runAsync(
+      `INSERT INTO room_members (room_id, uid, display_name, role, status, joined_at) VALUES (?, ?, ?, 'HOST', 'ACTIVE', ?)`,
+      'legacy-room', 'legacy-host', 'Host', '2026-10-01T00:00:00.000Z',
+    );
+    await existing.closeAsync();
+
+    const { getLocalDatabase } = await loadDatabaseModule();
+    const upgraded = await getLocalDatabase();
+    expect(await upgraded.getFirstAsync('SELECT room_id, pin FROM rooms WHERE room_id = ?', 'legacy-room'))
+      .toEqual({ room_id: 'legacy-room', pin: '0042' });
+    expect(await upgraded.getFirstAsync('SELECT room_id, uid FROM room_members WHERE room_id = ?', 'legacy-room'))
+      .toEqual({ room_id: 'legacy-room', uid: 'legacy-host' });
+    await upgraded.runAsync(
+      `INSERT INTO rooms (room_id, host_uid, pin, status, created_at, updated_at) VALUES (?, ?, ?, 'WAITING', ?, ?)`,
+      'new-room', 'new-host', '00000042', '2026-10-02T00:00:00.000Z', '2026-10-02T00:00:00.000Z',
+    );
     await upgraded.closeAsync();
   });
 
@@ -444,7 +487,7 @@ test('adopts an existing profile table with a missing schema version without del
   const { getLocalDatabase } = await loadDatabaseModule();
   const database = await getLocalDatabase();
   expect(await database.getFirstAsync('SELECT uid, display_name FROM local_profiles')).toEqual({ uid: 'legacy-owner', display_name: 'Legacy Name' });
-  expect(await database.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 7 });
+  expect(await database.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 8 });
 });
 
 test('adopts existing profile and session tables if schema version metadata was reset', async () => {
@@ -456,7 +499,7 @@ test('adopts existing profile and session tables if schema version metadata was 
   const next = await loadDatabaseModule();
   const reopened = await next.getLocalDatabase();
   expect(await reopened.getFirstAsync('SELECT id FROM sessions')).toEqual({ id: 'saved-session' });
-  expect(await reopened.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 7 });
+  expect(await reopened.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 8 });
 });
 
 test('rejects an incompatible existing profile table without marking it migrated or dropping data', async () => {

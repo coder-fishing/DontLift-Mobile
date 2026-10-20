@@ -60,13 +60,13 @@ The app first writes `users/{uid}/roomQuotaClock/current` with a server timestam
 |---|---|---|---|
 | `version` | integer | yes | `1` |
 | `requestId` | UUID string | yes | Common idempotency rule |
-| `pin` | string | yes | Exactly four decimal digits |
+| `pin` | string | yes | New invitations use eight digits; existing four-digit invitations remain accepted during migration |
 
-**Response schema:** common response plus `roomId: UUID`, `status: "WAITING"`, `memberUid: string`, `joinedAtUtcMs: integer`, `alreadyMember: boolean`.
+**Response schema:** The original callable common response plus `roomId: UUID`, `status: "WAITING"`, `memberUid: string`, `joinedAtUtcMs: integer`, `alreadyMember: boolean`. Under ADR-012's Spark client exception, the app stores `requestId` in the Firestore receipt and returns the committed room/member metadata after server reads; it does not claim a callable `serverTimeUtcMs` envelope.
 
-**Errors:** `unauthenticated`; `invalid-argument` for malformed PIN; `not-found` for an unknown or expired PIN without room internals; `failed-precondition` when room is not `WAITING`; `resource-exhausted` when verified Host entitlement does not permit another Member; `unavailable`; `already-exists` for request-ID collision.
+**Errors:** `unauthenticated`; `invalid-argument` for malformed PIN; `not-found` for an unknown or expired PIN without room internals; `failed-precondition` when room is not `WAITING`; `permission-denied` from Rules when verified Host capacity does not permit another Member; `unavailable`; `already-exists` for request-ID collision.
 
-**Transaction outputs:** resolve server-only PIN reservation, validate room/capacity, create membership only when absent, update `participantCount` and store command receipt atomically.
+**Transaction outputs:** resolve the PIN reservation, validate room/capacity, create membership only when absent, update `participantCount` and store command receipt atomically. The room's `lastJoinRequestId` links the count update to the exact member and receipt written in that transaction; Rules reject another count update once that UID already has membership. Under the Spark client transaction exception (ADR-012), the authenticated client reads one reservation document by PIN; collection listing remains denied. Eight digits reduce guessing probability, but Firestore Rules cannot enforce a read-attempt rate limit, so this lookup is not a complete anti-enumeration control.
 
 ## 4. `syncEvents`
 

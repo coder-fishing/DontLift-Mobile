@@ -9,7 +9,8 @@ export type ScreenId =
   | '08-vietqr-settlement'
   | '09-activation'
   | '10-hardware-diagnostics'
-  | '11-solo-history';
+  | '11-solo-history'
+  | '12-join-room';
 
 export type FocusModeType = 'countdown' | 'stopwatch';
 
