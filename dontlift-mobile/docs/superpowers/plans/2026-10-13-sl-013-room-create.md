@@ -34,7 +34,7 @@ V01–V10 chỉ các màn tương ứng tại `design/concepts/concept-final/scr
 ## 2. Blocker, risk và quyết định cần duyệt
 
 - **D12 — RESOLVED 2026-10-20:** Calendar timezone là `Asia/Ho_Chi_Minh`. Firestore Rules tính bucket từ server `request.time` cộng UTC+07:00; app đọc server-time probe để chuẩn bị transaction. Device clock/timezone không cấp quota.
-- **D13 — RESOLVED 2026-10-20:** Canonical invitation là `dontliftmobile://room/{PIN}`, trong đó PIN là chuỗi đúng bốn chữ số, giữ số 0 đầu. Scheme khớp `app.json`; SL-015 phải parse đúng payload này.
+- **D13 — UPDATED 2026-10-20:** Canonical invitation là `dontliftmobile://room/{PIN}`. Room mới dùng PIN tám chữ số, giữ số 0 đầu; SL-014 vẫn nhận lời mời legacy bốn chữ số. Scheme khớp `app.json`; SL-015 phải parse đúng cả hai độ dài.
 
 **Rủi ro cụ thể:** Rules transaction phải được Emulator Suite chứng minh chặn quota/PIN/document bypass và không vượt access-call limits. Không có Cloud Functions deployment trong slice. Expo Go trên Firebase Cloud chỉ hoạt động khi project hiện tại đã có Firestore Standard, Auth, Rules và Spark quota còn đủ; provisioning E1 vẫn là blocker cho cloud/device evidence.
 
@@ -141,7 +141,7 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 1. Loading khóa Create; quota/error/offline rõ; offline không queue command.
 2. Chỉ hiện PIN/invitation sau transaction commit; cache room metadata SQLite sau cloud success.
 3. Rules kiểm tra verified server Premium; Local Premium không mở quota.
-4. Encode `dontliftmobile://room/{PIN}`, giữ đủ bốn chữ số và không chứa credentials. Render QR thật trong Host view; lỗi encode/render giữ PIN nhưng không báo QR sẵn sàng.
+4. Encode `dontliftmobile://room/{PIN}`, giữ đủ tám chữ số và không chứa credentials. Render QR thật trong Host view; lỗi encode/render giữ PIN nhưng không báo QR sẵn sàng.
 
 - [ ] Thực hiện các kịch bản nghiệm thu trực tiếp trong mục 6; thu logs an toàn/device timestamps khi cần.
 - [ ] Review kết quả; một branch fail hoặc thiếu required device/emulator evidence thì slice chưa hoàn thành.
@@ -158,7 +158,7 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - [ ] Auth+Firestore emulators tạo room bằng transaction → inspect outputs; không cần Functions emulator cho SL-013.
 - [ ] Month bucket theo `Asia/Ho_Chi_Minh` → Rules dùng server `request.time`; unit tests kiểm tra hai phía tháng boundary.
 - [ ] Device clock/timezone thay đổi → server-time probe giữ bucket đúng; replay request qua boundary không tạo room hoặc tiêu hao quota lần hai.
-- [ ] PIN có leading zero → canonical payload giữ đủ bốn chữ số; QR render dùng đúng payload và room đã tạo, không fixture.
+- [ ] PIN có leading zero → canonical payload giữ đủ tám chữ số; QR render dùng đúng payload và room đã tạo, không fixture.
 - [ ] QR encode/render lỗi → PIN vẫn dùng được, không hiển thị QR thành công giả; D13 chưa duyệt → chưa nghiệm thu invitation.
 - [ ] Fresh install và upgrade từ profile/session schema → room/member migration chạy tuần tự, không mất dữ liệu cũ.
 

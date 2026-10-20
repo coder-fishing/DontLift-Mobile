@@ -4,6 +4,7 @@ import {
   Timestamp, type Firestore,
 } from 'firebase/firestore';
 import type * as SQLite from 'expo-sqlite';
+import { getRandomBytes } from 'expo-crypto';
 import { encodeRoomInvitation } from './room-invite-contract';
 import { mapRoomCreateError, RoomCreateError, type RoomCreateStage } from './room-create-error';
 export { RoomCreateError } from './room-create-error';
@@ -35,7 +36,13 @@ function getServerMonthStart(serverTimeMs: number): Timestamp {
 }
 
 function defaultRandomPin(): string {
-  return String(Math.floor(Math.random() * 10_000)).padStart(4, '0');
+  // Sinh từ nguồn ngẫu nhiên của hệ điều hành và loại phần dư để mỗi PIN có xác suất ngang nhau.
+  const limit = Math.floor(0x1_0000_0000 / 100_000_000) * 100_000_000;
+  while (true) {
+    const bytes = getRandomBytes(4);
+    const value = bytes[0] * 0x1000000 + bytes[1] * 0x10000 + bytes[2] * 0x100 + bytes[3];
+    if (value < limit) return String(value % 100_000_000).padStart(8, '0');
+  }
 }
 
 async function withProbeDeadline<T>(operation: () => Promise<T>): Promise<T> {
@@ -86,7 +93,7 @@ export function createRoomRepository(dependencies: RoomCreateDependencies) {
       const firestore = dependencies.firestore;
       const uid = actor.uid;
       const { requestId, roomId, pin } = command;
-      if (!/^\d{4}$/.test(pin) || !/^[0-9a-f-]{36}$/i.test(requestId) || !/^[0-9a-f-]{36}$/i.test(roomId)) {
+      if (!/^\d{8}$/.test(pin) || !/^[0-9a-f-]{36}$/i.test(requestId) || !/^[0-9a-f-]{36}$/i.test(roomId)) {
         throw new RoomCreateError('unknown');
       }
 
@@ -138,7 +145,7 @@ export function createRoomRepository(dependencies: RoomCreateDependencies) {
           transaction.set(roomRef, {
             hostId: uid, pin, status: 'WAITING', participantCount: 1,
             createdAt: timestamp, updatedAt: timestamp, hostHeartbeatAt: timestamp,
-            startedAt: null, endedAt: null,
+            startedAt: null, endedAt: null, lastJoinRequestId: null,
           });
           transaction.set(memberRef, {
             displayName: profile.data().displayName || hostDisplayName,

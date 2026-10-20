@@ -38,8 +38,8 @@ export function roomCreateErrorMessage(error: unknown): string {
       return 'Chưa xác nhận được kết quả từ Firebase. Hãy kết nối mạng và thử lại; app sẽ kiểm tra yêu cầu cũ.';
     case 'rejected':
       return error.stage === 'clock-write' || error.stage === 'clock-read'
-        ? 'Firebase chưa cho phép khởi tạo phòng (permission-denied). Rules SL-013 trên Cloud có thể chưa được cập nhật.'
-        : 'Firebase từ chối giao dịch tạo phòng (permission-denied). Cần kiểm tra Rules; bạn cũng có thể thử lại với PIN mới.';
+        ? 'Firebase chưa cho phép kiểm tra quyền tạo phòng (permission-denied). Rules Firestore trên Cloud có thể chưa được cập nhật.'
+        : 'Firebase từ chối giao dịch tạo phòng (permission-denied). Hãy kiểm tra Rules Firestore trên Cloud rồi thử lại.';
     case 'already-exists':
       return 'Yêu cầu tạo phòng đã tồn tại với dữ liệu khác. Hãy thử lại.';
     default:

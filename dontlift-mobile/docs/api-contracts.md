@@ -40,7 +40,7 @@ The authenticated Expo Go client executes one online Firestore transaction. Secu
 |---|---|---|---|
 | `requestId` | UUID string | yes | Idempotency key at `users/{uid}/commandReceipts/{requestId}` |
 | `roomId` | UUID string | yes | Client-generated; immutable after creation |
-| `pin` | four-digit string | yes | Client proposes a PIN; reservation create-only Rules enforce uniqueness; preserve leading zero |
+| `pin` | eight-digit string | yes | Client proposes a PIN; reservation create-only Rules enforce uniqueness; preserve all leading zeros |
 | `createdAt` | timestamp | yes | Must use `serverTimestamp()` and equal Security Rules `request.time` |
 | `quotaBucketStart` | timestamp | yes | First instant of the current `Asia/Ho_Chi_Minh` calendar month; Rules recompute it from server time |
 
@@ -48,7 +48,7 @@ The app first writes `users/{uid}/roomQuotaClock/current` with a server timestam
 
 **Result:** After commit, the repository returns the validated room, PIN, `WAITING` state, authenticated Host UID, and the committed server timestamp when it can read it from Firestore. If the read-after-write fails, `createdAt` remains unknown and the local projection is deferred; device time is never substituted. A matching existing receipt returns its saved result; a request-ID collision is rejected. A Free Host may create at most 7 rooms per calendar month. A rejected PIN candidate leaves no partial documents and can be retried.
 
-**Rules obligations:** authenticated owner only; exact field allowlists; Host UID comes from Auth; PIN is four decimal digits and reserved only if absent; all cross-document links agree through `getAfter()`; month bucket is derived from server `request.time` shifted by the approved fixed UTC+07:00 calendar; counter increments once or resets to 1 only when the server-derived month changes; count never exceeds 7 for a non-Premium Host; create-only receipt and documents; no update/delete paths for this command.
+**Rules obligations:** authenticated owner only; exact field allowlists; Host UID comes from Auth; new PIN is eight decimal digits and reserved only if absent; all cross-document links agree through `getAfter()`; new room starts with `lastJoinRequestId: null`, which Rules use to link a later participant-count update to its receipt; month bucket is derived from server `request.time` shifted by the approved fixed UTC+07:00 calendar; counter increments once or resets to 1 only when the server-derived month changes; count never exceeds 7 for a non-Premium Host; create-only receipt and documents; no update/delete paths for this command.
 
 **Errors:** unauthenticated; permission denied for a failed Rules invariant, including PIN collision; resource exhausted when the current server bucket has reached 7; unavailable for retryable network/service failure; already exists for request-ID collision. The client may pre-check quota for a clear message, but Rules remain authoritative if concurrent creates race. The client never reports success before commit.
 

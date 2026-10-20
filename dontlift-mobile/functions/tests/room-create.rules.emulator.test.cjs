@@ -65,7 +65,7 @@ async function createRoom(db, { uid, requestId, roomId, pin, bucketStart, count 
     transaction.set(roomRef, {
       hostId: uid, pin, status: 'WAITING', participantCount: 1,
       createdAt: timestamp, updatedAt: timestamp, hostHeartbeatAt: timestamp,
-      startedAt: null, endedAt: null,
+      startedAt: null, endedAt: null, lastJoinRequestId: null,
     });
     transaction.set(memberRef, {
       displayName, role: 'HOST', status: 'ACTIVE', penaltyScore: 0,
@@ -80,7 +80,7 @@ async function createRoom(db, { uid, requestId, roomId, pin, bucketStart, count 
   });
 }
 
-test('Rules authorize one atomic Host room transaction and preserve the four digit PIN', async t => {
+test('Rules authorize one atomic Host room transaction with an eight digit PIN', async t => {
   const env = await createRulesEnvironment();
   t.after(() => env.cleanup());
   const uid = 'room-host';
@@ -90,18 +90,18 @@ test('Rules authorize one atomic Host room transaction and preserve the four dig
   const bucketStart = monthStart(serverTime);
 
   const result = await assertSucceeds(createRoom(db, {
-    uid, requestId: '00000000-0000-4000-8000-000000000001', roomId: '10000000-0000-4000-8000-000000000001', pin: '0007', bucketStart,
+    uid, requestId: '00000000-0000-4000-8000-000000000001', roomId: '10000000-0000-4000-8000-000000000001', pin: '00000007', bucketStart,
   }));
 
   assert.equal(result.status, 'WAITING');
-  assert.equal(result.pin, '0007');
+  assert.equal(result.pin, '00000007');
   assert.equal((await getDoc(doc(db, 'rooms/10000000-0000-4000-8000-000000000001'))).data().hostId, uid);
   assert.equal((await getDoc(doc(db, `rooms/10000000-0000-4000-8000-000000000001/members/${uid}`))).data().role, 'HOST');
   assert.equal((await getDoc(doc(db, `users/${uid}/usage/current`))).data().count, 1);
   assert.equal((await getDoc(doc(db, `users/${uid}/commandReceipts/00000000-0000-4000-8000-000000000001`))).data().roomId, '10000000-0000-4000-8000-000000000001');
 
   await assertSucceeds(createRoom(db, {
-    uid, requestId: '00000000-0000-4000-8000-000000000001', roomId: '10000000-0000-4000-8000-000000000001', pin: '0007', bucketStart,
+    uid, requestId: '00000000-0000-4000-8000-000000000001', roomId: '10000000-0000-4000-8000-000000000001', pin: '00000007', bucketStart,
   }));
   assert.equal((await getDoc(doc(db, `users/${uid}/usage/current`))).data().count, 1);
 });
@@ -116,12 +116,12 @@ test('Rules reject a quota bypass and leave all related documents absent', async
   const bucketStart = monthStart(await getServerTime(db, uid));
 
   await assertFails(createRoom(db, {
-    uid, requestId: '00000000-0000-4000-8000-000000000002', roomId: '10000000-0000-4000-8000-000000000002', pin: '1007', bucketStart, count: 8,
+    uid, requestId: '00000000-0000-4000-8000-000000000002', roomId: '10000000-0000-4000-8000-000000000002', pin: '00001007', bucketStart, count: 8,
   }));
 
   await env.withSecurityRulesDisabled(async context => {
     assert.equal((await getDoc(doc(context.firestore(), 'rooms/10000000-0000-4000-8000-000000000002'))).exists(), false);
-    assert.equal((await getDoc(doc(context.firestore(), 'roomPins/1007'))).exists(), false);
+    assert.equal((await getDoc(doc(context.firestore(), 'roomPins/00001007'))).exists(), false);
   });
   assert.equal((await getDoc(doc(db, `users/${uid}/usage/current`))).data().count, 7);
 });
@@ -132,7 +132,7 @@ test('Rules reject unauthenticated room creation', async t => {
   const db = env.unauthenticatedContext().firestore();
 
   await assertFails(createRoom(db, {
-    uid: 'anonymous', requestId: '00000000-0000-4000-8000-000000000003', roomId: '10000000-0000-4000-8000-000000000003', pin: '1111',
+    uid: 'anonymous', requestId: '00000000-0000-4000-8000-000000000003', roomId: '10000000-0000-4000-8000-000000000003', pin: '00001111',
     bucketStart: monthStart(Date.now()),
   }));
 });
@@ -143,13 +143,13 @@ test('Rules reject a reserved PIN without partially creating the second room', a
   const uid = 'room-pin-host';
   await seedProfile(env, uid);
   await env.withSecurityRulesDisabled(async context => {
-    await setDoc(doc(context.firestore(), 'roomPins/2222'), { roomId: 'existing-room', hostId: 'other' });
+    await setDoc(doc(context.firestore(), 'roomPins/00002222'), { roomId: 'existing-room', hostId: 'other' });
   });
   const db = env.authenticatedContext(uid).firestore();
   const bucketStart = monthStart(await getServerTime(db, uid));
 
   await assertFails(createRoom(db, {
-    uid, requestId: '00000000-0000-4000-8000-000000000004', roomId: '10000000-0000-4000-8000-000000000004', pin: '2222', bucketStart,
+    uid, requestId: '00000000-0000-4000-8000-000000000004', roomId: '10000000-0000-4000-8000-000000000004', pin: '00002222', bucketStart,
   }));
 
   await env.withSecurityRulesDisabled(async context => {
@@ -168,7 +168,7 @@ test('Rules reject a quota bucket based on a different client clock', async t =>
   const incorrectBucket = Timestamp.fromMillis(Date.UTC(2000, 0, 1));
 
   await assertFails(createRoom(db, {
-    uid, requestId: '00000000-0000-4000-8000-000000000005', roomId: '10000000-0000-4000-8000-000000000005', pin: '3333', bucketStart: incorrectBucket,
+    uid, requestId: '00000000-0000-4000-8000-000000000005', roomId: '10000000-0000-4000-8000-000000000005', pin: '00003333', bucketStart: incorrectBucket,
   }));
 
   await env.withSecurityRulesDisabled(async context => {

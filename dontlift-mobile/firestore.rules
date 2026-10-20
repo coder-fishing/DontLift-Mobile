@@ -179,15 +179,15 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.resource.data.keys().hasAll([
           'hostId', 'pin', 'status', 'participantCount', 'createdAt', 'updatedAt',
-          'hostHeartbeatAt', 'startedAt', 'endedAt'
+          'hostHeartbeatAt', 'startedAt', 'endedAt', 'lastJoinRequestId'
         ])
         && request.resource.data.keys().hasOnly([
           'hostId', 'pin', 'status', 'participantCount', 'createdAt', 'updatedAt',
-          'hostHeartbeatAt', 'startedAt', 'endedAt'
+          'hostHeartbeatAt', 'startedAt', 'endedAt', 'lastJoinRequestId'
         ])
         && request.resource.data.hostId == request.auth.uid
         && request.resource.data.pin is string
-        && request.resource.data.pin.matches('^[0-9]{4}$')
+        && request.resource.data.pin.matches('^[0-9]{8}$')
         && roomId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
         && request.resource.data.status == 'WAITING'
         && request.resource.data.participantCount == 1
@@ -196,6 +196,7 @@ service cloud.firestore {
         && request.resource.data.hostHeartbeatAt == request.time
         && request.resource.data.startedAt == null
         && request.resource.data.endedAt == null
+        && request.resource.data.lastJoinRequestId == null
         && hasRoomCreateLinks(
           roomId,
           request.auth.uid,
@@ -239,7 +240,7 @@ service cloud.firestore {
     // Không cho đọc reservation để tránh dò PIN; quyền create-only giữ tính duy nhất.
     match /roomPins/{pin} {
       allow create: if signedIn()
-        && pin.matches('^[0-9]{4}$')
+        && pin.matches('^[0-9]{8}$')
         && request.resource.data.keys().hasAll(['roomId', 'hostId', 'createdAt'])
         && request.resource.data.keys().hasOnly(['roomId', 'hostId', 'createdAt'])
         && request.resource.data.hostId == request.auth.uid
