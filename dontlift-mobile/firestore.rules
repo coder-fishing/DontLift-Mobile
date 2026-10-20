@@ -126,7 +126,8 @@ service cloud.firestore {
 
     function roomParticipant(roomId, uid) {
       return exists(roomPath(roomId))
-        && get(roomPath(roomId)).data.status in ['WAITING', 'ACTIVE']
+        // Giữ roster đọc được cho member đang hoạt động để client dọn session sau khi room kết thúc.
+        && get(roomPath(roomId)).data.status in ['WAITING', 'ACTIVE', 'COMPLETED', 'CANCELLED', 'ABORTED']
         && exists(hostMemberPath(roomId, uid))
         && get(hostMemberPath(roomId, uid)).data.status == 'ACTIVE';
     }
