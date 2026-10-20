@@ -117,6 +117,70 @@ service cloud.firestore {
       );
     }
 
+    function activeRoomMember(roomId, uid) {
+      return exists(roomPath(roomId))
+        && get(roomPath(roomId)).data.status == 'ACTIVE'
+        && exists(hostMemberPath(roomId, uid))
+        && get(hostMemberPath(roomId, uid)).data.status == 'ACTIVE';
+    }
+
+    function roomParticipant(roomId, uid) {
+      return exists(roomPath(roomId))
+        // Giữ roster đọc được cho member đang hoạt động để client dọn session sau khi room kết thúc.
+        && get(roomPath(roomId)).data.status in ['WAITING', 'ACTIVE', 'COMPLETED', 'CANCELLED', 'ABORTED']
+        && exists(hostMemberPath(roomId, uid))
+        && get(hostMemberPath(roomId, uid)).data.status == 'ACTIVE';
+    }
+
+    function validGroupViolation(roomId, eventId, data) {
+      let room = get(roomPath(roomId)).data;
+      let memberAfter = getAfter(hostMemberPath(roomId, request.auth.uid)).data;
+      return data.keys().hasAll(['eventId', 'actorUid', 'startedAt', 'endedAt', 'durationSeconds', 'createdAt'])
+        && data.keys().hasOnly(['eventId', 'actorUid', 'startedAt', 'endedAt', 'durationSeconds', 'createdAt'])
+        && eventId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
+        && data.eventId == eventId
+        && data.actorUid == request.auth.uid
+        && data.startedAt is timestamp
+        && data.endedAt is timestamp
+        && data.startedAt >= room.startedAt
+        && data.endedAt >= data.startedAt
+        && data.endedAt <= request.time
+        && data.durationSeconds is int
+        && data.durationSeconds >= 3
+        && data.endedAt >= data.startedAt + duration.value(data.durationSeconds, 's')
+        && data.endedAt < data.startedAt + duration.value(data.durationSeconds + 1, 's')
+        && data.createdAt == request.time
+        && memberAfter.get('lastViolationEventId', null) == eventId;
+    }
+
+    function validGroupViolationMemberUpdate(roomId, memberUid) {
+      let after = request.resource.data;
+      let eventId = after.get('lastViolationEventId', null);
+      let eventPath = /databases/$(database)/documents/rooms/$(roomId)/violations/$(eventId);
+      let event = getAfter(eventPath).data;
+      let duration = event.durationSeconds;
+      return memberUid == request.auth.uid
+        && activeRoomMember(roomId, memberUid)
+        && eventId is string
+        // Chỉ cho phép tăng điểm khi cùng transaction tạo event mới, không khi trỏ lại event cũ.
+        && !exists(eventPath)
+        && resource.data.get('lastViolationEventId', null) != eventId
+        && after.diff(resource.data).affectedKeys().hasOnly(['liftCount', 'violationDurationSeconds', 'penaltyScore', 'lastViolationEventId'])
+        && after.lastViolationEventId == eventId
+        && event.actorUid == memberUid
+        && event.eventId == eventId
+        && resource.data.liftCount is int
+        && resource.data.violationDurationSeconds is int
+        && resource.data.penaltyScore is int
+        && after.liftCount is int
+        && after.violationDurationSeconds is int
+        && after.penaltyScore is int
+        && after.liftCount == resource.data.liftCount + 1
+        && after.violationDurationSeconds == resource.data.violationDurationSeconds + duration
+        && after.penaltyScore == resource.data.penaltyScore + 10 + duration
+        && after.penaltyScore == after.liftCount * 10 + after.violationDurationSeconds;
+    }
+
     function validUsageCreate(uid) {
       let data = request.resource.data;
       return data.keys().hasAll(['bucketStart', 'count', 'lastRequestId', 'updatedAt'])
@@ -291,7 +355,7 @@ service cloud.firestore {
           ])
           && request.resource.data.keys().hasOnly([
             'displayName', 'role', 'status', 'penaltyScore', 'liftCount',
-            'violationDurationSeconds', 'joinedAt', 'earlyExitAt', 'syncedThroughAt', 'syncAcknowledgedAt'
+            'violationDurationSeconds', 'joinedAt', 'earlyExitAt', 'syncedThroughAt', 'syncAcknowledgedAt', 'lastViolationEventId'
           ])
           && request.resource.data.displayName == get(profilePath(memberUid)).data.displayName
           && request.resource.data.status == 'ACTIVE'
@@ -302,6 +366,7 @@ service cloud.firestore {
           && request.resource.data.earlyExitAt == null
           && request.resource.data.syncedThroughAt == null
           && request.resource.data.syncAcknowledgedAt == null
+          && request.resource.data.get('lastViolationEventId', null) == null
           && (
             (request.resource.data.role == 'HOST' && hasRoomCreateLinks(
               roomId, memberUid, getAfter(roomPath(roomId)).data.pin,
@@ -312,7 +377,16 @@ service cloud.firestore {
               getAfter(roomPath(roomId)).data.lastJoinRequestId
             ))
           );
-        allow list: if signedIn() && exists(hostMemberPath(roomId, request.auth.uid));
+        allow list: if roomParticipant(roomId, request.auth.uid);
+        allow update: if signedIn() && validGroupViolationMemberUpdate(roomId, memberUid);
+        allow delete: if false;
+      }
+
+      match /violations/{eventId} {
+        allow get, list: if activeRoomMember(roomId, request.auth.uid);
+        allow create: if signedIn()
+          && activeRoomMember(roomId, request.auth.uid)
+          && validGroupViolation(roomId, eventId, request.resource.data);
         allow update, delete: if false;
       }
     }

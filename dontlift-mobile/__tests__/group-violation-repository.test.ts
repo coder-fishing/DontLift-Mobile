@@ -1,0 +1,66 @@
+import { runTransaction, Timestamp } from 'firebase/firestore';
+import { createGroupViolationRepository } from '../src/features/rooms/group-violation-repository';
+
+jest.mock('firebase/firestore', () => ({
+  Timestamp: class {
+    private readonly storedValue: number;
+    constructor(value: number) { this.storedValue = value; }
+    static fromMillis(value: number) { return new this(value); }
+    toMillis() { return this.storedValue; }
+  },
+  doc: jest.fn((...parts: unknown[]) => parts.slice(1).join('/')),
+  runTransaction: jest.fn(),
+  serverTimestamp: jest.fn(() => 'server-timestamp'),
+}));
+
+const rows = [
+  {
+    event_id: '00000000-0000-4000-8000-000000000001', room_id: 'room-1', user_id: 'member',
+    started_at: new Date(1_000).toISOString(), ended_at: new Date(4_000).toISOString(), duration_seconds: 3,
+  },
+  {
+    event_id: '00000000-0000-4000-8000-000000000002', room_id: 'room-1', user_id: 'member',
+    started_at: new Date(6_000).toISOString(), ended_at: new Date(9_000).toISOString(), duration_seconds: 3,
+  },
+];
+
+describe('group violation sync', () => {
+  beforeEach(() => jest.resetAllMocks());
+
+  it('marks an event before the server room window failed and continues syncing later events', async () => {
+    const writes: Array<{ sql: string; params: unknown[] }> = [];
+    const database = {
+      getAllAsync: jest.fn().mockResolvedValue(rows),
+      withExclusiveTransactionAsync: jest.fn(async (operation: (transaction: { runAsync: (...args: unknown[]) => Promise<{ changes: number }> }) => Promise<void>) => {
+        await operation({ runAsync: async (sql, ...params) => { writes.push({ sql: String(sql), params }); return { changes: 1 }; } });
+      }),
+    };
+    jest.mocked(runTransaction).mockImplementation(async (_firestore, callback) => {
+      let readIndex = 0;
+      return callback({
+        get: async () => {
+          const current = readIndex++ % 3;
+          if (current === 0) return { exists: () => true, data: () => ({ status: 'ACTIVE', startedAt: Timestamp.fromMillis(5_000) }) };
+          if (current === 1) return { exists: () => true, data: () => ({ status: 'ACTIVE', liftCount: 0, violationDurationSeconds: 0, penaltyScore: 0 }) };
+          return { exists: () => false, data: () => undefined };
+        },
+        set: jest.fn(),
+        update: jest.fn(),
+      } as never);
+    });
+
+    const repository = createGroupViolationRepository({
+      firestore: {} as never,
+      auth: { currentUser: { uid: 'member' } } as never,
+      database: async () => database as never,
+    });
+
+    await repository.syncPending('room-1');
+
+    expect(runTransaction).toHaveBeenCalledTimes(2);
+    expect(writes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ sql: expect.stringContaining("SET sync_status = 'FAILED'"), params: ['invalid-argument', rows[0].event_id, 'member'] }),
+      expect.objectContaining({ sql: expect.stringContaining("SET sync_status = 'SYNCED'"), params: expect.arrayContaining([rows[1].event_id, 'member']) }),
+    ]));
+  });
+});

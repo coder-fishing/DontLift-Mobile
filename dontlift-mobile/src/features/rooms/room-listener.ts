@@ -9,6 +9,7 @@ export type RoomLobbyMember = {
   status: string;
   penaltyScore: number;
   liftCount: number;
+  violationDurationSeconds: number;
   joinedAt: string | null;
 };
 
@@ -18,6 +19,7 @@ export type RoomLobbySnapshot = {
   status: 'WAITING' | 'ACTIVE' | 'COMPLETED' | 'ABORTED';
   participantCount: number;
   startedAtUtcMs: number | null;
+  endedAtUtcMs?: number | null;
   pin: string;
   createdAt: string | null;
   updatedAt: string | null;
@@ -75,6 +77,7 @@ export function listenToRoomLobby(
     const data = snapshot.data();
     roomFromCache = snapshot.metadata.fromCache;
     const startedAt = data.startedAt;
+    const endedAt = data.endedAt;
     const createdAt = data.createdAt;
     const updatedAt = data.updatedAt;
     roomValue = {
@@ -83,6 +86,7 @@ export function listenToRoomLobby(
       status: data.status,
       participantCount: Number(data.participantCount ?? 0),
       startedAtUtcMs: startedAt instanceof Timestamp ? startedAt.toMillis() : null,
+      endedAtUtcMs: endedAt instanceof Timestamp ? endedAt.toMillis() : null,
       pin: String(data.pin ?? ''),
       createdAt: createdAt instanceof Timestamp ? createdAt.toDate().toISOString() : null,
       updatedAt: updatedAt instanceof Timestamp ? updatedAt.toDate().toISOString() : null,
@@ -110,6 +114,7 @@ export function listenToRoomLobby(
           status: String(data.status ?? ''),
           penaltyScore: Number(data.penaltyScore ?? 0),
           liftCount: Number(data.liftCount ?? 0),
+          violationDurationSeconds: Number(data.violationDurationSeconds ?? 0),
           joinedAt: data.joinedAt instanceof Timestamp ? data.joinedAt.toDate().toISOString() : null,
         };
       });

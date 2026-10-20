@@ -32,7 +32,7 @@ type CandidateRow = {
 type SessionRow = {
   id: string;
   user_id: string;
-  mode: 'COUNTDOWN' | 'STOPWATCH';
+  mode: 'COUNTDOWN' | 'STOPWATCH' | 'GROUP';
   duration_seconds: number;
   started_at: string;
   status: string;
@@ -65,7 +65,7 @@ export async function beginBackgroundCandidate(
   await database.withExclusiveTransactionAsync(async (transaction) => {
     const session = await transaction.getFirstAsync<{ id: string }>(
       `SELECT id FROM sessions
-       WHERE id = ? AND user_id = ? AND mode IN ('COUNTDOWN', 'STOPWATCH') AND status = 'ACTIVE'`,
+       WHERE id = ? AND user_id = ? AND mode IN ('COUNTDOWN', 'STOPWATCH', 'GROUP') AND status = 'ACTIVE'`,
       input.sessionId,
       input.userId,
     );
@@ -200,9 +200,10 @@ export async function reconcileBackgroundCandidate(
       `INSERT INTO violation_logs (
          event_id, session_id, room_id, user_id, started_at, confirmed_at, ended_at,
          duration_seconds, sync_status, created_at, synced_at
-       ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, 'PENDING', ?, NULL)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, NULL)`,
       candidate.id,
       session.id,
+      session.mode === 'GROUP' ? session.id : null,
       session.user_id,
       startedAt,
       confirmedAt,
@@ -210,11 +211,24 @@ export async function reconcileBackgroundCandidate(
       durationSeconds,
       createdAt,
     );
+    if (session.mode === 'GROUP') {
+      // Lifecycle event và outbox cùng SQLite transaction; sync worker chỉ gửi event đã kết thúc.
+      await transaction.runAsync(
+        `INSERT OR IGNORE INTO sync_outbox (
+           event_id, event_type, schema_version, aggregate_type, aggregate_id, session_id, actor_uid,
+           occurred_at_utc_ms, payload_json, sync_status, attempt_count, next_attempt_at, lease_expires_at,
+           last_error_code, created_at, synced_at
+         ) VALUES (?, 'VIOLATION_RECORDED', 1, 'ROOM', ?, ?, ?, ?, ?, 'PENDING', 0, NULL, NULL, NULL, ?, NULL)`,
+        candidate.id, session.id, session.id, session.user_id, endedAtUtcMs,
+        JSON.stringify({ startedAtUtcMs: candidate.transition_at_utc_ms, endedAtUtcMs, durationSeconds }), createdAt,
+      );
+    }
     await resolveCandidate(transaction, candidate.id, 'CONFIRMED', nowUtcMs);
     result = 'confirmed';
   });
   return result;
 }
+
 
 async function hasOpenViolation(
   transaction: SQLite.SQLiteDatabase,

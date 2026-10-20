@@ -22,6 +22,8 @@ Dùng hybrid boundary:
 
 **Ngoại lệ có giới hạn:** `createRoom` dùng Firestore client transaction được Security Rules authorize theo [ADR-011](ADR-011-spark-room-creation.md); `joinRoomByPin` theo [ADR-012](ADR-012-spark-room-join.md); và `startRoom` theo [ADR-013](ADR-013-spark-room-start.md). Mỗi exception chỉ cho phép exact transaction được nêu trong ADR riêng; không mở direct writes cho lifecycle, membership, score, quota khác, vote hoặc bill commands ngoài các contract đó.
 
+ADR-014 bổ sung ngoại lệ hẹp cho một confirmed group violation: client transaction được Rules kiểm tra chỉ có thể ghi event bất biến của chính member và tăng đúng các bộ đếm/điểm của member đó trong cùng room. Các outbox event khác vẫn đi qua `syncEvents`; client không được ghi điểm của người khác hoặc aggregate tùy ý.
+
 Quyết định này là human-approved override của Feature Spec Section 6.3. Override giữ UUID idempotency nhưng chuyển schema, ownership, lifecycle validation và aggregate update vào một Cloud Function transaction.
 
 `completeRoom` thực hiện `ACTIVE → COMPLETED` nhưng mở `reconciliationStatus = PENDING`. Mỗi Member flush eligible events đến room `endedAt`, rồi gửi sync acknowledgment.

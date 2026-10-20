@@ -49,6 +49,8 @@ describe('joinRoomByPin', () => {
     const result = await repository(database).joinRoomByPin({ pin, requestId });
 
     expect(writes.set).toHaveBeenCalledWith(`rooms/${roomId}/members/member-1`, expect.objectContaining({ role: 'MEMBER', displayName: 'Member' }));
+    const memberWrite = writes.set.mock.calls.find(([path]) => path === `rooms/${roomId}/members/member-1`);
+    expect(memberWrite?.[1]).not.toHaveProperty('lastViolationEventId');
     expect(writes.update).toHaveBeenCalledWith(`rooms/${roomId}`, {
       participantCount: 3, updatedAt: 'server-timestamp', lastJoinRequestId: requestId,
     });
