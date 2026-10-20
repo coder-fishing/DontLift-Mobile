@@ -147,6 +147,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const [roomCreateError, setRoomCreateError] = useState<string | undefined>();
   const pendingRoomCommand = useRef<RoomCreateCommand | null>(null);
+  const roomCreateAttempt = useRef(0);
   const [isJoiningRoom, setIsJoiningRoom] = useState(false);
   const [joinedRoom, setJoinedRoom] = useState<JoinedRoom | null>(null);
   const [roomJoinError, setRoomJoinError] = useState<string | undefined>();
@@ -154,16 +155,19 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
 
   const handleCreateRoom = async () => {
     if (isCreatingRoom) return;
+    const attemptId = ++roomCreateAttempt.current;
     setIsCreatingRoom(true);
     setRoomCreateError(undefined);
     const command = pendingRoomCommand.current ?? roomRepository.createCommand();
     pendingRoomCommand.current = command;
     try {
       const result = await roomRepository.createRoom(profile.displayName, command);
+      if (attemptId !== roomCreateAttempt.current) return;
       pendingRoomCommand.current = null;
       setCreatedRoom(result);
     } catch (error) {
       if (!(error instanceof RoomCreateError) || error.code !== 'unavailable') pendingRoomCommand.current = null;
+      if (attemptId !== roomCreateAttempt.current) return;
       if (__DEV__ && error instanceof RoomCreateError) {
         console.warn('[room-create] failed', JSON.stringify({
           code: error.code, stage: error.stage, firebaseCode: error.firebaseCode,
@@ -171,8 +175,19 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       }
       setRoomCreateError(roomCreateErrorMessage(error));
     } finally {
-      setIsCreatingRoom(false);
+      if (attemptId === roomCreateAttempt.current) setIsCreatingRoom(false);
     }
+  };
+
+  const cancelRoomCreateAndJoin = () => {
+    // Client không thể hủy transaction Firestore đã gửi; bỏ kết quả muộn và giữ requestId để retry lấy lại cùng phòng nếu đã commit.
+    roomCreateAttempt.current += 1;
+    setIsCreatingRoom(false);
+    setRoomCreateError(undefined);
+    setJoinedRoom(null);
+    setRoomJoinError(undefined);
+    pendingRoomJoinCommand.current = null;
+    setCurrentScreen('12-join-room');
   };
 
   const handleJoinRoom = async (pin: string) => {
@@ -841,6 +856,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
             isCreating={isCreatingRoom}
             errorMessage={roomCreateError}
             onCreateRoom={() => { void handleCreateRoom(); }}
+            onCancelCreate={cancelRoomCreateAndJoin}
             onJoinRoom={() => {
               setJoinedRoom(null);
               setRoomJoinError(undefined);

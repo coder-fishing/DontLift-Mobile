@@ -11,9 +11,10 @@ interface GroupLobbyScreenProps {
   errorMessage?: string;
   onCreateRoom: () => void;
   onJoinRoom: () => void;
+  onCancelCreate: () => void;
 }
 
-export function GroupLobbyScreen({ room, isCreating, errorMessage, onCreateRoom, onJoinRoom }: GroupLobbyScreenProps) {
+export function GroupLobbyScreen({ room, isCreating, errorMessage, onCreateRoom, onJoinRoom, onCancelCreate }: GroupLobbyScreenProps) {
   if (!room) {
     return (
       <View style={styles.container}>
@@ -23,10 +24,13 @@ export function GroupLobbyScreen({ room, isCreating, errorMessage, onCreateRoom,
           <Text style={styles.body}>Tạo phòng đang chờ. PIN và mã QR chỉ xuất hiện sau khi lưu thành công trên Firebase.</Text>
           {errorMessage ? <Text accessibilityRole="alert" style={styles.error}>{errorMessage}</Text> : null}
           {isCreating ? (
-            <View style={styles.loading}>
-              <ActivityIndicator color={Colors.light.primary} />
-              <Text style={styles.body}>Đang tạo phòng…</Text>
-            </View>
+            <>
+              <View style={styles.loading}>
+                <ActivityIndicator color={Colors.light.primary} />
+                <Text style={styles.body}>Đang tạo phòng…</Text>
+              </View>
+              <PrimaryButton title="Hủy tạo, chuyển sang tham gia" variant="secondary" onPress={onCancelCreate} />
+            </>
           ) : (
             <>
               <PrimaryButton title="Create Room" onPress={onCreateRoom} />
@@ -60,6 +64,7 @@ export function GroupLobbyScreen({ room, isCreating, errorMessage, onCreateRoom,
           title="Chia sẻ lời mời"
           onPress={() => { void Share.share({ message: `Tham gia phòng DontLift ${room.pin}: ${room.invitation}` }); }}
         />
+        <PrimaryButton title="Tham gia phòng khác" variant="secondary" onPress={onJoinRoom} />
       </View>
     </View>
   );
