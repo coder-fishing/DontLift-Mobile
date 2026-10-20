@@ -1,6 +1,6 @@
 # P6.1 — Mục lục kế hoạch DontLift
 
-> **DRAFT v0.15 — backlog P6.0 và các slice chưa được duyệt vẫn là draft.** SL-002 đã được duyệt riêng cho Android development; SL-003 đã được duyệt riêng và execution đang diễn ra. Những approval này không duyệt toàn bộ backlog.
+> **DRAFT v0.16 — backlog P6.0 và các slice chưa được duyệt vẫn là draft.** SL-002, SL-003 và SL-013 đã được duyệt riêng. Những approval này không duyệt toàn bộ backlog.
 
 > **Execution update 2026-10-14:** Human duyệt riêng SL-002 Android development runtime: reuse Firebase cloud config hiện có, iOS device verification tạm hoãn. [Plan SL-002](./superpowers/plans/2026-10-13-sl-002-native-firebase-runtime.md) ghi scope/evidence hiện tại; approval này không duyệt các slice khác hay toàn bộ backlog.
 
@@ -47,7 +47,7 @@ P0 là nền tảng/critical journey trước; P1 là cần hoàn tất MVP; P2 
 | SL-010 | [iOS background và restart recovery](./superpowers/plans/2026-10-13-sl-010-ios-recovery.md) | P0 | SL-007, SL-009 | E1 |
 | SL-011 | [Đồng bộ Solo sau reconnect](./superpowers/plans/2026-10-13-sl-011-solo-sync.md) | P0 | SL-002, SL-008 | D3 |
 | SL-012 | [Xem Solo history](./superpowers/plans/2026-10-13-sl-012-solo-history.md) | P1 | SL-011 | Không xác nhận riêng |
-| SL-013 | [Host tạo room](./superpowers/plans/2026-10-13-sl-013-room-create.md) | P0 | SL-003, SL-004, SL-006 | D12, D13 |
+| SL-013 | [Host tạo room](./superpowers/plans/2026-10-13-sl-013-room-create.md) | P0 | SL-003, SL-004, SL-006 | Resolved: D12, D13 (2026-10-20) |
 | SL-014 | [Member join bằng PIN](./superpowers/plans/2026-10-13-sl-014-room-join-pin.md) | P0 | SL-013 | Không xác nhận riêng |
 | SL-015 | [Member join bằng QR](./superpowers/plans/2026-10-13-sl-015-room-join-qr.md) | P1 | SL-014 | D13, E1 |
 | SL-016 | [Lobby realtime và Host bắt đầu](./superpowers/plans/2026-10-13-sl-016-room-lobby-start.md) | P0 | SL-014 | D3 |
@@ -90,13 +90,13 @@ SL-037 phụ thuộc bắt buộc SL-001–SL-036 vì phạm vi đã chọn gồ
 | D9 | Giải quyết wording non-zero base share khi bill nhỏ/nhiều Members đối nghịch integer/non-negative/exact-sum. Giữ invariant ADR-005; không tự tạo minimum bill per member. |
 | D10 | Chốt max retry/retention horizon và receipt TTL; xác định bảo vệ unsynced data trước purge, failed-event retention và expired-read policy. |
 | D11 | Chốt default sound state, bundled violation alert asset và user scope của local preferences trước khi SL-030 tạo asset/defaults. |
-| D12 | Duyệt calendar timezone cho quota tạo room hàng tháng và usage bucket yyyyMM; SL-013 dùng server timestamp, có tests trước/sau month boundary và replay. |
-| D13 | Duyệt canonical room invitation scheme/payload giữa Feature Spec và app config; SL-013 encode/render, SL-015 parse cùng một contract. |
+| D12 | **RESOLVED 2026-10-20:** `Asia/Ho_Chi_Minh`; SL-013 Rules derive monthly bucket from server `request.time` (UTC+07:00), not device clock/timezone. |
+| D13 | **RESOLVED 2026-10-20:** canonical payload `dontliftmobile://room/{4-digit-PIN}`; SL-013 encodes/renders and SL-015 parses the same contract. |
 | E1 | Cần Development Build, Android/iOS physical devices, toolchains và Emulator Suite để có native/integration evidence. |
 | E2 | Cloud release cần projects/config/billing/scheduled jobs được human cho phép; P6.1 authoring không deploy. |
 | E3 | Cần VietQR provider/format và năm banking apps trong cohort để kiểm chứng QR thật. |
 
-D1–D7 và E1/E2 đến từ backlog đề xuất; E3 ghi rõ test cohort đã nêu trong SL-026/037. D8–D13 là các gap phát hiện khi viết chi tiết, **đề xuất để human quyết định**, chưa phải thay đổi accepted product/architecture. Giải quyết chúng bằng evidence/approved decision trước execution, không lấp bằng implementation giả.
+D1–D7 và E1/E2 đến từ backlog đề xuất; E3 ghi rõ test cohort đã nêu trong SL-026/037. D8–D11 vẫn là gap chờ human quyết định. D12/D13 được human giải quyết ngày 2026-10-20; D12 thay đổi theo ADR-011 để Rules enforce được quota trên Spark. Giải quyết blocker còn lại bằng evidence/approved decision trước execution, không lấp bằng implementation giả.
 
 D3 chỉ chặn command/event semantics chưa có wire rõ; không blanket-block contract create/join/bill đã có. Mỗi plan nêu phần áp dụng. D6 gồm hai quyết định độc lập về theme catalog và advanced behavior, không gộp approval tùy tiện.
 
@@ -176,7 +176,7 @@ Excluded: kiosk/OS lockdown, wallet/custody, chat/social feed, camera-based phon
 
 Website mua Premium/code generation/email delivery là external operational prerequisite D5; chưa có approved website/backend spec nên không thêm implementation slice tự suy diễn.
 
-**Approval ledger:** Chưa có backlog/plan approved trong bộ này. Khi human duyệt, ghi plan ID, version/date, scope/acceptance/decision đã duyệt và remaining blockers. Không replace approved decisions cũ khi cập nhật index. Draft batch không đồng nghĩa P6.0 đã approved.
+**Approval ledger:** SL-002 (Android development), SL-003 (registration profile) và SL-013 (Host tạo room) đã được human duyệt riêng; SL-013 approval ngày 2026-10-20 gồm D12 `Asia/Ho_Chi_Minh`, D13 `dontliftmobile://room/{PIN}` và authority bằng Rules transaction trên Spark. Các slice khác và backlog P6.0 vẫn draft. Không replace approved decisions cũ khi cập nhật index.
 
 **Changelog 2026-10-13:**
 
@@ -198,6 +198,10 @@ Website mua Premium/code generation/email delivery là external operational prer
 
 - v0.14: Tích hợp ADR-009 đã accepted và wire contract `completeRegistrationProfile` §8 vào baseline; đồng bộ `users/{uid}` email authority trong architecture; gỡ D2 khỏi SL-003 blocker sau khi đối chiếu tracked Auth review report (RC-001 chỉ thuộc lint Slice 0A). Giữ Auth source/test evidence ngoài baseline.
 - v0.15: Human duyệt riêng execution SL-003 ngày 2026-10-14; cập nhật trạng thái approval trong plan và implementation index. Các slice/backlog khác không đổi trạng thái.
+
+**Changelog 2026-10-20:**
+
+- v0.16: Human duyệt riêng SL-013, chốt D12/D13 và chuyển `createRoom` sang client Firestore transaction được Security Rules authorize theo ADR-011 để giữ Firebase Spark. Ghi execution/test evidence và phần còn UNVERIFIED; không triển khai dịch vụ lên Cloud.
 
 **Trạng thái corrections:** [SL-003 review](./superpowers/reviews/2026-10-13-sl-003-registration-profile-review-plan.md), [SL-005 review](./superpowers/reviews/2026-10-13-sl-005-sensor-availability-review-plan.md), [SL-007 review](./superpowers/reviews/2026-10-13-sl-007-foreground-detection-review-plan.md), [SL-009 review](./superpowers/reviews/2026-10-13-sl-009-android-recovery-review-plan.md), [SL-010 review](./superpowers/reviews/2026-10-13-sl-010-ios-recovery-review-plan.md), [SL-013 review](./superpowers/reviews/2026-10-13-sl-013-room-create-review-plan.md), [SL-016 review](./superpowers/reviews/2026-10-13-sl-016-room-lobby-start-review-plan.md), [SL-028 review](./superpowers/reviews/2026-10-13-sl-028-group-history-review-plan.md), [SL-029 review](./superpowers/reviews/2026-10-13-sl-029-profile-edit-review-plan.md), [SL-030 review](./superpowers/reviews/2026-10-13-sl-030-feedback-settings-review-plan.md), [SL-031 review](./superpowers/reviews/2026-10-13-sl-031-local-premium-review-plan.md), [SL-034 review](./superpowers/reviews/2026-10-13-sl-034-premium-themes-review-plan.md), [SL-037 review](./superpowers/reviews/2026-10-13-sl-037-mvp-release-review-plan.md).
 

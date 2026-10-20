@@ -20,6 +20,8 @@ Dùng hybrid boundary:
 - Commands có `requestId`; events có `eventId`.
 - `syncEvents` là canonical ingestion path; client không direct `setDoc` violation hoặc Solo summary.
 
+**Ngoại lệ có giới hạn:** `createRoom` dùng Firestore client transaction được Security Rules authorize theo [ADR-011](ADR-011-spark-room-creation.md), để SL-013 chạy trên Firebase Spark. Exception này không cho phép direct writes cho lifecycle, membership join, score, quota khác, vote hoặc bill commands.
+
 Quyết định này là human-approved override của Feature Spec Section 6.3. Override giữ UUID idempotency nhưng chuyển schema, ownership, lifecycle validation và aggregate update vào một Cloud Function transaction.
 
 `completeRoom` thực hiện `ACTIVE → COMPLETED` nhưng mở `reconciliationStatus = PENDING`. Mỗi Member flush eligible events đến room `endedAt`, rồi gửi sync acknowledgment.

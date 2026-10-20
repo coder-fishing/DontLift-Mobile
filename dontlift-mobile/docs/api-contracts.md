@@ -1,6 +1,8 @@
-# DontLift Callable API Contracts
+# DontLift Firebase Command Contracts
 
 > Runtime update 2026-10-18: [ADR-010](decisions/ADR-010-expo-go-firebase-js.md) replaces native Firebase with Firebase JS SDK / Expo Go and replaces callable registration bootstrap with create-only Firestore Rules. Other planned authoritative commands below remain future work.
+
+> Room-creation update 2026-10-20: [ADR-011](decisions/ADR-011-spark-room-creation.md) replaces the `createRoom` callable with one authenticated Firestore client transaction guarded by Security Rules. This exception is designed for Firebase Spark and does not change the remaining callable contracts.
 
 > **Owner:** Software architecture package  
 > **Status:** APPROVED  
@@ -9,7 +11,7 @@
 
 ## 1. Common envelope
 
-Every callable requires Firebase Authentication. Functions derive `actorUid` from the verified ID token and never trust a UID supplied by the client.
+Every callable requires Firebase Authentication. Functions derive `actorUid` from the verified ID token and never trust a UID supplied by the client. `createRoom` is the Rules-authorized transaction exception defined in §2.
 
 Every side-effecting request contains:
 
@@ -28,20 +30,27 @@ Every success response contains:
 
 Repeating the same `requestId` with the same canonical payload returns the previous outcome. Reusing it with a different payload returns `already-exists`. Error details contain only stable codes and safe field names; tokens, activation codes, bank details and full emails are never logged or returned in diagnostics.
 
-## 2. `createRoom`
+## 2. `createRoom` — Firestore transaction
 
-**Request schema**
+The authenticated Expo Go client executes one online Firestore transaction. Security Rules derive the Host from `request.auth.uid` and validate every write in the transaction; the client never has permission to update or delete the resulting room, PIN reservation, usage counter, or receipt. The command is not queued while offline.
+
+**Transaction input**
 
 | Field | Type | Required | Rule |
 |---|---|---|---|
-| `version` | integer | yes | `1` |
-| `requestId` | UUID string | yes | Common idempotency rule |
+| `requestId` | UUID string | yes | Idempotency key at `users/{uid}/commandReceipts/{requestId}` |
+| `roomId` | UUID string | yes | Client-generated; immutable after creation |
+| `pin` | four-digit string | yes | Client proposes a PIN; reservation create-only Rules enforce uniqueness; preserve leading zero |
+| `createdAt` | timestamp | yes | Must use `serverTimestamp()` and equal Security Rules `request.time` |
+| `quotaBucketStart` | timestamp | yes | First instant of the current `Asia/Ho_Chi_Minh` calendar month; Rules recompute it from server time |
 
-**Response schema:** common response plus `roomId: UUID`, `pin: four-digit string`, `status: "WAITING"`, `hostId: string`, `createdAtUtcMs: integer`.
+The app first writes `users/{uid}/roomQuotaClock/current` with a server timestamp and reads it back to choose the bucket. Security Rules validate that probe against `request.time`. The transaction then creates `rooms/{roomId}`, `rooms/{roomId}/members/{uid}`, `roomPins/{pin}`, and `users/{uid}/commandReceipts/{requestId}`, and creates or updates `users/{uid}/usage/current`. That usage document stores `bucketStart`, `count`, `lastRequestId`, and `updatedAt`; the client cannot delete it or move it to another month.
 
-**Errors:** `unauthenticated`; `failed-precondition` when entitlement state is not usable; `resource-exhausted` when monthly quota is reached; `unavailable` for retryable service failure; `already-exists` for request-ID collision.
+**Result:** After commit, the repository returns the validated room, PIN, `WAITING` state, authenticated Host UID, and the committed server timestamp when it can read it from Firestore. If the read-after-write fails, `createdAt` remains unknown and the local projection is deferred; device time is never substituted. A matching existing receipt returns its saved result; a request-ID collision is rejected. A Free Host may create at most 7 rooms per calendar month. A rejected PIN candidate leaves no partial documents and can be retried.
 
-**Transaction outputs:** reserve `roomPins/{pin}`, create `rooms/{roomId}`, create Host membership, increment `users/{uid}/usage/{yyyyMM}` and store command receipt atomically.
+**Rules obligations:** authenticated owner only; exact field allowlists; Host UID comes from Auth; PIN is four decimal digits and reserved only if absent; all cross-document links agree through `getAfter()`; month bucket is derived from server `request.time` shifted by the approved fixed UTC+07:00 calendar; counter increments once or resets to 1 only when the server-derived month changes; count never exceeds 7 for a non-Premium Host; create-only receipt and documents; no update/delete paths for this command.
+
+**Errors:** unauthenticated; permission denied for a failed Rules invariant, including PIN collision; resource exhausted when the current server bucket has reached 7; unavailable for retryable network/service failure; already exists for request-ID collision. The client may pre-check quota for a clear message, but Rules remain authoritative if concurrent creates race. The client never reports success before commit.
 
 ## 3. `joinRoomByPin`
 

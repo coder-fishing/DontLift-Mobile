@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Network from 'expo-network';
+import * as Crypto from 'expo-crypto';
 import { ScreenId, Participant, BillParticipantShare } from '../types';
 import { INITIAL_PARTICIPANTS } from '../constants';
 import { Header } from '../components/Header';
@@ -49,6 +50,8 @@ import { createSoloSyncWorker } from '../features/sync/sync-worker';
 import { createSyncEventsPort } from '../features/sync/sync-events-port';
 import { getConfiguredFirebaseRuntime } from '../features/auth/firebase-adapters';
 import { getLocalDatabase } from '../features/local/database';
+import { createRoomRepository, RoomCreateError, type CreatedRoom, type RoomCreateCommand } from '../features/rooms/room-repository';
+import { roomCreateErrorMessage } from '../features/rooms/room-create-error';
 import { createBackgroundRecoveryRepository } from '../features/solo/background-recovery';
 import { createSessionLifecycleController } from '../features/solo/session-lifecycle-controller';
 import {
@@ -125,11 +128,47 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     () => createSoloHistoryRepository(getConfiguredFirebaseRuntime(Platform.OS, __DEV__)),
     [profile.uid],
   );
+  const roomRepository = useMemo(() => {
+    const runtime = getConfiguredFirebaseRuntime(Platform.OS, __DEV__);
+    return createRoomRepository({
+      firestore: runtime.firestore,
+      auth: runtime.auth,
+      database: getLocalDatabase(),
+      randomUUID: Crypto.randomUUID,
+    });
+  }, [profile.uid]);
   // Navigation & Drawer
   const [currentScreen, setCurrentScreen] = useState<ScreenId>('02-solo-select');
   const [drawerVisible, setDrawerVisible] = useState<boolean>(false);
   const [isHostRole, setIsHostRole] = useState<boolean>(true);
   const [showEmptyState, setShowEmptyState] = useState<boolean>(false);
+  const [createdRoom, setCreatedRoom] = useState<CreatedRoom | null>(null);
+  const [isCreatingRoom, setIsCreatingRoom] = useState(false);
+  const [roomCreateError, setRoomCreateError] = useState<string | undefined>();
+  const pendingRoomCommand = useRef<RoomCreateCommand | null>(null);
+
+  const handleCreateRoom = async () => {
+    if (isCreatingRoom) return;
+    setIsCreatingRoom(true);
+    setRoomCreateError(undefined);
+    const command = pendingRoomCommand.current ?? roomRepository.createCommand();
+    pendingRoomCommand.current = command;
+    try {
+      const result = await roomRepository.createRoom(profile.displayName, command);
+      pendingRoomCommand.current = null;
+      setCreatedRoom(result);
+    } catch (error) {
+      if (!(error instanceof RoomCreateError) || error.code !== 'unavailable') pendingRoomCommand.current = null;
+      if (__DEV__ && error instanceof RoomCreateError) {
+        console.warn('[room-create] failed', JSON.stringify({
+          code: error.code, stage: error.stage, firebaseCode: error.firebaseCode,
+        }));
+      }
+      setRoomCreateError(roomCreateErrorMessage(error));
+    } finally {
+      setIsCreatingRoom(false);
+    }
+  };
 
   // Solo State
   const [selectedDuration, setSelectedDuration] = useState<number>(25);
@@ -754,11 +793,10 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
 
         {currentScreen === '05-group-lobby' && (
           <GroupLobbyScreen
-            roomPin="#8821"
-            participants={participants}
-            isHostRole={isHostRole}
-            showEmptyState={showEmptyState}
-            onStartSession={() => setCurrentScreen('06-group-active')}
+            room={createdRoom}
+            isCreating={isCreatingRoom}
+            errorMessage={roomCreateError}
+            onCreateRoom={() => { void handleCreateRoom(); }}
           />
         )}
 

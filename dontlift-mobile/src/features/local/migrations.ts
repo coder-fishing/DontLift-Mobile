@@ -235,6 +235,33 @@ const migrations: LocalMigration[] = [
       `);
     },
   },
+  {
+    version: 7,
+    async migrate(database) {
+      // Room cloud được cache sau commit; các bảng này không tạo room offline.
+      await database.execAsync(`
+        CREATE TABLE IF NOT EXISTS rooms (
+          room_id TEXT PRIMARY KEY NOT NULL,
+          host_uid TEXT NOT NULL,
+          pin TEXT NOT NULL CHECK(length(pin) = 4 AND pin NOT GLOB '*[^0-9]*'),
+          status TEXT NOT NULL CHECK(status IN ('CREATED', 'WAITING', 'ACTIVE', 'COMPLETED', 'CANCELLED', 'ABORTED')),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS room_members (
+          room_id TEXT NOT NULL REFERENCES rooms(room_id) ON DELETE CASCADE,
+          uid TEXT NOT NULL,
+          display_name TEXT NOT NULL,
+          role TEXT NOT NULL CHECK(role IN ('HOST', 'MEMBER')),
+          status TEXT NOT NULL CHECK(status IN ('ACTIVE', 'EARLY_EXIT', 'LEFT')),
+          joined_at TEXT NOT NULL,
+          PRIMARY KEY(room_id, uid)
+        );
+        CREATE INDEX IF NOT EXISTS idx_room_members_owner_status
+          ON room_members(uid, status, room_id);
+      `);
+    },
+  },
 ];
 
 const latestSchemaVersion = migrations.at(-1)?.version ?? 0;
