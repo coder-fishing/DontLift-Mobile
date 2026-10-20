@@ -9,7 +9,7 @@ import { encodeRoomInvitation } from './room-invite-contract';
 import { mapRoomCreateError, RoomCreateError, type RoomCreateStage } from './room-create-error';
 export { RoomCreateError } from './room-create-error';
 
-type RoomJoinErrorCode = 'unauthenticated' | 'not-found' | 'failed-precondition' | 'unavailable' | 'already-exists' | 'rejected' | 'unknown';
+type RoomJoinErrorCode = 'unauthenticated' | 'invalid-argument' | 'not-found' | 'failed-precondition' | 'unavailable' | 'already-exists' | 'rejected' | 'unknown';
 
 export class RoomJoinError extends Error {
   constructor(public readonly code: RoomJoinErrorCode, public readonly firebaseCode?: string) {
@@ -68,6 +68,7 @@ export function roomJoinErrorMessage(error: unknown): string {
   if (!(error instanceof RoomJoinError)) return 'Không thể tham gia phòng lúc này. Hãy thử lại.';
   switch (error.code) {
     case 'unauthenticated': return 'Phiên đăng nhập không còn hiệu lực. Hãy đăng nhập lại rồi thử lại.';
+    case 'invalid-argument': return 'Mã phòng không hợp lệ. Hãy kiểm tra mã và thử lại.';
     case 'not-found': return 'Không tìm thấy phòng đang chờ với mã này. Hãy kiểm tra mã và thử lại.';
     case 'failed-precondition': return 'Phòng này không còn nhận người tham gia.';
     case 'unavailable': return 'Không có kết nối tới Firebase. Mã vẫn được giữ để bạn thử lại.';
@@ -267,7 +268,7 @@ export function createRoomRepository(dependencies: RoomCreateDependencies) {
       if (!actor) throw new RoomJoinError('unauthenticated');
       const uid = actor.uid;
       const { pin, requestId } = command;
-      if (!/^(?:\d{4}|\d{8})$/.test(pin) || !/^[0-9a-f-]{36}$/i.test(requestId)) throw new RoomJoinError('not-found');
+      if (!/^(?:\d{4}|\d{8})$/.test(pin) || !/^[0-9a-f-]{36}$/i.test(requestId)) throw new RoomJoinError('invalid-argument');
 
       try {
         const receiptRef = doc(dependencies.firestore, 'users', uid, 'commandReceipts', requestId);

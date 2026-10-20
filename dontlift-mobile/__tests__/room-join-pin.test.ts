@@ -1,5 +1,5 @@
 import { doc, getDocFromServer, runTransaction, Timestamp } from 'firebase/firestore';
-import { createRoomRepository, RoomJoinError } from '../src/features/rooms/room-repository';
+import { createRoomRepository } from '../src/features/rooms/room-repository';
 
 jest.mock('firebase/firestore', () => ({
   Timestamp: class {
@@ -59,7 +59,16 @@ describe('joinRoomByPin', () => {
 
   test('rejects malformed PINs before a Firestore transaction', async () => {
     const joiner = repository({ withExclusiveTransactionAsync: jest.fn() });
-    await expect(joiner.joinRoomByPin({ pin: '1234567', requestId })).rejects.toBeInstanceOf(RoomJoinError);
+    await expect(joiner.joinRoomByPin({ pin: '1234567', requestId }))
+      .rejects.toMatchObject({ code: 'invalid-argument' });
+    expect(runTransaction).not.toHaveBeenCalled();
+    expect(getDocFromServer).not.toHaveBeenCalled();
+  });
+
+  test('rejects malformed request IDs before a Firestore transaction', async () => {
+    const joiner = repository({ withExclusiveTransactionAsync: jest.fn() });
+    await expect(joiner.joinRoomByPin({ pin, requestId: 'not-a-uuid' }))
+      .rejects.toMatchObject({ code: 'invalid-argument' });
     expect(runTransaction).not.toHaveBeenCalled();
     expect(getDocFromServer).not.toHaveBeenCalled();
   });
