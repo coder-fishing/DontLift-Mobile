@@ -50,7 +50,7 @@ import { createSoloSyncWorker } from '../features/sync/sync-worker';
 import { createSyncEventsPort } from '../features/sync/sync-events-port';
 import { getConfiguredFirebaseRuntime } from '../features/auth/firebase-adapters';
 import { getLocalDatabase } from '../features/local/database';
-import { createRoomRepository, RoomCreateError, type CreatedRoom, type RoomCreateCommand, type JoinedRoom, RoomJoinError, roomJoinErrorMessage, RoomStartError, roomStartErrorMessage, type RoomStartCommand } from '../features/rooms/room-repository';
+import { createRoomRepository, persistRoomLobbyProjection, RoomCreateError, type CreatedRoom, type RoomCreateCommand, type JoinedRoom, RoomJoinError, roomJoinErrorMessage, RoomStartError, roomStartErrorMessage, type RoomStartCommand } from '../features/rooms/room-repository';
 import { listenToRoomLobby, type RoomLobbyState } from '../features/rooms/room-listener';
 import { roomCreateErrorMessage } from '../features/rooms/room-create-error';
 import { JoinRoomScreen } from '../screens/JoinRoomScreen';
@@ -163,7 +163,8 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       return undefined;
     }
     // Mỗi lần mở sảnh tạo đúng một cặp listener; cleanup ngăn snapshot cũ ghi đè room mới.
-    return listenToRoomLobby(roomRuntime.firestore, lobbyRoom.roomId, setRoomLobbyState);
+    return listenToRoomLobby(roomRuntime.firestore, lobbyRoom.roomId, setRoomLobbyState,
+      snapshot => persistRoomLobbyProjection(getLocalDatabase(), snapshot));
   }, [currentScreen, lobbyRoom?.roomId, roomRuntime.firestore]);
 
   const handleCreateRoom = async () => {

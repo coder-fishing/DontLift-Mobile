@@ -42,7 +42,7 @@ async function getServerTime(db, uid) {
   return clock.data().checkedAt.toMillis();
 }
 
-async function createRoom(db, { uid, requestId, roomId, pin, bucketStart, count }) {
+async function createRoom(db, { uid, requestId, roomId, pin, bucketStart, count, omitStartMarker = false }) {
   const userRef = doc(db, `users/${uid}`);
   const usageRef = doc(db, `users/${uid}/usage/current`);
   const receiptRef = doc(db, `users/${uid}/commandReceipts/${requestId}`);
@@ -62,11 +62,13 @@ async function createRoom(db, { uid, requestId, roomId, pin, bucketStart, count 
     const timestamp = serverTimestamp();
     const displayName = profile.data()?.displayName ?? 'Host User';
 
-    transaction.set(roomRef, {
+    const room = {
       hostId: uid, pin, status: 'WAITING', participantCount: 1,
       createdAt: timestamp, updatedAt: timestamp, hostHeartbeatAt: timestamp,
       startedAt: null, endedAt: null, lastJoinRequestId: null, lastStartRequestId: null,
-    });
+    };
+    if (omitStartMarker) delete room.lastStartRequestId;
+    transaction.set(roomRef, room);
     transaction.set(memberRef, {
       displayName, role: 'HOST', status: 'ACTIVE', penaltyScore: 0,
       liftCount: 0, violationDurationSeconds: 0, joinedAt: timestamp,
@@ -104,6 +106,27 @@ test('Rules authorize one atomic Host room transaction with an eight digit PIN',
     uid, requestId: '00000000-0000-4000-8000-000000000001', roomId: '10000000-0000-4000-8000-000000000001', pin: '00000007', bucketStart,
   }));
   assert.equal((await getDoc(doc(db, `users/${uid}/usage/current`))).data().count, 1);
+});
+
+test('Rules keep accepting room creation from the previous app build without the start marker', async t => {
+  const env = await createRulesEnvironment();
+  t.after(() => env.cleanup());
+  const uid = 'legacy-room-host';
+  await seedProfile(env, uid);
+  const db = env.authenticatedContext(uid).firestore();
+  const serverTime = await getServerTime(db, uid);
+  const bucketStart = monthStart(serverTime);
+
+  const result = await assertSucceeds(createRoom(db, {
+    uid, requestId: '00000000-0000-4000-8000-000000000006', roomId: '10000000-0000-4000-8000-000000000006',
+    pin: '00000008', bucketStart, omitStartMarker: true,
+  }));
+
+  assert.equal(result.status, 'WAITING');
+  await env.withSecurityRulesDisabled(async context => {
+    const room = await getDoc(doc(context.firestore(), 'rooms/10000000-0000-4000-8000-000000000006'));
+    assert.equal(Object.hasOwn(room.data(), 'lastStartRequestId'), false);
+  });
 });
 
 test('Rules reject a quota bypass and leave all related documents absent', async t => {

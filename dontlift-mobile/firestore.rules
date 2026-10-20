@@ -225,7 +225,7 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.resource.data.keys().hasAll([
           'hostId', 'pin', 'status', 'participantCount', 'createdAt', 'updatedAt',
-          'hostHeartbeatAt', 'startedAt', 'endedAt', 'lastJoinRequestId', 'lastStartRequestId'
+          'hostHeartbeatAt', 'startedAt', 'endedAt', 'lastJoinRequestId'
         ])
         && request.resource.data.keys().hasOnly([
           'hostId', 'pin', 'status', 'participantCount', 'createdAt', 'updatedAt',
@@ -243,7 +243,8 @@ service cloud.firestore {
         && request.resource.data.startedAt == null
         && request.resource.data.endedAt == null
         && request.resource.data.lastJoinRequestId == null
-        && request.resource.data.lastStartRequestId == null
+        // Marker mới là tùy chọn để các bản app cũ vẫn tạo được phòng trong thời gian rollout.
+        && request.resource.data.get('lastStartRequestId', null) == null
         && hasRoomCreateLinks(
           roomId,
           request.auth.uid,

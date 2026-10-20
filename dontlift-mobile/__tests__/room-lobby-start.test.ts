@@ -41,7 +41,7 @@ describe('startRoom Spark transaction', () => {
   it('changes WAITING to ACTIVE with the server timestamp and request ID', async () => {
     const { repository, update } = makeRepository('WAITING');
     const result = await repository.startRoom({ version: 1, roomId, requestId });
-    expect(result).toEqual({ roomId, requestId, status: 'ACTIVE', startedAtUtcMs: null });
+    expect(result).toEqual({ version: 1, roomId, requestId, status: 'ACTIVE', startedAtUtcMs: null });
     expect(update).toHaveBeenCalledWith(expect.objectContaining({ path: `rooms/${roomId}` }), {
       status: 'ACTIVE', startedAt: 'SERVER_TIME', updatedAt: 'SERVER_TIME', lastStartRequestId: requestId,
     });
@@ -49,7 +49,9 @@ describe('startRoom Spark transaction', () => {
 
   it('replays the same request without writing a second transition', async () => {
     const { repository, update } = makeRepository('ACTIVE', requestId);
-    await expect(repository.startRoom({ version: 1, roomId, requestId })).resolves.toMatchObject({ status: 'ACTIVE' });
+    await expect(repository.startRoom({ version: 1, roomId, requestId })).resolves.toMatchObject({
+      version: 1, roomId, requestId, status: 'ACTIVE',
+    });
     expect(update).not.toHaveBeenCalled();
   });
 
@@ -76,7 +78,7 @@ describe('startRoom Spark transaction', () => {
     firestoreMocks.getDocFromServer.mockRejectedValueOnce(new Error('network lost after commit'));
 
     await expect(repository.startRoom({ version: 1, roomId, requestId })).resolves.toEqual({
-      roomId, requestId, status: 'ACTIVE', startedAtUtcMs: null,
+      version: 1, roomId, requestId, status: 'ACTIVE', startedAtUtcMs: null,
     });
     expect(update).toHaveBeenCalledTimes(1);
   });

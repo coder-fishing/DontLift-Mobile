@@ -6,6 +6,7 @@ import {
 import type * as SQLite from 'expo-sqlite';
 import { getRandomBytes } from 'expo-crypto';
 import { encodeRoomInvitation } from './room-invite-contract';
+export { persistRoomLobbyProjection } from './room-lobby-projection';
 import { mapRoomCreateError, RoomCreateError, type RoomCreateStage } from './room-create-error';
 export { RoomCreateError } from './room-create-error';
 
@@ -21,7 +22,7 @@ export class RoomStartError extends Error {
 }
 
 export type RoomStartCommand = { version: 1; roomId: string; requestId: string };
-export type StartedRoom = { roomId: string; requestId: string; status: 'ACTIVE'; startedAtUtcMs: number | null };
+export type StartedRoom = { version: 1; roomId: string; requestId: string; status: 'ACTIVE'; startedAtUtcMs: number | null };
 
 export class RoomJoinError extends Error {
   constructor(public readonly code: RoomJoinErrorCode, public readonly firebaseCode?: string) {
@@ -326,14 +327,14 @@ export function createRoomRepository(dependencies: RoomCreateDependencies) {
             throw new RoomStartError('rejected');
           }
           if (room.status === 'ACTIVE' && room.lastStartRequestId === command.requestId) {
-            return { roomId: command.roomId, requestId: command.requestId, status: 'ACTIVE' as const };
+            return { version: 1 as const, roomId: command.roomId, requestId: command.requestId, status: 'ACTIVE' as const };
           }
           if (room.status !== 'WAITING') throw new RoomStartError('failed-precondition');
           transaction.update(roomRef, {
             status: 'ACTIVE', startedAt: serverTimestamp(), updatedAt: serverTimestamp(),
             lastStartRequestId: command.requestId,
           });
-          return { roomId: command.roomId, requestId: command.requestId, status: 'ACTIVE' as const };
+          return { version: 1 as const, roomId: command.roomId, requestId: command.requestId, status: 'ACTIVE' as const };
         });
         // Transaction đã commit; lỗi đọc lại chỉ làm timestamp tạm thời chưa xác định.
         let startedAtUtcMs: number | null = null;
