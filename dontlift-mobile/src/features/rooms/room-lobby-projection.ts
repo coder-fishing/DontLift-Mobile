@@ -20,7 +20,7 @@ export async function restoreCachedActiveRoom(
   const row = await database.getFirstAsync<RestorableRoomRow>(
     `SELECT r.room_id, r.host_uid, r.pin, host.display_name AS host_display_name, r.created_at
      FROM rooms r
-     JOIN room_members mine ON mine.room_id = r.room_id AND mine.uid = ? AND mine.status = 'ACTIVE'
+     JOIN room_members mine ON mine.room_id = r.room_id AND mine.uid = ? AND mine.status IN ('ACTIVE', 'EARLY_EXIT')
      JOIN room_members host ON host.room_id = r.room_id AND host.role = 'HOST'
      WHERE (r.status = 'ACTIVE'
         OR EXISTS (
@@ -87,6 +87,27 @@ export async function persistTerminalRoomProjection(
       `UPDATE sessions SET status = ?, completed_at = ?
        WHERE id = ? AND user_id = ? AND mode = 'GROUP' AND status = 'ACTIVE'`,
       input.status === 'COMPLETED' ? 'COMPLETED' : 'CANCELLED', endedAt, input.roomId, input.userId,
+    );
+  });
+}
+
+export async function persistEarlyExitProjection(
+  databasePromise: Promise<SQLite.SQLiteDatabase>,
+  input: { roomId: string; userId: string; cutoffUtcMs: number; startedAtUtcMs: number },
+): Promise<void> {
+  const database = await databasePromise;
+  const cutoff = new Date(input.cutoffUtcMs).toISOString();
+  const durationSeconds = Math.max(0, Math.floor((input.cutoffUtcMs - input.startedAtUtcMs) / 1_000));
+  await database.withExclusiveTransactionAsync(async transaction => {
+    // Dừng lần khôi phục sau khi Host duyệt, nhưng vẫn giữ member trong roster/history.
+    await transaction.runAsync(
+      `UPDATE sessions SET status = 'COMPLETED', duration_seconds = ?, completed_at = ?
+       WHERE id = ? AND user_id = ? AND mode = 'GROUP' AND status = 'ACTIVE'`,
+      durationSeconds, cutoff, input.roomId, input.userId,
+    );
+    await transaction.runAsync(
+      `UPDATE room_members SET status = 'EARLY_EXIT' WHERE room_id = ? AND uid = ?`,
+      input.roomId, input.userId,
     );
   });
 }

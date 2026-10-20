@@ -50,9 +50,11 @@ import { createSoloSyncWorker } from '../features/sync/sync-worker';
 import { createSyncEventsPort } from '../features/sync/sync-events-port';
 import { getConfiguredFirebaseRuntime } from '../features/auth/firebase-adapters';
 import { getLocalDatabase } from '../features/local/database';
-import { createRoomRepository, persistRoomLobbyProjection, persistTerminalRoomProjection, restoreCachedActiveRoom, RoomCreateError, type CreatedRoom, type RoomCreateCommand, type JoinedRoom, RoomJoinError, roomJoinErrorMessage, RoomStartError, roomStartErrorMessage, type RoomStartCommand } from '../features/rooms/room-repository';
+import { createRoomRepository, persistEarlyExitProjection, persistRoomLobbyProjection, persistTerminalRoomProjection, restoreCachedActiveRoom, RoomCreateError, type CreatedRoom, type RoomCreateCommand, type JoinedRoom, RoomJoinError, roomJoinErrorMessage, RoomStartError, roomStartErrorMessage, type RoomStartCommand } from '../features/rooms/room-repository';
 import { listenToRoomLobby, type RoomLobbyState } from '../features/rooms/room-listener';
-import { createGroupViolationRepository, type GroupViolationError } from '../features/rooms/group-violation-repository';
+import { createGroupViolationRepository, GroupViolationError } from '../features/rooms/group-violation-repository';
+import { createEarlyExitRepository, EarlyExitError, type EarlyExitDecision, type EarlyExitRequest } from '../features/rooms/early-exit-repository';
+import { listenToOpenEarlyExitRequests } from '../features/rooms/early-exit-listener';
 import { roomCreateErrorMessage } from '../features/rooms/room-create-error';
 import { JoinRoomScreen } from '../screens/JoinRoomScreen';
 import { createBackgroundRecoveryRepository } from '../features/solo/background-recovery';
@@ -75,6 +77,20 @@ const INITIAL_DETECTION_STATE: ForegroundDetectionViewState = {
   violationsCount: 0,
   violationDurationSeconds: 0,
 };
+
+function earlyExitErrorMessage(error: unknown): string {
+  if (!(error instanceof EarlyExitError)) return 'Could not complete the early-exit action. Try again.';
+  switch (error.code) {
+    case 'unauthenticated': return 'Your sign-in expired. Sign in again and retry.';
+    case 'invalid-argument': return 'The early-exit request is invalid.';
+    case 'not-found': return 'This room or request no longer exists.';
+    case 'failed-precondition': return 'The room or request is no longer in a state that allows this action.';
+    case 'permission-denied': return 'Firebase rejected this action. Confirm the room role and deployed Firestore Rules.';
+    case 'unavailable': return 'Connect to Firebase and retry. No offline command was queued.';
+    case 'already-exists': return 'This request ID was already used for another request.';
+    default: return 'Could not complete the early-exit action. Try again.';
+  }
+}
 
 export default function HomeScreen() {
   const session = useAuthSession();
@@ -142,6 +158,11 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     firestore: roomRuntime.firestore,
     auth: roomRuntime.auth,
   }), [roomRuntime]);
+  const earlyExitRepository = useMemo(() => createEarlyExitRepository({
+    firestore: roomRuntime.firestore,
+    auth: roomRuntime.auth,
+    createId: Crypto.randomUUID,
+  }), [roomRuntime]);
   // Navigation & Drawer
   const [currentScreen, setCurrentScreen] = useState<ScreenId>('02-solo-select');
   const [drawerVisible, setDrawerVisible] = useState<boolean>(false);
@@ -162,6 +183,12 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const [isStartingRoom, setIsStartingRoom] = useState(false);
   const [roomStartError, setRoomStartError] = useState<string | undefined>();
   const pendingRoomStartCommand = useRef<RoomStartCommand | null>(null);
+  const [openEarlyExitRequests, setOpenEarlyExitRequests] = useState<EarlyExitRequest[]>([]);
+  const [isRequestingEarlyExit, setIsRequestingEarlyExit] = useState(false);
+  const [decidingEarlyExitRequestId, setDecidingEarlyExitRequestId] = useState<string | null>(null);
+  const [earlyExitError, setEarlyExitError] = useState<string>();
+  const pendingEarlyExitRequest = useRef<{ roomId: string; requestId: string } | null>(null);
+  const earlyExitCleanupInFlight = useRef(new Set<string>());
   const lobbyRoom = joinedRoom ?? createdRoom;
 
   useEffect(() => {
@@ -182,11 +209,22 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   useEffect(() => {
     if (!lobbyRoom) {
       setRoomLobbyState(null);
+      setOpenEarlyExitRequests([]);
       return undefined;
     }
     // Giữ listener sống khi đổi tab để Group Active vẫn nhận trạng thái phòng và tiếp tục capture.
     return listenToRoomLobby(roomRuntime.firestore, lobbyRoom.roomId, setRoomLobbyState,
       snapshot => persistRoomLobbyProjection(getLocalDatabase(), snapshot));
+  }, [lobbyRoom?.roomId, roomRuntime.firestore]);
+
+  useEffect(() => {
+    if (!lobbyRoom) return undefined;
+    return listenToOpenEarlyExitRequests(
+      roomRuntime.firestore,
+      lobbyRoom.roomId,
+      requests => { setOpenEarlyExitRequests(requests); setEarlyExitError(undefined); },
+      () => setEarlyExitError('Could not load early-exit requests. Reopen the room while connected to retry.'),
+    );
   }, [lobbyRoom?.roomId, roomRuntime.firestore]);
 
   useEffect(() => {
@@ -218,15 +256,46 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
         }
       })();
     }
-    const ownMembershipIsActive = snapshot?.members.some(member => member.uid === profile.uid && member.status === 'ACTIVE') === true;
+    const ownMembershipCanView = snapshot?.members.some(member => member.uid === profile.uid
+      && ['ACTIVE', 'EARLY_EXIT'].includes(member.status)) === true;
     const isRestoredRoom = snapshot?.roomId === restoredGroupRoomId.current && currentScreen === '02-solo-select';
-    if (roomLobbyState && snapshot?.status === 'ACTIVE' && snapshot.startedAtUtcMs !== null && ownMembershipIsActive
+    if (roomLobbyState && snapshot?.status === 'ACTIVE' && snapshot.startedAtUtcMs !== null && ownMembershipCanView
       && ['live', 'cached'].includes(roomLobbyState.kind)
       && (currentScreen === '05-group-lobby' || isRestoredRoom)) {
       setCurrentScreen('06-group-active');
       restoredGroupRoomId.current = null;
     }
   }, [roomLobbyState, currentScreen, profile.uid, groupViolationRepository]);
+
+  useEffect(() => {
+    const snapshot = roomLobbyState?.snapshot;
+    const ownMember = snapshot?.members.find(member => member.uid === profile.uid);
+    const cutoffUtcMs = ownMember?.earlyExitAtUtcMs;
+    if (!snapshot || snapshot.status !== 'ACTIVE' || ownMember?.status !== 'EARLY_EXIT'
+      || cutoffUtcMs == null || snapshot.startedAtUtcMs == null
+      || earlyExitCleanupInFlight.current.has(snapshot.roomId)) return;
+
+    const roomId = snapshot.roomId;
+    earlyExitCleanupInFlight.current.add(roomId);
+    void (async () => {
+      try {
+        // Chốt violation đang mở đúng tại cutoff server rồi đóng projection session cục bộ.
+        await groupViolationRepository.finalizeOpenAtRoomEnd({ roomId, userId: profile.uid, endedAtUtcMs: cutoffUtcMs });
+        await persistEarlyExitProjection(getLocalDatabase(), {
+          roomId, userId: profile.uid, cutoffUtcMs, startedAtUtcMs: snapshot.startedAtUtcMs!,
+        });
+        try {
+          await groupViolationRepository.syncPending(roomId);
+        } catch (error) {
+          if (!(error instanceof GroupViolationError) || error.code !== 'failed-precondition') throw error;
+          // Room đã terminal thì SL-020 giữ quyền reconciliation cho event vẫn còn pending.
+        }
+      } catch {
+        earlyExitCleanupInFlight.current.delete(roomId);
+        setGroupSyncMessage('The room approved your exit, but local session cleanup needs a retry. Keep the app connected.');
+      }
+    })();
+  }, [roomLobbyState, profile.uid, groupViolationRepository]);
 
   const handleCreateRoom = async () => {
     if (isCreatingRoom) return;
@@ -311,6 +380,40 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       setRoomJoinError(roomJoinErrorMessage(error));
     } finally {
       setIsJoiningRoom(false);
+    }
+  };
+
+  const handleRequestEarlyExit = async () => {
+    if (!lobbyRoom || isRequestingEarlyExit) return;
+    setIsRequestingEarlyExit(true);
+    setEarlyExitError(undefined);
+    const pending = pendingEarlyExitRequest.current?.roomId === lobbyRoom.roomId
+      ? pendingEarlyExitRequest.current
+      : { roomId: lobbyRoom.roomId, requestId: Crypto.randomUUID() };
+    pendingEarlyExitRequest.current = pending;
+    try {
+      await earlyExitRepository.requestEarlyExit({ roomId: lobbyRoom.roomId, requestId: pending.requestId });
+      pendingEarlyExitRequest.current = null;
+    } catch (error) {
+      if (!(error instanceof EarlyExitError) || error.code !== 'unavailable') pendingEarlyExitRequest.current = null;
+      setEarlyExitError(earlyExitErrorMessage(error));
+    } finally {
+      setIsRequestingEarlyExit(false);
+    }
+  };
+
+  const handleDecideEarlyExit = async (request: EarlyExitRequest, decision: EarlyExitDecision) => {
+    if (!lobbyRoom || decidingEarlyExitRequestId) return;
+    setDecidingEarlyExitRequestId(request.requestId);
+    setEarlyExitError(undefined);
+    try {
+      await earlyExitRepository.decideEarlyExit({
+        roomId: lobbyRoom.roomId, memberUid: request.memberUid, requestId: request.requestId, decision,
+      });
+    } catch (error) {
+      setEarlyExitError(earlyExitErrorMessage(error));
+    } finally {
+      setDecidingEarlyExitRequestId(null);
     }
   };
 
@@ -419,6 +522,8 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const candidateGroupRoom = roomLobbyState?.snapshot;
   const groupRoomSnapshot = candidateGroupRoom?.status === 'ACTIVE'
     && candidateGroupRoom.startedAtUtcMs !== null ? candidateGroupRoom : null;
+  const ownGroupRoomMember = groupRoomSnapshot?.members.find(member => member.uid === profile.uid);
+  const groupCaptureRoomSnapshot = ownGroupRoomMember?.status === 'ACTIVE' ? groupRoomSnapshot : null;
 
   useEffect(() => {
     if (!groupRoomSnapshot) {
@@ -432,11 +537,11 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   }, [groupRoomSnapshot?.roomId, groupRoomSnapshot?.startedAtUtcMs]);
 
   useEffect(() => {
-    if (!groupRoomSnapshot) {
+    if (!groupCaptureRoomSnapshot) {
       setGroupDetection(INITIAL_DETECTION_STATE);
       return undefined;
     }
-    const roomId = groupRoomSnapshot.roomId;
+    const roomId = groupCaptureRoomSnapshot.roomId;
     const controller = createForegroundDetectionController({ id: roomId, userId: profile.uid }, groupViolationRepository);
     let disposed = false;
     let initialized = false;
@@ -535,7 +640,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
              started_at = excluded.started_at,
              completed_at = NULL,
              synced_at = NULL`,
-          roomId, profile.uid, new Date(groupRoomSnapshot.startedAtUtcMs!).toISOString(),
+          roomId, profile.uid, new Date(groupCaptureRoomSnapshot.startedAtUtcMs!).toISOString(),
         );
         const state = await controller.initialize();
         if (disposed) return;
@@ -624,7 +729,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       networkSubscription.remove();
       lifecycleController?.dispose();
     };
-  }, [groupRoomSnapshot?.roomId, profile.uid, groupViolationRepository]);
+  }, [groupCaptureRoomSnapshot?.roomId, profile.uid, groupViolationRepository]);
 
   // Bill State
   const [totalBillAmount, setTotalBillAmount] = useState<number>(550000);
@@ -1201,7 +1306,11 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
         {currentScreen === '06-group-active' && (
           groupRoomSnapshot
             ? <GroupActiveScreen snapshot={groupRoomSnapshot} elapsedSeconds={groupTimerSeconds}
-                detection={groupDetection} isOnline={groupIsOnline} syncMessage={groupSyncMessage} />
+                detection={groupDetection} isOnline={groupIsOnline} syncMessage={groupSyncMessage}
+                actorUid={profile.uid} openEarlyExitRequests={openEarlyExitRequests}
+                isRequestingEarlyExit={isRequestingEarlyExit} decidingEarlyExitRequestId={decidingEarlyExitRequestId}
+                earlyExitError={earlyExitError} onRequestEarlyExit={() => { void handleRequestEarlyExit(); }}
+                onDecideEarlyExit={(request, decision) => { void handleDecideEarlyExit(request, decision); }} />
             : <Text accessibilityRole="alert">Waiting for the active room snapshot…</Text>
         )}
 

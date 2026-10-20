@@ -11,6 +11,7 @@ export type RoomLobbyMember = {
   liftCount: number;
   violationDurationSeconds: number;
   joinedAt: string | null;
+  earlyExitAtUtcMs?: number | null;
 };
 
 export type RoomLobbySnapshot = {
@@ -116,6 +117,7 @@ export function listenToRoomLobby(
           liftCount: Number(data.liftCount ?? 0),
           violationDurationSeconds: Number(data.violationDurationSeconds ?? 0),
           joinedAt: data.joinedAt instanceof Timestamp ? data.joinedAt.toDate().toISOString() : null,
+          earlyExitAtUtcMs: data.earlyExitAt instanceof Timestamp ? data.earlyExitAt.toMillis() : null,
         };
       });
       membersReady = true;

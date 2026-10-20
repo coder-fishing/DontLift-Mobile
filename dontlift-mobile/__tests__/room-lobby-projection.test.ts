@@ -1,4 +1,4 @@
-import { persistRoomLobbyProjection, restoreCachedActiveRoom } from '../src/features/rooms/room-lobby-projection';
+import { persistEarlyExitProjection, persistRoomLobbyProjection, restoreCachedActiveRoom } from '../src/features/rooms/room-lobby-projection';
 import type { RoomLobbySnapshot } from '../src/features/rooms/room-listener';
 
 describe('room lobby SQLite projection', () => {
@@ -50,6 +50,24 @@ describe('room lobby SQLite projection', () => {
     expect(withExclusiveTransactionAsync).not.toHaveBeenCalled();
   });
 
+  it('closes the local group session at the approved cutoff and keeps the member in the room cache', async () => {
+    const statements: Array<{ sql: string; params: unknown[] }> = [];
+    const database = {
+      withExclusiveTransactionAsync: async (operation: (transaction: { runAsync: (sql: string, ...params: unknown[]) => Promise<void> }) => Promise<void>) => {
+        await operation({ runAsync: async (sql, ...params) => { statements.push({ sql, params }); } });
+      },
+    };
+    await persistEarlyExitProjection(Promise.resolve(database as never), {
+      roomId: 'room-1', userId: 'member', cutoffUtcMs: 12_000, startedAtUtcMs: 2_000,
+    });
+    expect(statements).toEqual([
+      expect.objectContaining({ params: [10, new Date(12_000).toISOString(), 'room-1', 'member'] }),
+      expect.objectContaining({ params: ['room-1', 'member'] }),
+    ]);
+    expect(statements[0].sql).toContain("status = 'COMPLETED'");
+    expect(statements[1].sql).toContain("status = 'EARLY_EXIT'");
+  });
+
   it('restores the latest locally cached active membership after app relaunch', async () => {
     const getFirstAsync = jest.fn().mockResolvedValue({
       room_id: 'room-1', host_uid: 'host', pin: '12345678',
@@ -61,6 +79,6 @@ describe('room lobby SQLite projection', () => {
         roomId: 'room-1', pin: '12345678', invitation: 'dontliftmobile://room/12345678',
         hostUid: 'host', hostDisplayName: 'Host', createdAt: '2026-10-20T00:00:00.000Z', localCacheSaved: true,
       });
-    expect(getFirstAsync).toHaveBeenCalledWith(expect.stringContaining("mine.uid = ? AND mine.status = 'ACTIVE'"), 'member');
+    expect(getFirstAsync).toHaveBeenCalledWith(expect.stringContaining("mine.uid = ? AND mine.status IN ('ACTIVE', 'EARLY_EXIT')"), 'member');
   });
 });
