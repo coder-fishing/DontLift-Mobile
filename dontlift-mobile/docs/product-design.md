@@ -91,10 +91,10 @@ DontLift is designed to solve phone distraction in focus and social contexts thr
 
 ### 4.6 Early Termination Vote (Group Consensus)
 - Any active Member or Host taps "Initiate Termination Vote". Modal confirmation pops up: `"Vote to end session early? Bill settlement will be skipped."`
-- Cloud Function creates `terminationVote` document with a 30-second countdown.
-- All active participants receive interactive voting modal ("Yes" / "No").
-- **100% Consensus within 30s:** Session transitions `ACTIVE → CANCELLED`. Session ends immediately without bill settlement.
-- **Timeout / Non-Consensus:** Vote document is purged by Cloud Function after 30s; modal dismisses; session continues uninterrupted.
+- Spark Firestore transaction creates the current vote with server `openedAt`; Rules enforce the 30-second window (ADR-016).
+- All active participants see an inline vote card in Group Active with an authoritative countdown and accessible "Yes" / "No" actions; the initiator confirms before opening.
+- **Unanimous Yes within 30s:** Every currently ACTIVE room member, including Host, agrees; approved early-exit members are excluded. Session transitions `ACTIVE → CANCELLED` without bill settlement.
+- **Timeout / Non-Consensus:** The vote becomes inert after 30s; modal dismisses; session remains ACTIVE. A later vote may replace the current vote.
 
 ### 4.7 Host End Session
 - Host taps "End Session". Modal confirmation pops up: `"End session? Final scores will be frozen."`

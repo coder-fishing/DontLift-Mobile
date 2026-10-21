@@ -53,7 +53,7 @@ P0 là nền tảng/critical journey trước; P1 là cần hoàn tất MVP; P2 
 | SL-016 | [Lobby realtime và Host bắt đầu](./superpowers/plans/2026-10-13-sl-016-room-lobby-start.md) | P0 | SL-014 | Resolved: startRoom Spark transaction via ADR-013 (2026-10-20); other D3 decisions remain in owning slices |
 | SL-017 | [Group active, capture và leaderboard](./superpowers/plans/2026-10-13-sl-017-group-active.md) | P0 | SL-016, SL-007, SL-009, SL-010, SL-011 | Resolved for group violations by ADR-014 Spark transaction (2026-10-20); other D3 decisions remain in owning slices |
 | SL-018 | [Early exit có Host quyết định](./superpowers/plans/2026-10-13-sl-018-early-exit.md) | P1 | SL-017 | Resolved for SL-018 by ADR-015 Spark transaction and cutoff policy (2026-10-20) |
-| SL-019 | [Vote kết thúc sớm](./superpowers/plans/2026-10-13-sl-019-termination-vote.md) | P1 | SL-017, SL-018 | D3 |
+| SL-019 | [Vote kết thúc sớm](./superpowers/plans/2026-10-13-sl-019-termination-vote.md) | P1 | SL-017, SL-018 | Resolved: Spark transactions and Rules per ADR-016 (2026-10-21) |
 | SL-020 | [Host complete và ALL_SYNCED reconciliation](./superpowers/plans/2026-10-13-sl-020-room-completion.md) | P0 | SL-017, SL-018 | D3 |
 | SL-021 | [Host override khi còn Member chưa sync](./superpowers/plans/2026-10-13-sl-021-host-finalization-override.md) | P1 | SL-020 | Không xác nhận riêng |
 | SL-022 | [Stale room chuyển ABORTED](./superpowers/plans/2026-10-13-sl-022-stale-room-abort.md) | P1 | SL-017 | D3 |

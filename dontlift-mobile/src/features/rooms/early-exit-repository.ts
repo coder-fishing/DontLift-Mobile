@@ -134,10 +134,15 @@ export function createEarlyExitRepository(dependencies: Dependencies) {
       const hostRef = doc(dependencies.firestore, 'rooms', input.roomId, 'members', actor.uid);
       const memberRef = doc(dependencies.firestore, 'rooms', input.roomId, 'members', input.memberUid);
       const requestRef = doc(dependencies.firestore, 'rooms', input.roomId, 'earlyExitRequests', input.memberUid);
+      const voteRef = doc(dependencies.firestore, 'rooms', input.roomId, 'terminationVotes', 'current');
+      const ballotRef = doc(dependencies.firestore, 'rooms', input.roomId, 'terminationVotes', 'current', 'ballots', input.memberUid);
       try {
-        const transactionResult = await runTransaction(dependencies.firestore, async transaction => {
-          const [room, host, member, request] = await Promise.all([
+        // Thử cập nhật vote trước; Rules dùng request.time để chấp nhận khi còn hạn.
+        // Nếu Rules từ chối vì vote đã hết hạn, chạy lại cùng command mà không đụng vote.
+        const decide = (includeOpenVote: boolean) => runTransaction(dependencies.firestore, async transaction => {
+          const [room, host, member, request, vote, ballot] = await Promise.all([
             transaction.get(roomRef), transaction.get(hostRef), transaction.get(memberRef), transaction.get(requestRef),
+            transaction.get(voteRef), transaction.get(ballotRef),
           ]);
           if (!room.exists() || !host.exists() || !request.exists()) throw new EarlyExitError('not-found');
           if (room.data().hostId !== actor.uid || host.data().role !== 'HOST') {
@@ -167,6 +172,38 @@ export function createEarlyExitRepository(dependencies: Dependencies) {
           });
           if (input.decision === 'APPROVE') {
             transaction.update(memberRef, { status: 'EARLY_EXIT', earlyExitAt: serverTimestamp() });
+            const roomData = room.data();
+            if (Number.isInteger(roomData.activeMemberCount) && roomData.activeMemberCount < 2) {
+              throw new EarlyExitError('failed-precondition');
+            }
+            const openVote = includeOpenVote && vote.exists() && vote.data().status === 'OPEN'
+              && vote.data().openedAt instanceof Timestamp;
+            if (!Number.isInteger(roomData.activeMemberCount) && openVote) {
+              throw new EarlyExitError('failed-precondition');
+            }
+            let cancelRoom = false;
+            if (openVote && Number.isInteger(roomData.activeMemberCount)) {
+              // Cùng giao dịch loại voter đã rời khỏi mẫu số, tránh vote count lệch giữa các thiết bị.
+              const voteData = vote.data();
+              const votedYes = ballot.exists() && ballot.data().voteId === voteData.voteId && ballot.data().choice === 'YES';
+              const nextVoteEligibleCount = Number(voteData.eligibleVoterCount) - 1;
+              const nextVoteYesCount = Number(voteData.yesVoteCount) - (votedYes ? 1 : 0);
+              cancelRoom = nextVoteEligibleCount > 0 && nextVoteYesCount === nextVoteEligibleCount;
+              transaction.update(voteRef, {
+                eligibleVoterCount: nextVoteEligibleCount,
+                yesVoteCount: nextVoteYesCount,
+                ...(cancelRoom ? { status: 'CANCELLED', closedAt: serverTimestamp() } : {}),
+              });
+            }
+            if (Number.isInteger(roomData.activeMemberCount)) {
+              transaction.update(roomRef, {
+                activeMemberCount: roomData.activeMemberCount - 1,
+                updatedAt: serverTimestamp(),
+                lastEarlyExitMemberUid: input.memberUid,
+                lastEarlyExitRequestId: input.requestId,
+                ...(cancelRoom ? { status: 'CANCELLED', endedAt: serverTimestamp() } : {}),
+              });
+            }
           }
           return {
             ...toResult(input.roomId, input.memberUid, saved),
@@ -174,6 +211,15 @@ export function createEarlyExitRepository(dependencies: Dependencies) {
             decision: input.decision,
           } satisfies Result;
         });
+        let transactionResult: Result;
+        try {
+          transactionResult = await decide(true);
+        } catch (firstError) {
+          const firstCode = typeof firstError === 'object' && firstError !== null && 'code' in firstError
+            ? String(firstError.code).replace(/^firestore\//, '') : '';
+          if (input.decision !== 'APPROVE' || firstCode !== 'permission-denied') throw firstError;
+          transactionResult = await decide(false);
+        }
         return (await readCommittedResult(dependencies.firestore, input.roomId, input.memberUid, input.requestId)) ?? transactionResult;
       } catch (error) {
         throw mapError(error);

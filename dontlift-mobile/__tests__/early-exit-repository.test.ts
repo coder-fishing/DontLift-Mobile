@@ -50,7 +50,7 @@ function installTransaction(seed: Record<string, RecordData>) {
   return { records, writes };
 }
 
-function roomData() { return { status: 'ACTIVE', hostId: hostUid }; }
+function roomData() { return { status: 'ACTIVE', hostId: hostUid, activeMemberCount: 2 }; }
 function memberData(role: 'HOST' | 'MEMBER', status = 'ACTIVE') {
   return { role, status, earlyExitAt: null, penaltyScore: 0, liftCount: 0, violationDurationSeconds: 0 };
 }
@@ -107,8 +107,35 @@ describe('early-exit Spark repository', () => {
     expect(writes.map(write => write.path)).toEqual([
       `rooms/${roomId}/earlyExitRequests/${memberUid}`,
       `rooms/${roomId}/members/${memberUid}`,
+      `rooms/${roomId}`,
     ]);
     expect(records.get(`rooms/${roomId}/members/${memberUid}`)?.status).toBe('EARLY_EXIT');
+  });
+
+  it('removes an exited NO voter and cancels when the remaining ACTIVE roster is unanimous', async () => {
+    const votePath = `rooms/${roomId}/terminationVotes/current`;
+    const { records, writes } = installTransaction({
+      [`rooms/${roomId}`]: roomData(),
+      [`rooms/${roomId}/members/${hostUid}`]: memberData('HOST'),
+      [`rooms/${roomId}/members/${memberUid}`]: memberData('MEMBER'),
+      [`rooms/${roomId}/earlyExitRequests/${memberUid}`]: {
+        requestId: firstRequestId, memberUid, status: 'OPEN', decision: null,
+        requestedAt: new Timestamp(40, 0), decidedBy: null, decidedAt: null, cutoffAt: null,
+      },
+      [votePath]: {
+        version: 1, voteId: firstRequestId, status: 'OPEN',
+        openedAt: new Timestamp(Math.floor(Date.now() / 1000) - 5, 0), eligibleVoterCount: 2, yesVoteCount: 1,
+      },
+      [`${votePath}/ballots/${memberUid}`]: { voteId: firstRequestId, choice: 'NO' },
+    });
+    const repository = createEarlyExitRepository({ firestore: {} as never, auth: { currentUser: { uid: hostUid } } as never });
+
+    const result = await repository.decideEarlyExit({ roomId, memberUid, requestId: firstRequestId, decision: 'APPROVE' });
+
+    expect(result.status).toBe('APPROVED');
+    expect(records.get(votePath)).toMatchObject({ eligibleVoterCount: 1, yesVoteCount: 1, status: 'CANCELLED' });
+    expect(records.get(`rooms/${roomId}`)).toMatchObject({ activeMemberCount: 1, status: 'CANCELLED' });
+    expect(writes.map(write => write.path)).toContain(votePath);
   });
 
   it('replays the same committed decision after the room and Host are no longer active', async () => {

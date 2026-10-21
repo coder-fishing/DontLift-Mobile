@@ -6,6 +6,8 @@
 
 > Room-start update 2026-10-20: [ADR-013](decisions/ADR-013-spark-room-start.md) adds a narrowly scoped Rules-authorized `startRoom` Firestore transaction for Firebase Spark. It does not add a callable or alter other lifecycle commands.
 
+> Termination-vote update 2026-10-21: [ADR-016](decisions/ADR-016-spark-termination-vote.md) adds Rules-authorized vote transactions for Firebase Spark without Functions or billing.
+
 > Early-exit update 2026-10-20: [ADR-015](decisions/ADR-015-spark-early-exit.md) adds narrowly scoped Rules-authorized transactions for early-exit requests and decisions, plus the per-Member cutoff used by SL-017 violation sync. No Cloud Functions or billing are added.
 
 > **Owner:** Software architecture package  
@@ -15,7 +17,7 @@
 
 ## 1. Common envelope
 
-Every callable requires Firebase Authentication. Functions derive `actorUid` from the verified ID token and never trust a UID supplied by the client. `createRoom` (§2), `startRoom` (§3), and `joinRoomByPin` (§4) are Rules-authorized transaction exceptions defined by their corresponding ADRs.
+Every callable requires Firebase Authentication. Functions derive `actorUid` from the verified ID token and never trust a UID supplied by the client. `createRoom` (§2), `startRoom` (§3), `joinRoomByPin` (§4), and termination-vote transactions (§3.2) are Rules-authorized transaction exceptions defined by their corresponding ADRs.
 
 Every side-effecting request contains:
 
@@ -109,6 +111,20 @@ Only the ACTIVE room Host may decide. The transaction updates the request and, o
 ### Early-exit cutoff and group violation sync
 
 `earlyExitAt` is the authoritative per-Member cutoff. A group violation contributes to score only when its full recorded interval ends at or before this timestamp; equality is eligible. An event ending after the cutoff is kept in the local log and does not change the shared score. A late event ending at or before the cutoff may use the ADR-014 Rules-authorized transaction while the room is ACTIVE, including after the Member status becomes EARLY_EXIT. If the room is terminal, the event remains pending for SL-020 reconciliation. A transaction racing Host approval is re-evaluated against the committed cutoff before it can update score.
+
+## 3.2 Termination vote — Firestore transactions (Spark)
+
+**Resources:** `rooms/{roomId}/terminationVotes/current` and `rooms/{roomId}/terminationVotes/current/ballots/{uid}`.
+
+`openTerminationVote({ version: 1, roomId, requestId })` requires the authenticated user to be an ACTIVE room member. It creates a vote with `voteId == requestId`, `openedByUid`, server `openedAt`, `eligibleVoterCount == rooms.activeMemberCount`, `yesVoteCount: 0`, and `status: "OPEN"`. If an unexpired vote already exists, it returns that vote; a new request may replace an expired vote.
+
+`castTerminationVote({ version: 1, roomId, voteId, requestId, choice: "YES" | "NO" })` requires the caller's ACTIVE membership and an unexpired OPEN vote. It creates one ballot per UID and vote. Replaying the same request returns the saved outcome without incrementing counters; changing a committed choice is rejected. Rules reject ballots when `request.time >= openedAt + 30 seconds`.
+
+The ballot and counters are written atomically. If every eligible member has voted YES, the same transaction sets the vote and room to `CANCELLED` and sets `rooms.endedAt` to server time. A NO keeps the vote open; absent unanimity at expiry, the room remains ACTIVE. Host approval of early exit atomically removes that member from the current unexpired vote denominator and, if applicable, the YES count. If the remaining active members are already unanimous, the room is cancelled in that approval transaction. Expired votes are inert and may be replaced by a later open; no scheduled cleanup or offline command queue is used.
+
+**Responses:** versioned vote snapshot `{ version: 1, roomId, voteId, openedAtUtcMs, eligibleVoterCount, yesVoteCount, status }`; ballot result `{ version: 1, roomId, voteId, requestId, choice, replayed }`.
+
+**Errors:** `unauthenticated`, `invalid-argument`, `not-found`, `failed-precondition` for expired/non-current votes, ineligible members or a changed ballot, `permission-denied` for Rules rejection, and `unavailable` for network/service failure. Neither command queues offline writes.
 
 ## 4. `joinRoomByPin`
 

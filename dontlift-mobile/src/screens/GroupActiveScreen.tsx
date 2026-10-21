@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { GlassCard } from '../components/GlassCard';
 import { Colors } from '../constants/theme';
@@ -7,6 +7,8 @@ import { rankGroupMembers } from '../features/rooms/group-active-domain';
 import type { RoomLobbySnapshot } from '../features/rooms/room-listener';
 import type { ForegroundDetectionViewState } from '../features/solo/foreground-detection-controller';
 import type { EarlyExitDecision, EarlyExitRequest } from '../features/rooms/early-exit-repository';
+import type { TerminationChoice } from '../features/rooms/termination-vote-repository';
+import type { TerminationVoteState } from '../features/rooms/termination-vote-listener';
 
 type Props = {
   snapshot: RoomLobbySnapshot;
@@ -21,21 +23,50 @@ type Props = {
   earlyExitError?: string;
   onRequestEarlyExit: () => void;
   onDecideEarlyExit: (request: EarlyExitRequest, decision: EarlyExitDecision) => void;
+  terminationVoteState?: TerminationVoteState;
+  isOpeningTerminationVote?: boolean;
+  isCastingTerminationVote?: boolean;
+  terminationVoteError?: string;
+  onOpenTerminationVote?: () => void;
+  onCastTerminationVote?: (choice: TerminationChoice) => void;
 };
 
 export function GroupActiveScreen({ snapshot, elapsedSeconds, detection, isOnline, syncMessage, actorUid,
   openEarlyExitRequests, isRequestingEarlyExit, decidingEarlyExit, earlyExitError,
-  onRequestEarlyExit, onDecideEarlyExit }: Props) {
+  onRequestEarlyExit, onDecideEarlyExit,
+  terminationVoteState = { vote: null, ownBallot: null, error: false },
+  isOpeningTerminationVote = false, isCastingTerminationVote = false, terminationVoteError,
+  onOpenTerminationVote = () => undefined, onCastTerminationVote = () => undefined }: Props) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, []);
   const members = rankGroupMembers(snapshot.members);
   const ownMember = snapshot.members.find(member => member.uid === actorUid);
   const isHost = ownMember?.role === 'HOST';
   const ownRequest = openEarlyExitRequests.find(request => request.memberUid === actorUid);
+  const vote = terminationVoteState.vote;
+  const ownBallot = terminationVoteState.ownBallot?.voteId === vote?.voteId ? terminationVoteState.ownBallot : null;
+  const voteSecondsLeft = vote?.openedAtUtcMs == null ? null
+    : Math.max(0, Math.ceil((vote.openedAtUtcMs + 30_000 - now) / 1_000));
+  // Giờ thiết bị chỉ để tham khảo; Rules quyết định còn được bỏ phiếu/mở vote mới.
+  const canParticipate = snapshot.status === 'ACTIVE' && ownMember?.status === 'ACTIVE';
+  const canOpenVote = canParticipate && (!vote || vote.status === 'OPEN');
   const confirmEarlyExitRequest = () => Alert.alert(
     'Request early exit?',
     'Your score will freeze at current time.',
     [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Request', onPress: onRequestEarlyExit },
+    ],
+  );
+  const confirmTerminationVote = () => Alert.alert(
+    'End session early?',
+    'Everyone still active must vote Yes within 30 seconds. Bill settlement will be skipped.',
+    [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Start vote', onPress: onOpenTerminationVote },
     ],
   );
   return (
@@ -72,6 +103,50 @@ export function GroupActiveScreen({ snapshot, elapsedSeconds, detection, isOnlin
           <Text style={styles.body}>Your confirmed activity through the approved cutoff can still sync before the room is finalized.</Text>
         </GlassCard>
       ) : null}
+
+      <GlassCard style={styles.voteCard}>
+        <Text style={styles.sectionTitle}>End session early</Text>
+        {vote && vote.status === 'OPEN' ? (
+          <>
+            <Text accessibilityLabel={`Estimated time remaining: ${voteSecondsLeft ?? 'unknown'} seconds`} style={styles.body}>
+              Unanimous Yes ends the session · approximately {voteSecondsLeft ?? '…'}s left
+            </Text>
+            <Text style={styles.body}>Yes votes: {vote.yesVoteCount} / {vote.eligibleVoterCount}</Text>
+            {ownBallot ? <Text style={styles.notice}>Your vote: {ownBallot.choice === 'YES' ? 'Yes' : 'No'}</Text> : canParticipate ? (
+              <View style={styles.actionRow}>
+                <Pressable accessibilityRole="button" accessibilityLabel="Vote yes to end session" disabled={!isOnline || isCastingTerminationVote}
+                  onPress={() => onCastTerminationVote('YES')}
+                  style={({ pressed }) => [styles.actionButton, pressed && styles.pressed, (!isOnline || isCastingTerminationVote) && styles.disabled]}>
+                  {isCastingTerminationVote ? <ActivityIndicator color={Colors.light.onPrimary} /> : null}
+                  <Text style={styles.actionText}>Yes</Text>
+                </Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel="Vote no to continue session" disabled={!isOnline || isCastingTerminationVote}
+                  onPress={() => onCastTerminationVote('NO')}
+                  style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed, (!isOnline || isCastingTerminationVote) && styles.disabled]}>
+                  <Text style={styles.secondaryActionText}>No</Text>
+                </Pressable>
+              </View>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <Text style={styles.body}>{vote?.status === 'CANCELLED' ? 'This room was cancelled by unanimous vote.' : 'All active members must agree within 30 seconds. A No or timeout keeps the room active.'}</Text>
+          </>
+        )}
+        {canOpenVote ? (
+          <Pressable accessibilityRole="button" accessibilityLabel="Initiate termination vote" disabled={!isOnline || isOpeningTerminationVote}
+            onPress={confirmTerminationVote}
+            style={({ pressed }) => [styles.actionButton, pressed && styles.pressed, (!isOnline || isOpeningTerminationVote) && styles.disabled]}>
+            {isOpeningTerminationVote ? <ActivityIndicator color={Colors.light.onPrimary} /> : null}
+            <Text style={styles.actionText}>{vote ? 'Try starting a new vote' : 'Start vote'}</Text>
+          </Pressable>
+        ) : null}
+        {vote?.status === 'OPEN' ? <Text style={styles.body}>A new vote can start only after the current vote expires on the server.</Text> : null}
+        {terminationVoteState.error || terminationVoteError ? (
+          <Text accessibilityRole="alert" style={styles.error}>{terminationVoteError || 'Could not load the current vote. Reconnect and reopen the room to retry.'}</Text>
+        ) : null}
+        {!isOnline ? <Text style={styles.body}>Connect to the internet to participate in a vote.</Text> : null}
+      </GlassCard>
 
       {!isHost && ownMember?.role === 'MEMBER' && ownMember.status === 'ACTIVE' ? (
         <GlassCard style={styles.exitCard}>
@@ -154,6 +229,7 @@ const styles = StyleSheet.create({
   error: { color: Colors.light.error, fontSize: 13 },
   leaderboard: { gap: 8 },
   exitCard: { padding: 16, gap: 9 },
+  voteCard: { padding: 16, gap: 9 },
   exitRequests: { gap: 8 },
   requestCard: { padding: 14, gap: 10 },
   actionRow: { flexDirection: 'row', gap: 10 },

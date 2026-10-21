@@ -22,7 +22,7 @@ When documents conflict, use this precedence:
 Current architectural overrides:
 
 - ADR-010 supersedes the native runtime: Firebase JS SDK owns Auth persistence through its AsyncStorage adapter in Expo Go. Do not manually copy ID/refresh tokens into app tables or implement token refresh. Profile bootstrap is create-only through Firestore Rules; authoritative commands remain server-owned except exact Spark transactions approved by ADR-011 through ADR-015.
-- Offline-capable events sync through `syncEvents`, except the Spark group-violation transaction and its early-exit cutoff extension approved in ADR-014/ADR-015. Do not direct-write authoritative violation or Solo summary documents outside those exact Rules-checked transactions.
+- Offline-capable events sync through `syncEvents`, except the Spark group-violation transaction and its early-exit cutoff extension approved in ADR-014/ADR-015. SL-019 termination voting is a separate narrow Spark transaction exception defined by ADR-016. Do not direct-write authoritative violation or Solo summary documents outside their exact Rules-checked transactions.
 - `rooms/{roomId}/members/{uid}` is the room membership authority; do not use an unbounded `participantIds` array.
 - ADR-008 governs Android/iOS background transitions and the 3-Second Grace Period.
 - Local Premium and Server Premium are separate entitlements as defined by ADR-007.

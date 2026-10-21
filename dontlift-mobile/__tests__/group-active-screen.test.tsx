@@ -91,3 +91,57 @@ test('shows the pending indicator on the Host decision that was selected', async
   expect(mounted!.root.findByProps({ accessibilityLabel: 'Processing denial' })).toBeDefined();
   await renderer.act(async () => mounted?.unmount());
 });
+
+test('confirms before opening a termination vote', async () => {
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+  const onOpenTerminationVote = jest.fn();
+  let mounted: Rendered | undefined;
+  await renderer.act(() => {
+    mounted = renderer.create(<GroupActiveScreen
+      snapshot={snapshot}
+      elapsedSeconds={10}
+      detection={{ orientation: 'UPRIGHT', violationsCount: 0, violationDurationSeconds: 0, isGraceActive: false, graceSeconds: 0, persistenceError: null } as never}
+      isOnline actorUid="host-id" openEarlyExitRequests={[]} isRequestingEarlyExit={false}
+      decidingEarlyExit={null} onRequestEarlyExit={jest.fn()} onDecideEarlyExit={jest.fn()}
+      onOpenTerminationVote={onOpenTerminationVote}
+    />);
+  });
+
+  await renderer.act(() => {
+    (mounted!.root.findByProps({ accessibilityLabel: 'Initiate termination vote' }).props.onPress as () => void)();
+  });
+  expect(onOpenTerminationVote).not.toHaveBeenCalled();
+  const buttons = alert.mock.calls[0][2] as Array<{ text?: string; onPress?: () => void }>;
+  await renderer.act(() => buttons.find(button => button.text === 'Start vote')?.onPress?.());
+  expect(onOpenTerminationVote).toHaveBeenCalledTimes(1);
+
+  await renderer.act(async () => mounted?.unmount());
+  alert.mockRestore();
+});
+
+test('shows Yes and No controls for the current vote and hides them after a ballot', async () => {
+  const common = {
+    snapshot, elapsedSeconds: 10,
+    detection: { orientation: 'UPRIGHT', violationsCount: 0, violationDurationSeconds: 0, isGraceActive: false, graceSeconds: 0, persistenceError: null } as never,
+    isOnline: true, actorUid: 'member-id', openEarlyExitRequests: [], isRequestingEarlyExit: false,
+    decidingEarlyExit: null, onRequestEarlyExit: jest.fn(), onDecideEarlyExit: jest.fn(),
+    terminationVoteState: {
+      vote: { version: 1 as const, roomId: 'room-id', voteId: 'vote-id', openedAtUtcMs: Date.now() - 1_000,
+        eligibleVoterCount: 2, yesVoteCount: 0, status: 'OPEN' as const },
+      ownBallot: null, error: false,
+    },
+  };
+  let mounted: Rendered | undefined;
+  await renderer.act(() => { mounted = renderer.create(<GroupActiveScreen {...common} />); });
+  expect(mounted!.root.findByProps({ accessibilityLabel: 'Vote yes to end session' })).toBeDefined();
+  expect(mounted!.root.findByProps({ accessibilityLabel: 'Vote no to continue session' })).toBeDefined();
+  await renderer.act(async () => mounted?.unmount());
+
+  await renderer.act(() => {
+    mounted = renderer.create(<GroupActiveScreen {...common} terminationVoteState={{
+      ...common.terminationVoteState, ownBallot: { voteId: 'vote-id', requestId: 'request-id', choice: 'NO' },
+    }} />);
+  });
+  expect(() => mounted!.root.findByProps({ accessibilityLabel: 'Vote yes to end session' })).toThrow();
+  await renderer.act(async () => mounted?.unmount());
+});

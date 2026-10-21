@@ -1,170 +1,51 @@
-# Kế hoạch triển khai P6.1 — SL-019: Vote kết thúc sớm
+# SL-019 — Termination vote
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use the qskill-executing-plans skill to implement this plan task-by-task. Steps use checkbox tracking.
-> Kế hoạch chỉ mô tả file, unit, hành vi, quy tắc, đầu ra và test cases; không có implementation code hoặc signatures. Đọc source thật trước mỗi task.
-> **Gate:** Không execute kế hoạch khi trạng thái còn DRAFT hoặc khi blocker/dependency chưa giải quyết. Việc tạo file này không phê duyệt backlog hay P6.2.
+**Status:** APPROVED — user approved the Spark design on 2026-10-21.
+**Plan slug:** `2026-10-13-sl-019-termination-vote`.
+**Dependencies:** SL-017 and SL-018. **Authority:** [ADR-016](../../decisions/ADR-016-spark-termination-vote.md).
 
-**Mục tiêu:** Vote kết thúc sớm: CANCELLED khi unanimous trước expiry hoặc room tiếp tục ACTIVE.
+## Approved behavior and contract
 
-**Slice:** SL-019. **Ưu tiên đề xuất:** P1. **Release:** MVP + activation/Premium; post-MVP deferred. SL-036 chỉ được tính release sau D6.
+- Runs on Firebase Spark through authenticated Firestore client transactions and Security Rules. No Cloud Functions, billing, scheduled cleanup, or offline queued commands.
+- The single current vote is `rooms/{roomId}/terminationVotes/current`; each UID's current ballot is under `ballots/{uid}`. A later vote may replace a prior ballot at that path.
+- All ACTIVE room members, including Host, are eligible. Host start initializes `activeMemberCount` from `participantCount`; an approved early exit decrements that count and the active vote denominator immediately. EARLY_EXIT membership remains in roster/history.
+- Rules use server `openedAt` and `request.time` to enforce the 30-second deadline. All members must vote YES to cancel. NO or timeout leaves the room ACTIVE. If early exit makes remaining votes unanimous, that approval transaction cancels the room.
+- Ballot, vote counters, room transition, and early-exit denominator changes are atomic. Offline writes are rejected/not queued.
+- `CANCELLED` runs the existing local terminal projection, closes active capture at server end time, and skips bill settlement.
 
-**Trạng thái kế hoạch:** DRAFT — chưa được human duyệt; bị chặn bởi D3.
-**Trạng thái implementation quan sát:** Không có vote controller/UI/Functions. Chưa có evidence nghiệm thu slice.
-**Baseline khảo sát:** docs/p6.0-implementation-slices tại 57ca1eb28a2952c66d01f89b9b89bf755ab4812a.
-**Ngày soạn:** 2026-10-13, Asia/Saigon.
-**Plan slug:** `2026-10-13-sl-019-termination-vote`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-019-termination-vote]`.
-**Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13, chưa được phê duyệt. User đã yêu cầu ghi draft P6.1 cho cả 37 slice; không suy thành approval thực thi.
-**Traceability:** US-11; ADR-003; ARCH §9.1.
-**Phụ thuộc bắt buộc:** [SL-017](./2026-10-13-sl-017-group-active.md), [SL-018](./2026-10-13-sl-018-early-exit.md)
-**Ưu tiên mềm:** Theo thứ tự đề xuất trong [mục lục](../../implementation-plan.md); thứ tự không tạo thêm hard dependency.
+## Implementation scope
 
-## 1. Nguồn và ranh giới
+- Update API contract, architecture, feature specification, product design and implementation index; record the approved exception in ADR-016.
+- Add the Spark vote repository, realtime vote/ballot listener, and accessible voting controls in Group Active.
+- Extend `startRoom` to initialize active-member count and `decideEarlyExit` to atomically update it and the current vote.
+- Extend Firestore Rules for narrowly scoped vote reads/writes, exact ballots, deadline checks, atomic unanimous cancellation, and early-exit adjustments.
+- Add Rules Emulator tests for member/outsider access, NO behavior, unanimous cancellation, and forbidden direct writes; extend start/early-exit regressions.
 
-Đọc [PRD](../../product-requirements.md), [Feature Spec](../../feature-specification.md), [Product Design](../../product-design.md), [Design Brief](../../product-design-brief.md), [Architecture](../../software-architecture.md), [API contracts](../../api-contracts.md), ADR áp dụng trong [decisions](../../decisions), cùng AGENTS ở app root. Tham chiếu cụ thể của slice nằm trong Traceability phía trên.
+## Acceptance cases
 
-V01–V10 chỉ các màn tương ứng tại `design/concepts/concept-final/screens/`; prototype nằm tại `prototype/`. Chúng là read-only visual/interaction references, không chứng minh integration. Nếu journey không có design screen, trình bày gap với human trước quyết định UI mới.
+- [ ] Active room member can open/read a vote; outsider and unauthenticated readers cannot.
+- [ ] Only one current vote exists; a new open reuses an unexpired vote and replaces an expired vote.
+- [ ] Each active member can cast one immutable YES/NO ballot; replay does not increment counts; changing a ballot is denied.
+- [ ] NO or timeout leaves the room ACTIVE; ballot at/after 30 seconds is rejected by Rules.
+- [ ] Final eligible YES atomically sets vote and room to CANCELLED with server `endedAt`.
+- [ ] Approved early exit removes the member from denominator and their YES from count; remaining unanimity cancels atomically.
+- [ ] CANCELLED is projected locally as terminal and does not route to bill settlement.
+- [ ] Existing room create/start/join/early-exit/group-violation Rules regressions pass.
 
-**Kiến trúc:** openTerminationVote, castTerminationVote và cleanupExpiredVotes sở hữu hành vi của slice. Presentation đọc kết quả qua controller/repository; không tự trở thành nguồn authoritative. Units và đường dẫn mới bên dưới là đề xuất, chưa tồn tại trên baseline; nếu prerequisite đã tạo cùng trách nhiệm thì reuse, không thêm convention thứ hai.
+## Verification record
 
-**Stack:** Expo SDK 57 / React Native / TypeScript. SQLite cho local-first khi slice có persistence; React Native Firebase Auth/Firestore Standard/Functions cho boundary có Firebase. Không bắt slice thuần local phải có network.
+Record exact command, exit code, test count, runtime versions, and actual outcomes below. Emulator checks require Java and Firebase Emulator Suite; device UI needs Expo Go verification.
 
-**Không gồm:** Majority voting, automatic unanimous assumptions, config penalty weights.
+- Baseline: branch `feature/sl-019-termination-vote`, clean before implementation.
+- Emulator prerequisite checked 2026-10-21: Java is not available on PATH; Rules tests cannot run until Java is installed.
+- Expo Go visual/device checks: pending user verification.
 
-## 2. Blocker, risk và quyết định cần duyệt
+## Execution result
 
-- **D3:** Chốt wire/schema/error/concurrency cho start/early-exit/vote/heartbeat nếu slice dùng chúng; chốt syncEvents cho violation đang kéo dài khi áp dụng. Không đoán payload từ responsibility table.
-
-**Rủi ro cụ thể:** D3; roster-changing policy và expiration scheduling.
-
-Nếu một contract chỉ có responsibility mà chưa có schema, task đầu là trình bày missing decision với nguồn; không tự tạo endpoint/field mới. Các hành vi test bên dưới mô tả outcome cần đạt, không thay thế wire approval. Ngưỡng/range/default chưa được spec xác định phải có quyết định ghi lại trước khi implement.
-
-## 3. File và quyền sở hữu dự kiến
-
-Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại trạng thái file lúc execute để chọn Create/Modify; không ghi đè implementation của dependency.
-
-| File dự kiến | Trách nhiệm |
-|---|---|
-| `firestore.emulator.rules` | SL-019 thêm membership-scoped reads cho vote resource đúng path/schema được D3 duyệt; không mở client writes cho ballot/expiry/finalization mặc định. |
-| `functions/tests/termination-vote-rules.emulator.test.cjs` | Emulator Suite client-SDK tests cho active-member reads, outsider/cross-room denial và server-owned vote mutations. |
-| `src/features/rooms/termination-vote-controller.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
-| `src/components/TerminationVoteDialog.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
-| `src/screens/GroupActiveScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
-| `functions/src/termination-vote.cjs` | Backend boundary của slice; server identity/validation/transaction. |
-| `functions/src/cleanup-expired-votes.cjs` | Backend boundary của slice; server identity/validation/transaction. |
-| `functions/index.js` | Đăng ký hai callable và scheduled cleanup vào Functions exports hiện có; giữ bootstrap SL-003 và các exports do slice khác sở hữu. |
-| `__tests__/termination-vote.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
-| `functions/tests/termination-vote.test.cjs` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
-| `functions/tests/termination-vote-discovery.test.cjs` | Kiểm tra entrypoint export hai callable và scheduled cleanup; test không áp đặt cadence ngoài contract. |
-
-**Unit:** openTerminationVote, castTerminationVote và cleanupExpiredVotes.
-**Nhận:** Active member roster, ballots và server expiresAt.
-**Trả:** CANCELLED khi unanimous trước expiry hoặc room tiếp tục ACTIVE.
-**Đầu vào từ dependency:** capabilities/records/commands đã nghiệm thu theo các plan liên kết; chưa có dependency output thì không giả coi integration có thật.
-**Đầu ra cho slice sau:** outcome và invariants trong mục tiêu/nghiệm thu dưới đây; tên internal unit là đề xuất, wire names chỉ dùng theo API/ADR đã duyệt.
-
-## 4. Ràng buộc xuyên suốt
-
-- Giữ approved architecture; newer human decisions và accepted ADR exceptions thắng prose cũ.
-- Không sao chép Firebase token vào SQLite, AsyncStorage hoặc SecureStore; SDK quản lý session.
-- Event offline-capable dùng SQLite domain record và sync_outbox trong một transaction; syncEvents là ingestion authority.
-- Command lifecycle/vote/bill/payment không queue để replay muộn. Firestore cache không thay thế outbox.
-- Membership authority là rooms/{roomId}/members/{uid}. Functions derive actor từ Auth và tự authorization; Admin SDK bypass Rules.
-- Giữ 3-Second Grace Period ở cả foreground/background theo ADR-008.
-- Local Premium không cấp server quota/capacity; chỉ verified Server Premium cấp server benefits.
-- Bill dùng integer VND, deterministic residual và tổng exact theo ADR-005; VietQR non-custodial, không bank polling.
-- UI dùng semantic tokens và accepted Liquid Acrylic; loading/empty/error/offline/syncing, labels, safe areas và touch targets được kiểm chứng khi phù hợp.
-- Không thêm social login, analytics dashboards, kiosk, wallet, chat, AI coaching hoặc camera-based detection vào MVP.
-- Không install/provision/deploy/publish trong lượt authoring plan này; mọi check bên dưới là hướng dẫn execution sau approval.
-
-## 5. Các task thực hiện sau approval
-
-### Task 0 — Rules cho vote resource trước listener
-
-**Files:** `firestore.emulator.rules`, `functions/tests/termination-vote-rules.emulator.test.cjs`. Reuse room membership Rules SL-016 và test harness/emulator SL-002/003.
-
-- [ ] Chỉ sau khi D3 duyệt wire/schema, xác định vote path và eligible reader; không suy đoán collection hay quyền từ UI.
-- [ ] Client-SDK Emulator Suite: active room members đọc vote state; anonymous, inactive/outside members và cross-room users bị deny theo approved policy.
-- [ ] Deny direct client create/update/delete ballot/count/expiry/room transition nếu commands là callable/server-owned; chỉ mở write cụ thể theo contract đã duyệt.
-- [ ] Kiểm tra expiry/finalization/cleanup vẫn server-owned và chạy lại room/member Rules regression.
-- [ ] Giữ D3 blocker nếu path/schema chưa chốt; SL-037 nhận policy sau khi tests pass.
-
-### Task 1 — Boundary và quy tắc của Vote kết thúc sớm
-
-**Files:** Dùng units/config/backend/repositories trong bảng mục 3; khi test source đã được chỉ định, đặt cases thuộc boundary vào đúng app/backend target. Không thay presentation chưa cần cho task này.
-
-**Nhận/trả:** Nhận Active member roster, ballots và server expiresAt; trả CANCELLED khi unanimous trước expiry hoặc room tiếp tục ACTIVE. Với contract đang bị chặn, chưa có quyền thêm schema dù test outcome đã được nêu.
-
-- [ ] Đọc lại source/spec và xác nhận tất cả blocker cùng dependency cho task đã được giải quyết; nếu chưa, dừng execution và báo đúng blocker.
-- [ ] Viết focused failing cases sau đây; runner không tìm thấy hoặc thiếu dependency không được tính là red nghiệp vụ.
-
-- [ ] Một Member không đồng ý → chưa cancel.
-- [ ] Tất cả active Members đồng ý trước expiry → CANCELLED.
-- [ ] Sau khi SL-018 duyệt early exit cho một Member, Member đó vẫn nằm trong session/history nhưng không thuộc voter denominator; unanimity tính trên các active Members còn lại.
-- [ ] Ballot sau expiresAt nhưng doc còn → reject.
-
-- [ ] Chạy focused command trong mục 7; xác nhận failure đúng behavior đang thiếu, không từ toolchain lỗi.
-- [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
-
-1. Chốt wire, voter eligibility khi roster thay đổi và one-active-vote policy; approved early-exit Members vẫn được giữ cho history nhưng không tính vào active voter denominator.
-2. Expiry authoritative sau 30 giây; không chấp nhận ballot chỉ vì physical doc chưa cleanup.
-3. Ballot/receipt/count/transition atomically; 100% active Members mới cancel.
-4. Đăng ký hai callable và scheduled cleanup tại entrypoint Functions hiện có; cleanup chạy trễ không đổi logical expiry 30 giây. Không tự thêm cadence vào contract.
-
-- [ ] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
-- [ ] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-019-termination-vote]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-019-termination-vote.md` và `Task: 1`.
-
-### Task 2 — Journey tích hợp và recovery
-
-**Files:** Presentation/adapter/evidence trong mục 3 cùng boundary task 1; không refactor screen không liên quan. Task này không tạo implementation thứ hai cho unit task 1.
-
-**Nhận:** Output task 1 đã kiểm chứng. **Trả:** Journey/bằng chứng có thể nghiệm thu; error/offline không false-success.
-
-- [ ] Viết các failing cases về integration/recovery sau; không viết tests chỉ mirror implementation.
-
-- [ ] Replay ballot → không cộng count lại.
-- [ ] Hai open-vote requests đồng thời → một active vote.
-- [ ] Scheduler chạy trễ → logical expiry vẫn đúng 30 giây.
-- [ ] Chạy `functions/tests/termination-vote-discovery.test.cjs` → entrypoint export đủ callable và scheduled cleanup; test xác nhận trigger được discover, không áp đặt cadence.
-
-- [ ] Chạy focused checks, xác nhận failure đúng behavior; giữ fixtures tách khỏi device evidence.
-- [ ] Tích hợp theo thứ tự:
-
-1. Modal tới eligible members với thời gian đúng server state; expiry dismiss không kết thúc room.
-2. Cancel dừng tracking theo cutoff đã duyệt, không mở bill settlement.
-3. Scheduled cleanup xóa expired vote idempotent; offline không queue ballot.
-
-- [ ] Thực hiện các kịch bản nghiệm thu trực tiếp trong mục 6; thu logs an toàn/device timestamps khi cần.
-- [ ] Review kết quả; một branch fail hoặc thiếu required device/emulator evidence thì slice chưa hoàn thành.
-- [ ] Commit task sau review nếu execution được phép. Subject dùng `[2026-10-13-sl-019-termination-vote]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-019-termination-vote.md` và `Task: 2`.
-
-## 6. Nghiệm thu và failure outcomes
-
-- [ ] Một Member không đồng ý → chưa cancel.
-- [ ] Tất cả active Members đồng ý trước expiry → CANCELLED.
-- [ ] Early exit được approve trước khi mở hoặc trong lúc vote đang mở → chỉ active Members còn lại được tính vào unanimity theo policy D3 đã duyệt; exited Member vẫn retained trong session/history.
-- [ ] Ballot sau expiresAt nhưng doc còn → reject.
-- [ ] Replay ballot → không cộng count lại.
-- [ ] Hai open-vote requests đồng thời → một active vote.
-- [ ] Scheduler chạy trễ → logical expiry vẫn đúng 30 giây.
-- [ ] Nhiều users vote yes/timeout → đúng terminal room state.
-- [ ] Member offline trở lại không replay vote cũ; no settlement sau cancel.
-- [ ] Active member reads trong room → allowed; anonymous/outsider/cross-room reads và client authoritative writes → denied trên Emulator Suite.
-- [ ] Functions discovery → hai callable và scheduled cleanup được entrypoint nhận diện; cleanup chạy trễ vẫn giữ logical expiry và không khởi tạo runtime thứ hai.
-
-Mỗi case phải có actual result. Unit cases dùng controlled fixtures để chứng minh domain; Firebase boundary cần Rules/Functions emulator tests cho allowed/denied/replay/concurrency khi áp dụng. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.
-
-**Failure recovery bắt buộc:** không hiển thị successful save/transition khi commit/request chưa thành công; giữ dữ liệu/retry context theo hành vi cụ thể trong tasks. Không log email đầy đủ, token, activation code hoặc bank details. Case không áp dụng cho slice phải ghi lý do trong evidence, không bỏ im lặng.
-
-## 7. Verification và ghi nhận evidence
-
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/termination-vote.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/termination-vote.test.cjs` và `node --test functions/tests/termination-vote-discovery.test.cjs`; Rules Suite sau khi D3 chốt resource: `node --test functions/tests/termination-vote-rules.emulator.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
-
-Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
-
-Ghi trong kết quả execution: baseline/commit mới, command, exit status, số cases, emulator/device/runtime version, date, actual outcomes và remaining gaps. Các checklist hiện đều chưa chạy.
-
-## 8. Human review và bàn giao P6.2
-
-Human phải duyệt scope, non-goals, tasks, acceptance cases, dependencies và các quyết định còn mở của **SL-019** trước implementation. Duyệt một slice không duyệt tất cả 37; duyệt authoring batch không duyệt code.
-
-Sau approval, cập nhật trạng thái/date/decision evidence trong đúng plan; kế hoạch mới chỉ đủ execution-ready khi blocker đã được giải quyết và baseline được re-inspect. Dùng qskill-executing-plans khi user yêu cầu execute plan đã duyệt. Không tự bắt đầu P6.2 từ file draft hoặc từ prompt batch.
+- `pnpm exec tsc --noEmit` — PASS (exit 0).
+- `pnpm test --runTestsByPath __tests__/group-active-screen.test.tsx __tests__/room-lobby-start.test.ts __tests__/room-lobby-projection.test.ts __tests__/early-exit-repository.test.ts` — PASS, 4 suites / 21 tests.
+- `node --check` for the termination-vote, early-exit, and room-start Rules test files — PASS (exit 0).
+- `git diff --check` — PASS after removing trailing whitespace.
+- Firebase Rules Emulator Suite — BLOCKED: `java` is not installed/on PATH. Rules security behavior and compilation are not verified yet.
+- `pnpm run lint` — BLOCKED: no ESLint config exists; Expo's attempted setup failed with `AggregateError [EACCES]` while connecting.
+- Expo Go on physical device — pending user verification; Cloud Rules have not been deployed.

@@ -16,7 +16,7 @@ async function seedRoom(env) {
   await env.withSecurityRulesDisabled(async context => {
     const db = context.firestore();
     await setDoc(doc(db, `rooms/${roomId}`), {
-      hostId, pin: '00000018', status: 'ACTIVE', participantCount: 2,
+      hostId, pin: '00000018', status: 'ACTIVE', participantCount: 2, activeMemberCount: 2,
       createdAt: serverTimestamp(), updatedAt: serverTimestamp(), hostHeartbeatAt: serverTimestamp(),
       startedAt: Timestamp.fromMillis(Date.now() - 60_000), endedAt: null,
     });
@@ -54,9 +54,12 @@ async function decideExit(db, uid, memberUid, id, decision) {
   const hostRef = doc(db, `rooms/${roomId}/members/${uid}`);
   const memberRef = doc(db, `rooms/${roomId}/members/${memberUid}`);
   const requestRef = doc(db, `rooms/${roomId}/earlyExitRequests/${memberUid}`);
+  const voteRef = doc(db, `rooms/${roomId}/terminationVotes/current`);
+  const ballotRef = doc(db, `rooms/${roomId}/terminationVotes/current/ballots/${memberUid}`);
   return runTransaction(db, async transaction => {
-    const [room, host, member, request] = await Promise.all([
+    const [room, host, member, request, vote, ballot] = await Promise.all([
       transaction.get(roomRef), transaction.get(hostRef), transaction.get(memberRef), transaction.get(requestRef),
+      transaction.get(voteRef), transaction.get(ballotRef),
     ]);
     if (!room.exists() || !host.exists() || !member.exists() || !request.exists()) throw new Error('missing decision record');
     const saved = request.data();
@@ -67,6 +70,27 @@ async function decideExit(db, uid, memberUid, id, decision) {
       decidedAt: serverTimestamp(), cutoffAt: decision === 'APPROVE' ? serverTimestamp() : null,
     });
     if (decision === 'APPROVE') transaction.update(memberRef, { status: 'EARLY_EXIT', earlyExitAt: serverTimestamp() });
+    if (decision === 'APPROVE') {
+      let cancelRoom = false;
+      if (vote.exists() && vote.data().status === 'OPEN'
+        && Date.now() < vote.data().openedAt.toMillis() + 30_000) {
+        const removedYes = ballot.exists() && ballot.data().voteId === vote.data().voteId && ballot.data().choice === 'YES';
+        const eligibleVoterCount = vote.data().eligibleVoterCount - 1;
+        const yesVoteCount = vote.data().yesVoteCount - (removedYes ? 1 : 0);
+        cancelRoom = eligibleVoterCount > 0 && eligibleVoterCount === yesVoteCount;
+        transaction.update(voteRef, {
+          eligibleVoterCount, yesVoteCount,
+          ...(cancelRoom ? { status: 'CANCELLED', closedAt: serverTimestamp() } : {}),
+        });
+      }
+      transaction.update(roomRef, {
+        activeMemberCount: room.data().activeMemberCount - 1,
+        updatedAt: serverTimestamp(),
+        lastEarlyExitMemberUid: memberUid,
+        lastEarlyExitRequestId: id,
+        ...(cancelRoom ? { status: 'CANCELLED', endedAt: serverTimestamp() } : {}),
+      });
+    }
     return decision === 'APPROVE' ? 'APPROVED' : 'DENIED';
   });
 }
@@ -139,6 +163,44 @@ test('Host approval changes request and membership atomically; denial keeps memb
   const request = await assertSucceeds(getDoc(doc(hostDb, `rooms/${roomId}/earlyExitRequests/${memberId}`)));
   assert.equal(request.data().cutoffAt.toMillis(), member.data().earlyExitAt.toMillis());
   assert.equal(await assertSucceeds(decideExit(hostDb, hostId, memberId, '00000000-0000-4000-8000-000000000084', 'APPROVE')), 'APPROVED');
+});
+
+test('Host approval removes a NO voter and cancels atomically when the remaining roster is unanimous', async t => {
+  const env = await createRulesEnvironment();
+  t.after(() => env.cleanup());
+  await seedRoom(env);
+  const memberDb = env.authenticatedContext(memberId).firestore();
+  const hostDb = env.authenticatedContext(hostId).firestore();
+  const id = '00000000-0000-4000-8000-000000000085';
+  await assertSucceeds(requestExit(memberDb, memberId, id));
+  await env.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, `rooms/${roomId}/terminationVotes/current`), {
+      version: 1, voteId: '00000000-0000-4000-8000-000000000086', requestId: '00000000-0000-4000-8000-000000000086',
+      openedByUid: hostId, openedAt: serverTimestamp(), eligibleVoterCount: 2, yesVoteCount: 1, status: 'OPEN',
+    });
+    await setDoc(doc(db, `rooms/${roomId}/terminationVotes/current/ballots/${hostId}`), {
+      version: 1, voteId: '00000000-0000-4000-8000-000000000086', requestId: '00000000-0000-4000-8000-000000000087',
+      choice: 'YES', castAt: serverTimestamp(),
+    });
+    await setDoc(doc(db, `rooms/${roomId}/terminationVotes/current/ballots/${memberId}`), {
+      version: 1, voteId: '00000000-0000-4000-8000-000000000086', requestId: '00000000-0000-4000-8000-000000000088',
+      choice: 'NO', castAt: serverTimestamp(),
+    });
+  });
+
+  assert.equal(await assertSucceeds(decideExit(hostDb, hostId, memberId, id, 'APPROVE')), 'APPROVED');
+  const [room, vote, member] = await Promise.all([
+    assertSucceeds(getDoc(doc(hostDb, `rooms/${roomId}`))),
+    assertSucceeds(getDoc(doc(hostDb, `rooms/${roomId}/terminationVotes/current`))),
+    assertSucceeds(getDoc(doc(hostDb, `rooms/${roomId}/members/${memberId}`))),
+  ]);
+  assert.equal(member.data().status, 'EARLY_EXIT');
+  assert.equal(room.data().activeMemberCount, 1);
+  assert.equal(room.data().status, 'CANCELLED');
+  assert.equal(vote.data().eligibleVoterCount, 1);
+  assert.equal(vote.data().yesVoteCount, 1);
+  assert.equal(vote.data().status, 'CANCELLED');
 });
 
 test('Host can read and replay the committed decision after the room is terminal', async t => {

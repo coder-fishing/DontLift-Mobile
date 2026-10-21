@@ -118,7 +118,7 @@ Trên Android, lifecycle observer persist candidate tại `ON_STOP`; WorkManager
 | `members/{uid}` | Thành viên room | Rules-authorized exact violation aggregate and early-exit transitions; Functions for other authoritative changes |
 | `violations/{eventId}` | Thành viên room | ADR-014 Spark transaction for group violations; `syncEvents` for other event types |
 | early-exit requests | Thành viên room | Rules-authorized request/decision transactions per ADR-015 |
-| termination votes | Thành viên room | Vote Functions |
+| termination votes | Thành viên room | Spark Firestore transactions per ADR-016 |
 | `billShares/{uid}` | Thành viên room | Settlement Functions |
 | `settlementDetails/current` | Thành viên room | `setSettlementDetails` Host-only Function |
 | PIN, usage, activation, receipts | Không client nào | Functions |
@@ -164,6 +164,8 @@ History query của US-16 đọc collection này theo owner path, sắp xếp `c
 | `pin` | string | Four-digit display PIN |
 | `status` | enum | `CREATED | WAITING | ACTIVE | COMPLETED | CANCELLED | ABORTED` |
 | `participantCount` | integer | Server-maintained aggregate |
+| `activeMemberCount` | integer/null | Initialized from `participantCount` by a compatible Host start; decremented with approved early exit and used as SL-019 denominator |
+| `lastEarlyExitMemberUid`, `lastEarlyExitRequestId` | string/null | Current linkage markers for atomic voter-count adjustment |
 | `hostHeartbeatAt` | timestamp | Host liveness |
 | `createdAt`, `startedAt`, `endedAt`, `updatedAt` | timestamp/null | Lifecycle timestamps |
 | `totalBillVnd` | integer/null | Positive integer tối thiểu 1.000 |
@@ -183,8 +185,8 @@ History query của US-16 đọc collection này theo owner path, sắp xếp `c
 #### Other room subcollections
 
 - `earlyExitRequests/{memberUid}` (one current request per member; see ADR-015)
-- `terminationVotes/{voteId}`
-- `terminationVotes/{voteId}/ballots/{uid}`
+- `terminationVotes/current` (one current vote; see ADR-016)
+- `terminationVotes/current/ballots/{uid}` (one replaceable per-UID ballot for the current vote)
 - `billShares/{uid}`
 - `reconciliationAudits/{auditId}`
 - `settlementDetails/current`
@@ -245,10 +247,11 @@ Wire-level request, response, required-field, response-version, per-command erro
 | `completeRegistrationProfile` | Khởi tạo profile theo authenticated UID |
 | `createRoom` | Monthly quota, unique PIN, Host membership; Rules-authorized Firestore transaction per ADR-011 |
 | `joinRoomByPin` | WAITING state, capacity, idempotent membership |
-| `startRoom` | Host-only `WAITING → ACTIVE`; Rules-authorized Firestore transaction per ADR-013 |
+| `startRoom` | Host-only `WAITING → ACTIVE`; Rules-authorized Firestore transaction per ADR-013; initializes `activeMemberCount` from `participantCount` |
 | `syncEvents` | Batch validation, receipts, idempotent domain effects |
 | `requestEarlyExit` | Active Member, one open request; Rules-authorized Spark transaction per ADR-015 |
 | `decideEarlyExit` | Host-only approval/denial; server-time cutoff and atomic Member transition per ADR-015 |
+| `openTerminationVote` / `castTerminationVote` | Active-member scoped Spark transactions; Rules enforce server deadline, ballots, counters and unanimous cancellation per ADR-016 |
 | `openTerminationVote` | Active Member, one active vote, 30-second expiry |
 | `castTerminationVote` | Active Member, unexpired vote, idempotent ballot |
 | `completeRoom` | Host-only `ACTIVE → COMPLETED`, open reconciliation |
@@ -348,7 +351,7 @@ Valid transitions:
 - `ACTIVE → CANCELLED`
 - `ACTIVE → ABORTED`
 
-`CANCELLED` cần 100% active Member consensus trước vote `expiresAt`. Logical expiry đúng 30 giây dựa trên server timestamp; scheduled cleanup có thể xảy ra muộn hơn mà không thay đổi hành vi.
+`CANCELLED` cần mọi voter đang ACTIVE đồng ý trong 30 giây từ `openedAt` server. Rules dùng `request.time` làm authority, không có scheduled cleanup. `activeMemberCount` được khởi tạo khi Host start và giảm cùng Host approval; một Member EARLY_EXIT không còn thuộc voter denominator. Nếu remaining ACTIVE members đã unanimous sau approval, cùng transaction hủy room.
 
 ### 9.2 Penalty Score
 
