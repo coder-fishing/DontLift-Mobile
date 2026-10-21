@@ -97,8 +97,9 @@ DontLift is designed to solve phone distraction in focus and social contexts thr
 - **Timeout / Non-Consensus:** The vote becomes inert after 30s; modal dismisses; session remains ACTIVE. A later vote may replace the current vote.
 
 ### 4.7 Host End Session
-- Host taps "End Session". Modal confirmation pops up: `"End session? Final scores will be frozen."`
-- Cloud Function transitions room `ACTIVE → COMPLETED`, freezes final scores, and navigates Host to Bill Settlement input.
+- Host taps "End group session". Confirmation explains that the room closes at server time and scores remain pending until every member syncs.
+- On Firebase Spark, a Rules-authorized Firestore transaction transitions `ACTIVE → COMPLETED` and opens `PENDING` reconciliation (ADR-017). Each participant syncs saved eligible events and confirms; the last acknowledgment locks scores as `ALL_SYNCED`.
+- Everyone sees Group Summary after completion. Bill settlement remains unavailable while reconciliation is `PENDING`; a member who has not synced keeps the room pending.
 
 ---
 
@@ -124,7 +125,7 @@ DontLift is designed to solve phone distraction in focus and social contexts thr
 
 1. `CREATED → WAITING`: Room initialized by Host; PIN/QR generated; Lobby active.
 2. `WAITING → ACTIVE`: Host starts session; motion detection engaged for all participants.
-3. `ACTIVE → COMPLETED`: Host ends session; final Penalty Scores computed; transitions to Bill Settlement.
+3. `ACTIVE → COMPLETED`: Host ends session; reconciliation starts `PENDING`; members sync and acknowledge, then final scores lock at `FINALIZED/ALL_SYNCED`.
 4. `ACTIVE → CANCELLED`: 100% consensus on Early Termination Vote within 30s; session cancelled without bill split.
 5. `ACTIVE → ABORTED`: Host drops for >15 minutes or network crash recovery; room marked stale; participant stats saved locally.
 
@@ -133,7 +134,7 @@ DontLift is designed to solve phone distraction in focus and social contexts thr
 ## 6. Bill Settlement & VietQR UX
 
 ### 6.1 Total Bill Input
-- Accessible to Host only on `COMPLETED` sessions. Host enters total bill amount in integer VND (validated $\ge 1,000$).
+- Accessible to Host only on `COMPLETED` sessions with reconciliation `FINALIZED`. Host enters total bill amount in integer VND (validated $\ge 1,000$).
 
 ### 6.2 Hybrid Bill Allocation Algorithm
 - **Base Allocation:** 40% of bill split equally among all members.

@@ -1,6 +1,6 @@
 # DontLift — Detailed Feature Specification
 
-> Runtime update 2026-10-18: [ADR-010](decisions/ADR-010-expo-go-firebase-js.md) replaces native Firebase with Firebase JS SDK / Expo Go and replaces callable registration bootstrap with create-only Firestore Rules. Other planned authoritative commands below remain future work.
+> Runtime update 2026-10-18: [ADR-010](decisions/ADR-010-expo-go-firebase-js.md) replaces native Firebase with Firebase JS SDK / Expo Go and replaces callable registration bootstrap with create-only Firestore Rules. Exact Spark transactions in ADR-011–017 supersede the callable paths they explicitly name.
 
 > **Status:** APPROVED  
 > **Traceability:** PRD v1.6.0 (`US-01` – `US-19`, `FR-01` – `FR-06`) · Project Context v1.0.0  
@@ -80,7 +80,7 @@
 | `None` | `WAITING` | Host creates room | Authenticated client transaction -> Firestore Rules | Unique eight-digit PIN reservation and Host membership committed atomically. |
 | `CREATED` | `WAITING` | Room doc written to Firestore | Firestore | Lobby live; QR Code rendered; Members can join. |
 | `WAITING` | `ACTIVE` | Host taps "Start Session" | Authenticated Firestore transaction guarded by Security Rules (ADR-013) | Canonical room state changes once; active tracking is handled by SL-017. |
-| `ACTIVE` | `COMPLETED` | Host taps "End Session" | Cloud Function | Final Penalty Scores frozen; Host navigated to Total Bill entry (`US-13`). |
+| `ACTIVE` | `COMPLETED` | Host confirms "End group session" | Rules-authorized Spark transaction (ADR-017) | Opens PENDING reconciliation; each member syncs and ACKs; final ACK locks scores as ALL_SYNCED before settlement. |
 | `ACTIVE` | `CANCELLED` | All currently ACTIVE room members vote YES within 30 seconds | Spark Firestore transaction + Rules (ADR-016) | Session terminated early; Bill Settlement bypassed (`US-11`). |
 | `ACTIVE` | `ABORTED` | Host offline timeout / drop > 15m | Cloud Function Cron | Room marked stale; participant stats saved locally. |
 
@@ -125,7 +125,7 @@
    - All active members receive interactive modal.  
    - If every eligible member votes "Yes" within 30s, the same transaction changes vote and room to `CANCELLED`; session ends without bill settlement.
    - A "No" or timeout leaves the room `ACTIVE`; the expired vote is inert and may be replaced by a later vote. Host-approved early exit removes that member from the voter denominator atomically.
-7. **Host Session End (`US-12`):** Host taps "End Session". Cloud Function sets room to `COMPLETED`, computes final authoritative Penalty Scores, and navigates Host to Bill Settlement.
+7. **Host Session End (`US-12`):** Host confirms ending the room. On Spark, the ADR-017 Rules-authorized transaction records `COMPLETED`, server `endedAt`, and reconciliation `PENDING`. Each participant flushes eligible local events through room end and acknowledges. The final acknowledgment locks the canonical member scores as `FINALIZED/ALL_SYNCED`. Everyone sees Group Summary; settlement is blocked while any member remains pending.
 
 ### 4.3 Bill Settlement & VietQR (`US-13` – `US-15`, `FR-05`)
 1. **Total Bill Input (`US-13`):** Host enters a positive integer amount in VND, minimum 1,000 VND; divisibility by 1,000 is not required.

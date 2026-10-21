@@ -170,13 +170,14 @@ History query của US-16 đọc collection này theo owner path, sắp xếp `c
 | `createdAt`, `startedAt`, `endedAt`, `updatedAt` | timestamp/null | Lifecycle timestamps |
 | `totalBillVnd` | integer/null | Positive integer tối thiểu 1.000 |
 | `reconciliationStatus` | enum | `PENDING | FINALIZED` sau completion |
-| `pendingMemberCount` | integer | Server-maintained completion reconciliation count |
-| `finalizedAt`, `finalizedBy` | timestamp/string/null | Score finalization audit |
-| `finalizationReason` | enum/null | `ALL_SYNCED | HOST_OVERRIDE` |
+| `pendingMemberCount` | integer | Rules-checked count initialized from `participantCount` and decremented atomically per member ACK |
+| `completionRequestId`, `lastSyncAckMemberUid`, `lastSyncAckRequestId` | string/null | Idempotency/link markers for ADR-017 transactions |
+| `finalizedAt`, `finalizedBy` | timestamp/string/null | Rules-checked final ACK audit |
+| `finalizationReason` | enum/null | `ALL_SYNCED` in SL-020; future `HOST_OVERRIDE` is not implemented here |
 
 #### `rooms/{roomId}/members/{uid}`
 
-`displayName`, `role`, `status` (`ACTIVE` or `EARLY_EXIT` while room is active), `liftCount`, `violationDurationSeconds`, `penaltyScore`, `joinedAt`, `earlyExitAt`, `syncedThroughAt`, `syncAcknowledgedAt`, and optional `lastViolationEventId`.
+`displayName`, `role`, `status` (`ACTIVE` or `EARLY_EXIT` while room is active), `liftCount`, `violationDurationSeconds`, `penaltyScore`, `joinedAt`, `earlyExitAt`, `syncedThroughAt`, `syncAcknowledgedAt`, optional `syncAckRequestId`, and optional `lastViolationEventId`.
 
 #### `rooms/{roomId}/violations/{eventId}`
 
@@ -254,9 +255,9 @@ Wire-level request, response, required-field, response-version, per-command erro
 | `openTerminationVote` / `castTerminationVote` | Active-member scoped Spark transactions; Rules enforce server deadline, ballots, counters and unanimous cancellation per ADR-016 |
 | `openTerminationVote` | Active Member, one active vote, 30-second expiry |
 | `castTerminationVote` | Active Member, unexpired vote, idempotent ballot |
-| `completeRoom` | Host-only `ACTIVE → COMPLETED`, open reconciliation |
-| `acknowledgeMemberSync` | Member has flushed all eligible events through `endedAt` |
-| `finalizeRoomScores` | All synced or explicit Host override |
+| `completeRoom` | Host-only Spark transaction: `ACTIVE → COMPLETED`, opens reconciliation per ADR-017 |
+| `acknowledgeMemberSync` | Member checks local outbox then attests sync; Rules atomically decrement once and finalize at zero |
+| `finalizeRoomScores` | Future Host override contract; outside SL-020 |
 | `calculateBillShares` | Reconciliation finalized, integer-only allocation |
 | `applyBillOverrides` | Host-only, total and type validation |
 | `setSettlementDetails` | Host-only room-scoped bank details; 30-day expiry |
@@ -328,12 +329,11 @@ Backend success được commit local thành `SYNCED` trước khi outbox payloa
 
 ### 8.7 Completion reconciliation
 
-`completeRoom` chuyển room sang `COMPLETED` và đặt `reconciliationStatus = PENDING`. Mỗi Member flush event đến `endedAt`, sau đó gọi `acknowledgeMemberSync`.
+`completeRoom` chuyển room sang `COMPLETED` và đặt `reconciliationStatus = PENDING` bằng transaction Spark theo ADR-017. `pendingMemberCount` bắt đầu bằng roster cố định (`participantCount`), giữ cả Host và Member đã được duyệt rời. Mỗi member đồng bộ event đủ điều kiện tới `endedAt`, kiểm tra local outbox rồi gọi transaction `acknowledgeMemberSync`.
 
-- Khi mọi relevant Member đã acknowledgment, server finalizes score với `ALL_SYNCED`.
-- Khi còn Member chưa sync, Host phải thấy đúng warning: **“Some Members have not synced. Late violations will not affect payment.”**
-- Host chỉ có thể chọn explicit override sau warning. `finalizeRoomScores` finalizes với `HOST_OVERRIDE` và atomically ghi append-only `reconciliationAudits` document.
-- Audit document ghi Host UID, request ID, room end time, unsynced Member UIDs, timestamp và resulting score snapshot reference.
+- Mỗi Rules-checked ACK đổi chính Member và giảm room counter trong cùng transaction; ACK cuối cùng đặt `FINALIZED/ALL_SYNCED`.
+- Host thấy danh sách member chưa ACK qua room-scoped listener. SL-020 không có Host override hoặc timeout; room có thể ở `PENDING` cho đến khi mọi member quay lại.
+- Rules không đọc SQLite. Local outbox check rồi ACK là attestation từ member; client tùy biến có thể ACK sớm và bỏ qua penalty của chính mình. Bảo đảm server xác minh đầy đủ đòi hỏi trusted backend, không nằm trong Firebase Spark.
 - `calculateBillShares` bị chặn cho đến khi reconciliation `FINALIZED`.
 - Late valid event sau Host override vẫn được lưu vào history nhưng có `excludedFromFinalScore = true`, `exclusionReason = HOST_OVERRIDE` và không sửa bill đã khóa.
 

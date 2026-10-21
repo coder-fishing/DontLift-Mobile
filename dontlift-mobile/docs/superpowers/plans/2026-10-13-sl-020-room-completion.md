@@ -8,8 +8,8 @@
 
 **Slice:** SL-020. **Ưu tiên đề xuất:** P0. **Release:** MVP + activation/Premium; post-MVP deferred. SL-036 chỉ được tính release sau D6.
 
-**Trạng thái kế hoạch:** DRAFT — chưa được human duyệt; bị chặn bởi D3 cho interaction early-exit cutoff với reconciliation.
-**Trạng thái implementation quan sát:** End chỉ navigate sang bill, không reconcile. Chưa có evidence nghiệm thu slice.
+**Trạng thái kế hoạch:** APPROVED — human yêu cầu tiếp tục trên Firebase Spark ngày 2026-10-21; D3 policy đã chốt tại ADR-015 và Spark exception được ghi tại ADR-017.
+**Trạng thái implementation quan sát:** Spark completion/ACK, reconciliation summary và terminal-room recovery đã được thêm vào working tree. TypeScript check đã chạy; Rules Emulator và Expo Go chưa được xác minh.
 **Baseline khảo sát:** docs/p6.0-implementation-slices tại 57ca1eb28a2952c66d01f89b9b89bf755ab4812a.
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Plan slug:** `2026-10-13-sl-020-room-completion`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-020-room-completion]`.
@@ -26,15 +26,15 @@ V01–V10 chỉ các màn tương ứng tại `design/concepts/concept-final/scr
 
 **Kiến trúc:** completeRoom và acknowledgeMemberSync sở hữu hành vi của slice. Presentation đọc kết quả qua controller/repository; không tự trở thành nguồn authoritative. Units và đường dẫn mới bên dưới là đề xuất, chưa tồn tại trên baseline; nếu prerequisite đã tạo cùng trách nhiệm thì reuse, không thêm convention thứ hai.
 
-**Stack:** Expo SDK 57 / React Native / TypeScript. SQLite cho local-first khi slice có persistence; React Native Firebase Auth/Firestore Standard/Functions cho boundary có Firebase. Không bắt slice thuần local phải có network.
+**Stack:** Expo SDK 57 / React Native / TypeScript. SQLite cho local-first; Firebase JS SDK Auth/Firestore Standard, Firestore transactions và Security Rules trên Spark. Không dùng Cloud Functions, bật billing hay scheduled service. Các command cần mạng và không queue offline.
 
 **Không gồm:** HOST_OVERRIDE, bill calculation, infinite-wait policy tự thay đổi.
 
 ## 2. Blocker, risk và quyết định cần duyệt
 
-- **D3:** Chốt early-exit cutoff, eligible late-event/ACK outcomes và concurrency với `completeRoom`; SL-018 phải hoàn tất phần sync cutoff trước SL-020.
+- **D3 — resolved:** ADR-015 quy định event kết thúc trước/đúng cutoff được tính; event kết thúc sau cutoff không tăng score; eligible late event còn pending để SL-020 nhận trước ACK. Completion và event ingestion cùng ghi room/member nên Firestore transaction conflict serialize theo state. Rules không thể xác minh SQLite outbox: ACK là client attestation sau local check, với rủi ro client tùy biến ACK sớm được nêu trong ADR-017.
 
-**Rủi ro cụ thể:** In-flight flush/ACK race; field pendingMemberUids Host-only.
+**Rủi ro cụ thể:** Rules không chứng minh được local outbox đã drain; room không có timeout nên có thể PENDING vô hạn; in-flight flush/ACK race; pending UID list được suy ra từ listener thay vì transaction response.
 
 Nếu một contract chỉ có responsibility mà chưa có schema, task đầu là trình bày missing decision với nguồn; không tự tạo endpoint/field mới. Các hành vi test bên dưới mô tả outcome cần đạt, không thay thế wire approval. Ngưỡng/range/default chưa được spec xác định phải có quyết định ghi lại trước khi implement.
 
@@ -50,13 +50,15 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | `src/app/index.tsx` | Đăng ký GroupSummary screen state/rendering và route transition từ GroupActive. |
 | `src/types.ts` | Bổ sung ScreenId cho GroupSummary. |
 | `src/constants.ts` | Bổ sung title cho GroupSummary theo ScreenId. |
-| `functions/src/complete-room.cjs` | Backend boundary của slice; server identity/validation/transaction. |
-| `functions/src/acknowledge-member-sync.cjs` | Backend boundary của slice; server identity/validation/transaction. |
-| `functions/index.js` | Backend boundary của slice; server identity/validation/transaction. |
-| `functions/tests/room-completion-early-exit.test.cjs` | Integration coverage SL-018 × SL-020 cho pre-cutoff event, pending membership, ACK và finalization sau approved early exit. |
-| `__tests__/room-completion.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
-| `__tests__/room-completion-navigation.test.ts` | Kiểm chứng End → GroupSummary, PENDING gate và ALL_SYNCED continuation; không dùng mock để claim Rules/Functions integration. |
-| `functions/tests/room-completion.test.cjs` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
+| `src/features/rooms/room-completion-repository.ts` | Spark transaction cho Host completion và member ACK; local outbox gate trước ACK. |
+| `firestore.rules` | Exact completion, ACK, late eligible violation và finalized score invariants theo ADR-017. |
+| `src/features/rooms/room-listener.ts` | Reconciliation fields và per-member acknowledgment projection. |
+| `src/features/rooms/group-violation-repository.ts` | Flush eligible events sau room completion nhưng trước member ACK. |
+| `src/screens/GroupSummaryScreen.tsx` | Summary, pending roster, own-sync state, retry và finalized state. |
+| `src/screens/GroupActiveScreen.tsx` | Host End confirmation, progress/error và điều hướng sang summary sau commit. |
+| `src/app/index.tsx` | Gắn completion/ACK repositories, giữ room projection, summary transition và local retry. |
+| `src/types.ts`, `src/constants.ts` | Bổ sung ScreenId và title cho GroupSummary. |
+| `docs/decisions/ADR-017-spark-room-completion.md` | Ghi Spark authority boundary và giới hạn ACK attestation. |
 
 **Unit:** completeRoom và acknowledgeMemberSync.
 **Nhận:** ACTIVE room, Host complete và Members đã flush tới endedAt.
@@ -73,8 +75,8 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 | version | Bắt buộc | 1, theo common envelope. |
 | requestId | Bắt buộc | UUID; cùng actor/payload replay trả prior outcome, payload khác bị collision. |
 | roomId | Bắt buộc | UUID room, cho completeRoom và acknowledgeMemberSync. |
-| syncedThroughUtcMs | Chỉ ACK | Integer covering authoritative endedAt; server verify flush. |
-| reconciliationStatus | Response | PENDING hoặc FINALIZED; response chi tiết theo API §5. |
+| syncedThroughAt | Member | Set bằng authoritative `room.endedAt` trong ACK transaction; không phải chứng cứ server đọc được SQLite. |
+| reconciliationStatus | Room | `PENDING` đến ACK cuối; `FINALIZED` khi pending count về 0. |
 
 ## 4. Ràng buộc xuyên suốt
 
@@ -82,7 +84,7 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - Không sao chép Firebase token vào SQLite, AsyncStorage hoặc SecureStore; SDK quản lý session.
 - Event offline-capable dùng SQLite domain record và sync_outbox trong một transaction; syncEvents là ingestion authority.
 - Command lifecycle/vote/bill/payment không queue để replay muộn. Firestore cache không thay thế outbox.
-- Membership authority là rooms/{roomId}/members/{uid}. Functions derive actor từ Auth và tự authorization; Admin SDK bypass Rules.
+- Membership authority là rooms/{roomId}/members/{uid}. Với ADR-017, Rules authorize chính xác caller và transaction writes; không dùng Functions/Admin SDK.
 - Giữ 3-Second Grace Period ở cả foreground/background theo ADR-008.
 - Local Premium không cấp server quota/capacity; chỉ verified Server Premium cấp server benefits.
 - Bill dùng integer VND, deterministic residual và tổng exact theo ADR-005; VietQR non-custodial, không bank polling.
@@ -109,10 +111,10 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - [ ] Chạy focused command trong mục 7; xác nhận failure đúng behavior đang thiếu, không từ toolchain lỗi.
 - [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
 
-1. Host-only complete freezes endedAt và pending relevant Members trong transaction/receipt; không loại Member đã early-exit chỉ vì status đổi nếu còn eligible pre-cutoff event cần sync/ACK.
-2. Approved early-exit Member flushes mọi event được SL-018 xác định eligible tới cutoff; `syncEvents` nhận late pre-cutoff delivery theo D3, rồi ACK vẫn phải satisfy contract synced-through `endedAt` mà không đòi event mới sau cutoff.
-3. Server kiểm tra cutoff, durable receipts/aggregate và ACK trong boundary phù hợp; post-cutoff event không đổi frozen exit stats hoặc settlement.
-4. ACK count giảm một lần; zero pending atomically finalizes ALL_SYNCED, bill gate mở.
+1. Host-only complete ghi `endedAt = request.time`, `PENDING`, count=`participantCount`, và completion request marker trong transaction; Member `EARLY_EXIT` vẫn nằm trong count.
+2. App flushes mọi local event eligible theo room end và early-exit cutoff. Rules nhận event đến muộn chỉ khi room PENDING, member chưa ACK và event nằm trong cutoff; event post-cutoff bị loại.
+3. Client đọc local outbox pending count; nếu còn thì không ACK. Rules liên kết Member ACK với room decrement và khóa event mới cho Member đó sau ACK.
+4. ACK count giảm một lần; zero pending atomically finalizes `ALL_SYNCED`; bill gate đọc reconciliation status và vẫn đóng khi `PENDING`.
 
 - [ ] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
 - [ ] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-020-room-completion]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-020-room-completion.md` và `Task: 1`.
@@ -133,11 +135,11 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - [ ] Chạy focused checks, xác nhận failure đúng behavior; giữ fixtures tách khỏi device evidence.
 - [ ] Tích hợp theo thứ tự:
 
-1. Tất cả participants thấy summary/reconciliation state; không navigate bill giả ngay End.
-2. Network/service failure giữ retry context; unsynced Member hiển thị riêng cho Host.
+1. Tất cả participants thấy summary/reconciliation state; không navigate sang bill trước finalization.
+2. Network/service failure giữ retry context; danh sách unsynced Member được Host suy ra từ roster listener.
 3. Early-exit Member vẫn nằm trong membership/history/settlement; pending set và ACK chỉ được chốt sau khi mọi event eligible trước cutoff được xử lý theo SL-018/D3.
 4. Event sau cutoff không tăng frozen exit stats; event trước cutoff đến sau room completion vẫn được xử lý đúng contract, và ACK không thể làm receipt/aggregate bị bỏ qua.
-5. GroupActive End → gọi completeRoom rồi mở GroupSummaryScreen; PENDING không mở settlement/bill flow, FINALIZED/ALL_SYNCED mới cho phép tiếp tục. SL-021 mở rộng cùng route bằng Host-override state/warning, không tạo luồng summary thứ hai.
+5. GroupActive End → transaction completeRoom rồi mở GroupSummaryScreen; PENDING không mở settlement/bill flow. FINALIZED/ALL_SYNCED hiển thị điểm cuối đã khóa; settlement tiếp tục ở slice riêng. SL-021 có thể mở rộng cùng route bằng Host-override state/warning, không tạo luồng summary thứ hai.
 
 - [ ] Thực hiện các kịch bản nghiệm thu trực tiếp trong mục 6; thu logs an toàn/device timestamps khi cần.
 - [ ] Review kết quả; một branch fail hoặc thiếu required device/emulator evidence thì slice chưa hoàn thành.
@@ -166,7 +168,9 @@ Mỗi case phải có actual result. Unit cases dùng controlled fixtures để 
 
 ## 7. Verification và ghi nhận evidence
 
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/room-completion.test.ts __tests__/room-completion-navigation.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/room-completion.test.cjs` and `node --test functions/tests/room-completion-early-exit.test.cjs`; latter requires SL-018 boundary and sync emulator coverage. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+TypeScript: `pnpm exec tsc --noEmit`. Rules validation requires the existing Emulator Suite (`pnpm --dir functions run test:emulators`) with Java installed; these checks have not been run. Expo Go interaction, two-device sync and TalkBack/VoiceOver also remain unverified.
+
+**Evidence 2026-10-21:** TypeScript check via the installed local `tsc.cmd` — PASS; `git diff --check` — PASS. Lint — unavailable because ESLint is not configured; Expo attempted automatic dependency installation, which was stopped and left no package or lockfile content change. No Rules Emulator or Expo Go validation has been recorded.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 
@@ -174,6 +178,6 @@ Ghi trong kết quả execution: baseline/commit mới, command, exit status, s�
 
 ## 8. Human review và bàn giao P6.2
 
-Human phải duyệt scope, non-goals, tasks, acceptance cases, dependencies và các quyết định còn mở của **SL-020** trước implementation. Duyệt một slice không duyệt tất cả 37; duyệt authoring batch không duyệt code.
+Human đã duyệt tiếp tục SL-020 trên Firebase free tier ngày 2026-10-21. Quyết định Spark giới hạn theo ADR-017; D3 đã được giải quyết bằng ADR-015. Phạm vi không gồm HOST_OVERRIDE, timeout, bill calculation hoặc paid backend.
 
-Sau approval, cập nhật trạng thái/date/decision evidence trong đúng plan; kế hoạch mới chỉ đủ execution-ready khi blocker đã được giải quyết và baseline được re-inspect. Dùng qskill-executing-plans khi user yêu cầu execute plan đã duyệt. Không tự bắt đầu P6.2 từ file draft hoặc từ prompt batch.
+Không tự bắt đầu P6.2 từ file draft hoặc từ prompt batch.

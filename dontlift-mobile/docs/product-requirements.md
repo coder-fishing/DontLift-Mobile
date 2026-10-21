@@ -142,17 +142,17 @@ As any active Member, I want to request session termination so the group can end
 
 *Acceptance Criteria:*
 - Any active member may initiate a termination vote.
-- Session terminates only when 100% of currently active members approve; validated by a Firestore Cloud Function.
-- If consensus is not reached within **30 seconds**, the vote document is deleted by the Cloud Function and the session continues.
+- Session terminates only when 100% of currently active members approve; the Spark Firestore transaction and Rules enforce the ballot and room transition (ADR-016).
+- If consensus is not reached within **30 seconds**, the vote is inert by server time and the session continues; no scheduled deletion is required.
 - A cancelled session does not proceed to penalty-based bill settlement.
 
 **US-12 — End Session (Host)**
-As a Host, I want to end the session so the group can move to bill settlement.
+As a Host, I want to end the session and reconcile the final scores before the group moves to bill settlement.
 
 *Acceptance Criteria:*
-- Host taps "End Session"; room document transitions `ACTIVE → COMPLETED` in Firestore via a Cloud Function.
-- Final Penalty Scores are computed by the Cloud Function and written to Firestore; client cannot override them.
-- Session Summary is shown to all participants.
+- Host confirms "End group session"; on Spark, a Rules-authorized transaction transitions `ACTIVE → COMPLETED` and opens `PENDING` reconciliation (ADR-017).
+- Each participant syncs eligible local events and acknowledges. The final ACK locks the Firestore member aggregates as `FINALIZED/ALL_SYNCED`; an ACK is a client attestation because Rules cannot inspect SQLite.
+- Group Summary is shown to all participants; bill settlement stays blocked until reconciliation is finalized.
 
 ---
 
@@ -163,7 +163,7 @@ As a Host, I want to enter the total bill amount so the app can calculate each m
 
 *Acceptance Criteria:*
 - Input is a positive integer value in VND.
-- Only accessible on a `COMPLETED` session.
+- Only accessible on a `COMPLETED` session with reconciliation `FINALIZED`.
 - Only the Host can submit the bill amount.
 
 **US-14 — Bill Breakdown**
@@ -237,7 +237,7 @@ As a user who purchased Premium, I want to enter my activation code so I can unl
 ### FR-02 — Offline-First SQLite Reconciliation
 - All violation events are written to SQLite with a UUID `event_id` before queuing for sync to Firestore.
 - Sync to Firestore is idempotent (keyed on `event_id`), retryable, and duplicate-safe.
-- Firestore is the single source of truth for shared state; the client cannot authoritatively finalize scores, session state, or bill allocations.
+- Firestore is the single source of truth for shared state; clients cannot write arbitrary score, session, or bill state. Exact Spark transactions in ADR-014/015/017 are limited by Security Rules. SL-020 ACK is a member attestation after a local outbox check; Rules cannot inspect device SQLite.
 
 ### FR-03 — Realtime Room Sync
 - Group room state (member list, violations, leaderboard, votes) is synchronized via Firestore real-time listeners.
@@ -245,7 +245,7 @@ As a user who purchased Premium, I want to enter my activation code so I can unl
 
 ### FR-04 — Session Lifecycle Enforcement
 - Valid transitions: `CREATED → WAITING → ACTIVE → COMPLETED` and `ACTIVE → CANCELLED` (early termination).
-- Transition authority rests with Firestore Cloud Functions; the client writes a request document and reflects the resulting state change.
+- Transition authority rests with Firestore Cloud Functions or the exact Security-Rules-authorized Spark transactions defined by accepted ADRs; the client reflects only committed state.
 
 ### FR-05 — Bill Splitting
 - Integer VND arithmetic throughout; no floating point.
@@ -293,7 +293,7 @@ As a user who purchased Premium, I want to enter my activation code so I can unl
 | OQ-2 | Early Exit member bill rule | Included in bill allocation. Penalty Score frozen at exit time; applied via the same penalty-weighted/hybrid formula. Zero violations at exit = normal equal base share. |
 | OQ-3 | Grace period on OS background/inactive | Violation recorded at transition detection. iOS: extend via `beginBackgroundTask`, monitor `backgroundTimeRemaining`, call `endBackgroundTask` before expiry. Android: observe lifecycle events; use WorkManager for deferred guaranteed work. |
 | OQ-4 | Early termination vote timeout | 30 seconds; dismissed server-side on expiry, session continues. |
-| OQ-5 | Backend stack | Spring Boot + MySQL replaced by Firebase Authentication + Firestore + Cloud Functions. Realtime sync via Firestore listeners replaces WebSocket/STOMP. |
+| OQ-5 | Backend stack | Historical choice: Firebase Authentication + Firestore + Cloud Functions. Later Spark ADRs define exact Rules-authorized transaction exceptions; see ADR-011–017. Realtime sync uses Firestore listeners. |
 | OQ-6 | Free Tier vs. Premium Limits | Free tier: max 5 participants/room, max 7 created rooms/month, 7-day violation log retention, light ads. Premium: unlimited rooms & participants, permanent logs, ad-free, offline checksum activation code (`DONTLIFT-XXXX-XXXX-XXXX`). |
 
 ## 8. Monetization Strategy
@@ -364,6 +364,6 @@ As a user who purchased Premium, I want to enter my activation code so I can unl
 
 - [x] Each requirement serves the core phone-down accountability and Kanban-style session journey.
 - [x] All acceptance criteria are observable (sensor state, UI state, database records, API responses).
-- [x] Authentication (Firebase Auth), persistence (SQLite + Firestore), and authorization (Host vs. Member, Cloud Function-enforced) are explicit.
+- [x] Authentication (Firebase Auth), persistence (SQLite + Firestore), and authorization (Host vs. Member, Cloud Function or exact Rules-transaction enforcement) are explicit.
 - [x] Exclusions prevent feature expansion beyond MVP.
 - [x] Open Questions are named rather than silently invented.
