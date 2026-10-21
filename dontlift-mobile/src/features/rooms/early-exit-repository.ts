@@ -137,7 +137,9 @@ export function createEarlyExitRepository(dependencies: Dependencies) {
       const voteRef = doc(dependencies.firestore, 'rooms', input.roomId, 'terminationVotes', 'current');
       const ballotRef = doc(dependencies.firestore, 'rooms', input.roomId, 'terminationVotes', 'current', 'ballots', input.memberUid);
       try {
-        const transactionResult = await runTransaction(dependencies.firestore, async transaction => {
+        // Thử cập nhật vote trước; Rules dùng request.time để chấp nhận khi còn hạn.
+        // Nếu Rules từ chối vì vote đã hết hạn, chạy lại cùng command mà không đụng vote.
+        const decide = (includeOpenVote: boolean) => runTransaction(dependencies.firestore, async transaction => {
           const [room, host, member, request, vote, ballot] = await Promise.all([
             transaction.get(roomRef), transaction.get(hostRef), transaction.get(memberRef), transaction.get(requestRef),
             transaction.get(voteRef), transaction.get(ballotRef),
@@ -174,14 +176,13 @@ export function createEarlyExitRepository(dependencies: Dependencies) {
             if (Number.isInteger(roomData.activeMemberCount) && roomData.activeMemberCount < 2) {
               throw new EarlyExitError('failed-precondition');
             }
-            const activeVote = vote.exists() && vote.data().status === 'OPEN'
-              && vote.data().openedAt instanceof Timestamp
-              && Date.now() < vote.data().openedAt.toMillis() + 30_000;
-            if (!Number.isInteger(roomData.activeMemberCount) && activeVote) {
+            const openVote = includeOpenVote && vote.exists() && vote.data().status === 'OPEN'
+              && vote.data().openedAt instanceof Timestamp;
+            if (!Number.isInteger(roomData.activeMemberCount) && openVote) {
               throw new EarlyExitError('failed-precondition');
             }
             let cancelRoom = false;
-            if (activeVote && Number.isInteger(roomData.activeMemberCount)) {
+            if (openVote && Number.isInteger(roomData.activeMemberCount)) {
               // Cùng giao dịch loại voter đã rời khỏi mẫu số, tránh vote count lệch giữa các thiết bị.
               const voteData = vote.data();
               const votedYes = ballot.exists() && ballot.data().voteId === voteData.voteId && ballot.data().choice === 'YES';
@@ -210,6 +211,15 @@ export function createEarlyExitRepository(dependencies: Dependencies) {
             decision: input.decision,
           } satisfies Result;
         });
+        let transactionResult: Result;
+        try {
+          transactionResult = await decide(true);
+        } catch (firstError) {
+          const firstCode = typeof firstError === 'object' && firstError !== null && 'code' in firstError
+            ? String(firstError.code).replace(/^firestore\//, '') : '';
+          if (input.decision !== 'APPROVE' || firstCode !== 'permission-denied') throw firstError;
+          transactionResult = await decide(false);
+        }
         return (await readCommittedResult(dependencies.firestore, input.roomId, input.memberUid, input.requestId)) ?? transactionResult;
       } catch (error) {
         throw mapError(error);
