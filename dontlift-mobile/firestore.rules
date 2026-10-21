@@ -33,6 +33,10 @@ service cloud.firestore {
       return /databases/$(database)/documents/rooms/$(roomId)/terminationVotes/current/ballots/$(uid);
     }
 
+    function reconciliationAuditPath(roomId, auditId) {
+      return /databases/$(database)/documents/rooms/$(roomId)/reconciliationAudits/$(auditId);
+    }
+
     function pinPath(pin) {
       return /databases/$(database)/documents/roomPins/$(pin);
     }
@@ -246,6 +250,89 @@ service cloud.firestore {
             && after.get('finalizationReason', null) == before.get('finalizationReason', null)
             && after.get('finalizedAt', null) == before.get('finalizedAt', null)
             && after.get('finalizedBy', null) == before.get('finalizedBy', null)));
+    }
+
+    function validHostOverrideAuditLink(roomId, auditId) {
+      let before = resource.data;
+      let audit = getAfter(reconciliationAuditPath(roomId, auditId)).data;
+      return audit.requestId == auditId
+        && audit.hostUid == request.auth.uid
+        && audit.reason == 'HOST_OVERRIDE'
+        && audit.roomEndedAt == before.endedAt
+        && audit.createdAt == request.time
+        && audit.pendingMemberCount == before.pendingMemberCount
+        && audit.scoreSnapshotRef == 'rooms/' + roomId + '/members';
+    }
+
+    // Host kết thúc chờ ACK bằng giao dịch Spark; audit phải được tạo cùng lần đổi trạng thái.
+    function validHostScoreOverride(roomId) {
+      let before = resource.data;
+      let after = request.resource.data;
+      let host = get(hostMemberPath(roomId, request.auth.uid)).data;
+      let auditId = after.get('hostOverrideRequestId', null);
+      return signedIn()
+        && before.status == 'COMPLETED'
+        && before.reconciliationStatus == 'PENDING'
+        && before.pendingMemberCount is int
+        && before.pendingMemberCount > 0
+        && before.hostId == request.auth.uid
+        && host.role == 'HOST'
+        && host.status == 'ACTIVE'
+        && before.endedAt is timestamp
+        && auditId is string
+        && auditId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
+        && after.diff(before).affectedKeys().hasOnly([
+          'reconciliationStatus', 'finalizationReason', 'finalizedAt', 'finalizedBy', 'hostOverrideRequestId'
+        ])
+        && after.status == before.status
+        && after.endedAt == before.endedAt
+        && after.pendingMemberCount == before.pendingMemberCount
+        && after.reconciliationStatus == 'FINALIZED'
+        && after.finalizationReason == 'HOST_OVERRIDE'
+        && after.finalizedAt == request.time
+        && after.finalizedBy == request.auth.uid
+        && validHostOverrideAuditLink(roomId, auditId);
+    }
+
+    function validHostOverrideAuditCreate(roomId, auditId) {
+      let room = get(roomPath(roomId)).data;
+      let roomAfter = getAfter(roomPath(roomId)).data;
+      let host = get(hostMemberPath(roomId, request.auth.uid)).data;
+      let data = request.resource.data;
+      return signedIn()
+        && auditId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
+        && room.status == 'COMPLETED'
+        && room.reconciliationStatus == 'PENDING'
+        && room.pendingMemberCount is int
+        && room.pendingMemberCount > 0
+        && room.endedAt is timestamp
+        && room.hostId == request.auth.uid
+        && host.role == 'HOST'
+        && host.status == 'ACTIVE'
+        && data.keys().hasAll([
+          'version', 'requestId', 'hostUid', 'reason', 'confirmedWarning', 'roomEndedAt', 'createdAt',
+          'pendingMemberCount', 'unsyncedMemberUids', 'scoreSnapshotRef'
+        ])
+        && data.keys().hasOnly([
+          'version', 'requestId', 'hostUid', 'reason', 'confirmedWarning', 'roomEndedAt', 'createdAt',
+          'pendingMemberCount', 'unsyncedMemberUids', 'scoreSnapshotRef'
+        ])
+        && data.version == 1
+        && data.requestId == auditId
+        && data.hostUid == request.auth.uid
+        && data.reason == 'HOST_OVERRIDE'
+        && data.confirmedWarning == true
+        && data.roomEndedAt == room.endedAt
+        && data.createdAt == request.time
+        && data.pendingMemberCount == room.pendingMemberCount
+        && data.unsyncedMemberUids is list
+        && data.unsyncedMemberUids.size() == room.pendingMemberCount
+        && data.scoreSnapshotRef == 'rooms/' + roomId + '/members'
+        && roomAfter.reconciliationStatus == 'FINALIZED'
+        && roomAfter.finalizationReason == 'HOST_OVERRIDE'
+        && roomAfter.finalizedAt == request.time
+        && roomAfter.finalizedBy == request.auth.uid
+        && roomAfter.hostOverrideRequestId == auditId;
     }
 
     function validMemberSyncAcknowledgment(roomId, memberUid) {
@@ -548,6 +635,42 @@ service cloud.firestore {
         && memberAfter.get('lastViolationEventId', null) == eventId;
     }
 
+    // Sau override, event hợp lệ chỉ vào history; member score và snapshot đã khóa.
+    function validExcludedGroupViolation(roomId, eventId, data) {
+      let room = get(roomPath(roomId)).data;
+      let member = get(hostMemberPath(roomId, request.auth.uid)).data;
+      return room.status == 'COMPLETED'
+        && room.reconciliationStatus == 'FINALIZED'
+        && room.finalizationReason == 'HOST_OVERRIDE'
+        && member.status in ['ACTIVE', 'EARLY_EXIT']
+        && data.keys().hasAll([
+          'eventId', 'actorUid', 'startedAt', 'endedAt', 'durationSeconds', 'createdAt',
+          'excludedFromFinalScore', 'exclusionReason'
+        ])
+        && data.keys().hasOnly([
+          'eventId', 'actorUid', 'startedAt', 'endedAt', 'durationSeconds', 'createdAt',
+          'excludedFromFinalScore', 'exclusionReason'
+        ])
+        && eventId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
+        && data.eventId == eventId
+        && data.actorUid == request.auth.uid
+        && data.startedAt is timestamp
+        && data.endedAt is timestamp
+        && data.startedAt >= room.startedAt
+        && data.endedAt >= data.startedAt
+        && data.endedAt <= room.endedAt
+        && data.endedAt <= request.time
+        && (member.status != 'EARLY_EXIT'
+          || (member.earlyExitAt is timestamp && data.endedAt <= member.earlyExitAt))
+        && data.durationSeconds is int
+        && data.durationSeconds >= 3
+        && data.endedAt >= data.startedAt + duration.value(data.durationSeconds, 's')
+        && data.endedAt < data.startedAt + duration.value(data.durationSeconds + 1, 's')
+        && data.createdAt == request.time
+        && data.excludedFromFinalScore == true
+        && data.exclusionReason == 'HOST_OVERRIDE';
+    }
+
     function validGroupViolationMemberUpdate(roomId, memberUid) {
       let after = request.resource.data;
       let eventId = after.get('lastViolationEventId', null);
@@ -761,6 +884,7 @@ service cloud.firestore {
         ) || validEarlyExitRoomUpdate(roomId)
         || validRoomCompletion(roomId)
         || validRoomSyncAcknowledgment(roomId)
+        || validHostScoreOverride(roomId)
       );
       allow list, delete: if false;
 
@@ -818,6 +942,12 @@ service cloud.firestore {
         allow delete: if false;
       }
 
+      match /reconciliationAudits/{auditId} {
+        allow get, list: if roomParticipant(roomId, request.auth.uid);
+        allow create: if validHostOverrideAuditCreate(roomId, auditId);
+        allow update, delete: if false;
+      }
+
       match /terminationVotes/{voteId} {
         allow get, list: if roomParticipant(roomId, request.auth.uid);
         allow create: if voteId == 'current' && validOpenTerminationVote(roomId, false);
@@ -836,8 +966,9 @@ service cloud.firestore {
         // Thành viên còn trong roster đọc event khi ACTIVE hoặc COMPLETED để retry/replay reconciliation.
         allow get, list: if canReadGroupViolations(roomId, request.auth.uid);
         allow create: if signedIn()
-          && canRecordGroupViolation(roomId, request.auth.uid, request.resource.data.endedAt)
-          && validGroupViolation(roomId, eventId, request.resource.data);
+          && ((canRecordGroupViolation(roomId, request.auth.uid, request.resource.data.endedAt)
+              && validGroupViolation(roomId, eventId, request.resource.data))
+            || validExcludedGroupViolation(roomId, eventId, request.resource.data));
         allow update, delete: if false;
       }
     }
