@@ -210,12 +210,15 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const [terminationVoteError, setTerminationVoteError] = useState<string>();
   const [isCompletingRoom, setIsCompletingRoom] = useState(false);
   const [roomCompletionError, setRoomCompletionError] = useState<string>();
+  const [isFinalizingRoomOverride, setIsFinalizingRoomOverride] = useState(false);
+  const [roomOverrideError, setRoomOverrideError] = useState<string>();
   const [isAcknowledgingRoom, setIsAcknowledgingRoom] = useState(false);
   const [roomAcknowledgmentError, setRoomAcknowledgmentError] = useState<string>();
   const pendingTerminationVoteOpen = useRef<{ roomId: string; requestId: string } | null>(null);
   const pendingTerminationBallot = useRef<{ roomId: string; voteId: string; requestId: string; choice: TerminationChoice } | null>(null);
   const pendingEarlyExitRequest = useRef<{ roomId: string; requestId: string } | null>(null);
   const pendingRoomCompletion = useRef<{ roomId: string; requestId: string } | null>(null);
+  const pendingRoomOverride = useRef<{ roomId: string; requestId: string } | null>(null);
   const pendingRoomAcknowledgment = useRef<{ roomId: string; requestId: string } | null>(null);
   const earlyExitCleanupInFlight = useRef(new Set<string>());
   const groupCaptureWork = useRef(new Map<string, ReturnType<typeof createGroupCaptureWorkTracker>>());
@@ -356,6 +359,10 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
           }
           // Chốt violation đã xác nhận theo mốc kết thúc server, giữ outbox pending cho SL-020 reconciliation.
           await groupViolationRepository.finalizeOpenAtRoomEnd({ roomId, userId: profile.uid, endedAtUtcMs });
+          if (snapshot.reconciliationStatus === 'FINALIZED' && snapshot.finalizationReason === 'HOST_OVERRIDE') {
+            // Member quay lại sau override vẫn gửi event đủ điều kiện vào history, không mở lại điểm.
+            await groupViolationRepository.syncPending(roomId).catch(() => undefined);
+          }
           await persistTerminalRoomProjection(getLocalDatabase(), {
             roomId, userId: profile.uid, status: snapshot.status as 'COMPLETED' | 'ABORTED' | 'CANCELLED', endedAtUtcMs,
             reconciliationStatus: snapshot.reconciliationStatus,
@@ -540,6 +547,44 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
           : 'Could not end the room. Reconnect and retry; the request was not queued offline.');
     } finally {
       setIsCompletingRoom(false);
+    }
+  };
+
+  const handleFinalizeRoomOverride = async (unsyncedMemberUids: string[]) => {
+    const snapshot = roomLobbyState?.snapshot;
+    const ownMember = snapshot?.members.find(member => member.uid === profile.uid);
+    if (!lobbyRoom || !snapshot || snapshot.status !== 'COMPLETED' || ownMember?.role !== 'HOST'
+      || isFinalizingRoomOverride) return;
+    setIsFinalizingRoomOverride(true);
+    setRoomOverrideError(undefined);
+    const pending = pendingRoomOverride.current?.roomId === lobbyRoom.roomId
+      ? pendingRoomOverride.current
+      : { roomId: lobbyRoom.roomId, requestId: Crypto.randomUUID() };
+    pendingRoomOverride.current = pending;
+    try {
+      await roomCompletionRepository.finalizeRoomScores({
+        ...pending,
+        reason: 'HOST_OVERRIDE',
+        confirmedWarning: true,
+        unsyncedMemberUids,
+      });
+      pendingRoomOverride.current = null;
+      // Ghi history-only cho violation local còn pending sau khi server đã khóa điểm.
+      void groupViolationRepository.syncPending(lobbyRoom.roomId).catch(() => undefined);
+    } catch (error) {
+      if (!(error instanceof RoomCompletionError) || error.code !== 'unavailable') pendingRoomOverride.current = null;
+      if (__DEV__ && error instanceof RoomCompletionError) {
+        console.warn('[room-override] failed', JSON.stringify({ code: error.code }));
+      }
+      setRoomOverrideError(error instanceof RoomCompletionError && error.code === 'permission-denied'
+        ? 'Firebase rejected finalization. Check that the Spark Firestore Rules are deployed.'
+        : error instanceof RoomCompletionError && error.code === 'failed-precondition'
+          ? 'The room state changed. Wait for the latest room snapshot and retry if members are still pending.'
+          : error instanceof RoomCompletionError && error.code === 'unavailable'
+            ? 'Could not confirm the request with Firebase. Reconnect and retry; the same request will be reused.'
+            : 'Could not finalize the room. Your scores have not been changed by this attempt.');
+    } finally {
+      setIsFinalizingRoomOverride(false);
     }
   };
 
@@ -806,15 +851,26 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     const update = (state: Network.NetworkState) => {
       if (active) setGroupIsOnline(state.isConnected === true && state.isInternetReachable !== false);
     };
-    const subscription = Network.addNetworkStateListener(update);
-    void Network.getNetworkStateAsync().then(update).catch(() => {
+    const syncPendingHistory = () => {
+      if (active && lobbyRoom && groupSummarySnapshot?.finalizationReason === 'HOST_OVERRIDE') {
+        void groupViolationRepository.syncPending(lobbyRoom.roomId).catch(() => undefined);
+      }
+    };
+    const subscription = Network.addNetworkStateListener(state => {
+      update(state);
+      if (state.isConnected === true && state.isInternetReachable !== false) syncPendingHistory();
+    });
+    void Network.getNetworkStateAsync().then(state => {
+      update(state);
+      if (state.isConnected === true && state.isInternetReachable !== false) syncPendingHistory();
+    }).catch(() => {
       if (active) setGroupIsOnline(false);
     });
     return () => {
       active = false;
       subscription.remove();
     };
-  }, [currentScreen]);
+  }, [currentScreen, lobbyRoom?.roomId, groupSummarySnapshot?.finalizationReason, groupViolationRepository]);
 
   useEffect(() => {
     if (!groupRoomSnapshot) {
@@ -1641,8 +1697,11 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
           groupSummarySnapshot
             ? <GroupSummaryScreen snapshot={groupSummarySnapshot} actorUid={profile.uid}
                 isOnline={groupIsOnline} isSyncing={isAcknowledgingRoom}
+                isFinalizingOverride={isFinalizingRoomOverride}
                 errorMessage={roomAcknowledgmentError}
+                overrideErrorMessage={roomOverrideError}
                 onSyncAndAcknowledge={() => { void handleAcknowledgeRoomSync(); }}
+                onFinalizeWithOverride={uids => { void handleFinalizeRoomOverride(uids); }}
                 onReturnToGroupHome={() => {
                   setCreatedRoom(null);
                   setJoinedRoom(null);
