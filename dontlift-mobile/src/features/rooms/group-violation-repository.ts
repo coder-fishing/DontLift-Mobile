@@ -61,9 +61,25 @@ function mapError(error: unknown): GroupViolationError {
   return new GroupViolationError('unknown');
 }
 
+function createRoomWorkQueue() {
+  const tails = new Map<string, Promise<unknown>>();
+  return function serialize<T>(roomId: string, work: () => Promise<T>): Promise<T> {
+    const previous = tails.get(roomId) ?? Promise.resolve();
+    const current = previous.catch(() => undefined).then(work);
+    tails.set(roomId, current);
+    void current.then(
+      () => { if (tails.get(roomId) === current) tails.delete(roomId); },
+      () => { if (tails.get(roomId) === current) tails.delete(roomId); },
+    );
+    return current;
+  };
+}
+
 export function createGroupViolationRepository(dependencies: Dependencies) {
   const database = dependencies.database ?? getLocalDatabase;
   const createId = dependencies.createId ?? Crypto.randomUUID;
+  // Tuần tự hóa sync và normalize cutoff để kết quả sync cũ không ghi đè payload mới.
+  const serializeRoomWork = createRoomWorkQueue();
   return {
     async start(input: { sessionId: string; userId: string; startedAtUtcMs: number; confirmedAtUtcMs: number }): Promise<ViolationRecord> {
       const actor = dependencies.auth.currentUser;
@@ -118,10 +134,11 @@ export function createGroupViolationRepository(dependencies: Dependencies) {
       const actor = dependencies.auth.currentUser;
       if (!actor || actor.uid !== input.userId) throw new GroupViolationError('unauthenticated');
       if (!Number.isFinite(input.endedAtUtcMs)) throw new GroupViolationError('invalid-argument');
-      const db = await database();
-      let finalized = 0;
-      const cutoffIso = new Date(input.endedAtUtcMs).toISOString();
-      await db.withExclusiveTransactionAsync(async tx => {
+      return serializeRoomWork(input.roomId, async () => {
+        const db = await database();
+        let finalized = 0;
+        const cutoffIso = new Date(input.endedAtUtcMs).toISOString();
+        await db.withExclusiveTransactionAsync(async tx => {
         const pendingRows = await tx.getAllAsync<FinalizableViolationRow>(
           `SELECT v.event_id, v.room_id, v.user_id, v.started_at, v.confirmed_at, v.ended_at, v.created_at
            FROM violation_logs v
@@ -165,8 +182,9 @@ export function createGroupViolationRepository(dependencies: Dependencies) {
           });
           finalized += 1;
         }
+        });
+        return finalized;
       });
-      return finalized;
     },
     async getSummary(roomId: string): Promise<ViolationSummary> {
       const actor = dependencies.auth.currentUser;
@@ -184,6 +202,7 @@ export function createGroupViolationRepository(dependencies: Dependencies) {
       return row?.confirmed_at ? { eventId: row.event_id, startedAtUtcMs: Date.parse(row.started_at), confirmedAtUtcMs: Date.parse(row.confirmed_at) } : null;
     },
     async syncPending(roomId: string): Promise<void> {
+      return serializeRoomWork(roomId, async () => {
       const actor = dependencies.auth.currentUser;
       if (!actor) throw new GroupViolationError('unauthenticated');
       const db = await database();
@@ -286,6 +305,7 @@ export function createGroupViolationRepository(dependencies: Dependencies) {
           throw mapped;
         }
       }
+      });
     },
     async getPendingCount(roomId: string): Promise<number> {
       const actor = dependencies.auth.currentUser;
