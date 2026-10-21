@@ -99,7 +99,7 @@ DontLift is designed to solve phone distraction in focus and social contexts thr
 ### 4.7 Host End Session
 - Host taps "End group session". Confirmation explains that the room closes at server time and scores remain pending until every member syncs.
 - On Firebase Spark, a Rules-authorized Firestore transaction transitions `ACTIVE → COMPLETED` and opens `PENDING` reconciliation (ADR-017). Each participant syncs saved eligible events and confirms; the last acknowledgment locks scores as `ALL_SYNCED`.
-- Everyone sees Group Summary after completion. Bill settlement remains unavailable while reconciliation is `PENDING`; a member who has not synced keeps the room pending.
+- Everyone sees Group Summary after completion. Bill settlement remains unavailable while reconciliation is `PENDING`. When members remain pending, the Host may choose `Finalize anyway` after confirming: `Some Members have not synced. Late violations will not affect payment.` A Spark transaction records an immutable Host-observed audit and finalizes the existing score documents as `HOST_OVERRIDE` (ADR-018). Late eligible events remain in history and do not alter final scores or payment. The audit's pending-member list reflects the roster the Host observed; it is not server-verified as complete.
 
 ---
 

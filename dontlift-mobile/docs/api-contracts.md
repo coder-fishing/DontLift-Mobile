@@ -216,9 +216,11 @@ Members of the room may read its violation documents. The leaderboard reads room
 
 **Response:** common response plus `roomId`, `reconciliationStatus: "FINALIZED"`, `finalizationReason: "HOST_OVERRIDE"`, `unsyncedMemberUids`, `auditId` and `scoreSnapshotRef`.
 
-**Errors:** `unauthenticated`, `permission-denied`, `invalid-argument` unless the exact warning was confirmed, `not-found`, `failed-precondition` when already finalized or no Members remain pending, `unavailable`, `already-exists`.
+**Errors:** `unauthenticated`, `permission-denied`, `invalid-argument` unless the exact warning was confirmed, `not-found`, `failed-precondition` when already finalized under a different request or no Members remain pending, `unavailable`, `already-exists` for a request-ID collision.
 
-**Transaction outputs:** retained as a future callable contract for a later slice; HOST_OVERRIDE is not implemented by SL-020 and is unavailable on the Spark transaction path defined in ADR-017.
+**Spark transaction:** the active Host may finalize a `COMPLETED/PENDING` room only when `pendingMemberCount > 0` and `confirmedWarning` is true. In one online Firestore client transaction, it changes the room to `FINALIZED/HOST_OVERRIDE` and creates an immutable audit at `rooms/{roomId}/reconciliationAudits/{requestId}`. `auditId` is the request ID. The audit records the Host, confirmed-warning attestation, server time, room end time, pending-member count and UIDs observed in the Host's room-member snapshot. `scoreSnapshotRef` identifies the room's member-score documents, which Rules freeze at finalization. Rules link the audit creation and room transition atomically, and reject repeats with a different request ID. Replaying the same request ID returns the saved outcome. The UID list is a Host-observed attestation: Firestore Rules cannot prove that a client-supplied list includes every pending member. No Functions, billing change or offline command queue is used.
+
+After `HOST_OVERRIDE`, eligible late violations are written to room history with `excludedFromFinalScore: true` and `exclusionReason: "HOST_OVERRIDE"`; they never update member score documents. The Host warning is: `Some Members have not synced. Late violations will not affect payment.`
 
 ## 7. Bill and settlement callables
 

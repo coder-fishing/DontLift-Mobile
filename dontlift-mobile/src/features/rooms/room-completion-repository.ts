@@ -14,10 +14,16 @@ export type RoomCompletionResult = {
   endedAtUtcMs: number | null;
   reconciliationStatus: ReconciliationStatus;
   pendingMemberCount: number;
-  finalizationReason: 'ALL_SYNCED' | null;
+  finalizationReason: 'ALL_SYNCED' | 'HOST_OVERRIDE' | null;
 };
 
 export type MemberSyncAcknowledgment = RoomCompletionResult & { memberUid: string };
+export type HostScoreFinalization = RoomCompletionResult & {
+  finalizationReason: 'HOST_OVERRIDE';
+  unsyncedMemberUids: string[];
+  auditId: string;
+  scoreSnapshotRef: string;
+};
 
 export class RoomCompletionError extends Error {
   constructor(public readonly code: 'unauthenticated' | 'invalid-argument' | 'not-found' | 'permission-denied' | 'failed-precondition' | 'unavailable' | 'already-exists' | 'unknown') {
@@ -55,12 +61,106 @@ function resultFromRoom(roomId: string, requestId: string, data: Record<string, 
     endedAtUtcMs: endedAt instanceof Timestamp ? endedAt.toMillis() : null,
     reconciliationStatus: data.reconciliationStatus === 'FINALIZED' ? 'FINALIZED' : 'PENDING',
     pendingMemberCount: Number(data.pendingMemberCount ?? 0),
-    finalizationReason: data.finalizationReason === 'ALL_SYNCED' ? 'ALL_SYNCED' : null,
+    finalizationReason: data.finalizationReason === 'ALL_SYNCED' || data.finalizationReason === 'HOST_OVERRIDE'
+      ? data.finalizationReason : null,
   };
 }
 
 export function createRoomCompletionRepository(dependencies: Dependencies) {
   return {
+    async finalizeRoomScores(input: {
+      roomId: string;
+      requestId: string;
+      reason: 'HOST_OVERRIDE';
+      confirmedWarning: boolean;
+      unsyncedMemberUids: string[];
+    }): Promise<HostScoreFinalization> {
+      const actor = dependencies.auth.currentUser;
+      if (!actor) throw new RoomCompletionError('unauthenticated');
+      if (!validRequestId(input.requestId) || !validRoomId(input.roomId)
+        || input.reason !== 'HOST_OVERRIDE' || input.confirmedWarning !== true
+        || !Array.isArray(input.unsyncedMemberUids)
+        || input.unsyncedMemberUids.some(uid => typeof uid !== 'string' || uid.length === 0)
+        || new Set(input.unsyncedMemberUids).size !== input.unsyncedMemberUids.length) {
+        throw new RoomCompletionError('invalid-argument');
+      }
+
+      const roomRef = doc(dependencies.firestore, 'rooms', input.roomId);
+      const hostRef = doc(dependencies.firestore, 'rooms', input.roomId, 'members', actor.uid);
+      const auditRef = doc(dependencies.firestore, 'rooms', input.roomId, 'reconciliationAudits', input.requestId);
+      const scoreSnapshotRef = `rooms/${input.roomId}/members`;
+      try {
+        return await runTransaction(dependencies.firestore, async transaction => {
+          const [roomSnapshot, hostSnapshot, auditSnapshot] = await Promise.all([
+            transaction.get(roomRef), transaction.get(hostRef), transaction.get(auditRef),
+          ]);
+          if (!roomSnapshot.exists() || !hostSnapshot.exists()) throw new RoomCompletionError('not-found');
+          const room = roomSnapshot.data();
+          const host = hostSnapshot.data();
+          if (room.hostId !== actor.uid || host.role !== 'HOST' || host.status !== 'ACTIVE') {
+            throw new RoomCompletionError('permission-denied');
+          }
+
+          if (room.status === 'COMPLETED' && room.reconciliationStatus === 'FINALIZED'
+            && room.finalizationReason === 'HOST_OVERRIDE' && room.hostOverrideRequestId === input.requestId) {
+            if (!auditSnapshot.exists()) throw new RoomCompletionError('failed-precondition');
+            const audit = auditSnapshot.data();
+            return {
+              ...resultFromRoom(input.roomId, input.requestId, room),
+              finalizationReason: 'HOST_OVERRIDE',
+              unsyncedMemberUids: Array.isArray(audit.unsyncedMemberUids)
+                ? audit.unsyncedMemberUids.filter((uid: unknown): uid is string => typeof uid === 'string') : [],
+              auditId: input.requestId,
+              scoreSnapshotRef: String(audit.scoreSnapshotRef ?? scoreSnapshotRef),
+            };
+          }
+
+          if (room.status !== 'COMPLETED' || room.reconciliationStatus !== 'PENDING'
+            || !Number.isInteger(room.pendingMemberCount) || room.pendingMemberCount <= 0
+            || !(room.endedAt instanceof Timestamp)
+            || input.unsyncedMemberUids.length !== room.pendingMemberCount
+            || auditSnapshot.exists()) {
+            throw new RoomCompletionError('failed-precondition');
+          }
+
+          // Chốt điểm và tạo audit cùng lúc; danh sách UID phản ánh roster Host quan sát, Rules không thể xác minh đủ thiếu.
+          transaction.update(roomRef, {
+            reconciliationStatus: 'FINALIZED',
+            finalizationReason: 'HOST_OVERRIDE',
+            finalizedAt: serverTimestamp(),
+            finalizedBy: actor.uid,
+            hostOverrideRequestId: input.requestId,
+          });
+          transaction.set(auditRef, {
+            version: 1,
+            requestId: input.requestId,
+            hostUid: actor.uid,
+            reason: 'HOST_OVERRIDE',
+            confirmedWarning: true,
+            roomEndedAt: room.endedAt,
+            createdAt: serverTimestamp(),
+            pendingMemberCount: room.pendingMemberCount,
+            unsyncedMemberUids: input.unsyncedMemberUids,
+            scoreSnapshotRef,
+          });
+          return {
+            ...resultFromRoom(input.roomId, input.requestId, {
+              ...room,
+              reconciliationStatus: 'FINALIZED',
+              finalizationReason: 'HOST_OVERRIDE',
+              pendingMemberCount: room.pendingMemberCount,
+            }),
+            finalizationReason: 'HOST_OVERRIDE',
+            unsyncedMemberUids: input.unsyncedMemberUids,
+            auditId: input.requestId,
+            scoreSnapshotRef,
+          };
+        });
+      } catch (error) {
+        throw mapError(error);
+      }
+    },
+
     async completeRoom(input: { roomId: string; requestId: string }): Promise<RoomCompletionResult> {
       const actor = dependencies.auth.currentUser;
       if (!actor) throw new RoomCompletionError('unauthenticated');

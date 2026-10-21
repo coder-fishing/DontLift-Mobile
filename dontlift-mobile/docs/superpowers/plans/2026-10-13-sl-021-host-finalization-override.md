@@ -2,19 +2,19 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use the qskill-executing-plans skill to implement this plan task-by-task. Steps use checkbox tracking.
 > Kế hoạch chỉ mô tả file, unit, hành vi, quy tắc, đầu ra và test cases; không có implementation code hoặc signatures. Đọc source thật trước mỗi task.
-> **Gate:** Không execute kế hoạch khi trạng thái còn DRAFT hoặc khi blocker/dependency chưa giải quyết. Việc tạo file này không phê duyệt backlog hay P6.2.
+> **Gate:** Không execute kế hoạch nếu trạng thái còn DRAFT hoặc dependency/blocker chưa giải quyết. Phê duyệt này chỉ áp dụng cho SL-021, không phê duyệt backlog hay P6.2.
 
 **Mục tiêu:** Host override khi còn Member chưa sync: FINALIZED/HOST_OVERRIDE, append-only audit; late events history-only.
 
 **Slice:** SL-021. **Ưu tiên đề xuất:** P1. **Release:** MVP + activation/Premium; post-MVP deferred. SL-036 chỉ được tính release sau D6.
 
-**Trạng thái kế hoạch:** DRAFT — chưa được human duyệt.
-**Trạng thái implementation quan sát:** Chưa có reconciliation warning/audit. Chưa có evidence nghiệm thu slice.
+**Trạng thái kế hoạch:** APPROVED — human chọn giữ Firebase Spark/free tier và duyệt ngoại lệ transaction + Rules ngày 2026-10-21.
+**Trạng thái implementation quan sát:** Host override warning, Spark transaction, audit và late-event history-only path đã được triển khai trong working tree. Chưa đủ evidence Rules Emulator và thiết bị để hoàn tất slice.
 **Baseline khảo sát:** docs/p6.0-implementation-slices tại 57ca1eb28a2952c66d01f89b9b89bf755ab4812a.
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Plan slug:** `2026-10-13-sl-021-host-finalization-override`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-021-host-finalization-override]`.
-**Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13, chưa được phê duyệt. User đã yêu cầu ghi draft P6.1 cho cả 37 slice; không suy thành approval thực thi.
-**Traceability:** API §5.3; ARCH §8.7; ADR-003.
+**Đầu vào phạm vi:** Human approval ngày 2026-10-21 để thực hiện riêng SL-021 trên Spark; không suy thành approval cho các slice khác.
+**Traceability:** API §5.3; ARCH §8.7; ADR-003; ADR-018.
 **Phụ thuộc bắt buộc:** [SL-020](./2026-10-13-sl-020-room-completion.md)
 **Ưu tiên mềm:** Theo thứ tự đề xuất trong [mục lục](../../implementation-plan.md); thứ tự không tạo thêm hard dependency.
 
@@ -24,15 +24,15 @@
 
 V01–V10 chỉ các màn tương ứng tại `design/concepts/concept-final/screens/`; prototype nằm tại `prototype/`. Chúng là read-only visual/interaction references, không chứng minh integration. Nếu journey không có design screen, trình bày gap với human trước quyết định UI mới.
 
-**Kiến trúc:** finalizeRoomScores sở hữu hành vi của slice. Presentation đọc kết quả qua controller/repository; không tự trở thành nguồn authoritative. Units và đường dẫn mới bên dưới là đề xuất, chưa tồn tại trên baseline; nếu prerequisite đã tạo cùng trách nhiệm thì reuse, không thêm convention thứ hai.
+**Kiến trúc:** finalizeRoomScores là Firestore client transaction được Rules authorize theo ADR-018. Presentation đọc kết quả qua controller/repository; không tự trở thành nguồn authoritative. Dùng score documents hiện hữu làm snapshot bất biến; audit là document create-only trong cùng transaction. Không dùng Cloud Functions, billing hoặc scheduled service.
 
-**Stack:** Expo SDK 57 / React Native / TypeScript. SQLite cho local-first khi slice có persistence; React Native Firebase Auth/Firestore Standard/Functions cho boundary có Firebase. Không bắt slice thuần local phải có network.
+**Stack:** Expo SDK 57 / React Native / TypeScript. SQLite cho local-first; Firebase JS SDK Auth/Firestore Standard, transaction và Security Rules trên Spark. Lệnh cần mạng và không queue offline.
 
 **Không gồm:** Silent/time-based override, deleting late violations.
 
 ## 2. Blocker, risk và quyết định cần duyệt
 
-- Không có blocker riêng được xác nhận trong draft; dependency và quyền/runtime vẫn phải đạt gate trước thực thi.
+- **Resolved 2026-10-21:** Host override chạy trên Spark theo ADR-018. Audit ghi pending UIDs mà Host quan sát từ room roster; Firestore Rules không xác minh được tính đầy đủ của danh sách này. Không mô tả nó như server-verified.
 
 **Rủi ro cụ thể:** Override/ACK transaction contention và audit privacy.
 
@@ -44,18 +44,17 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 | File dự kiến | Trách nhiệm |
 |---|---|
-| `src/features/rooms/completion-controller.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
-| `src/screens/GroupSummaryScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
-| `functions/src/finalize-room-scores.cjs` | Backend boundary của slice; server identity/validation/transaction. |
-| `functions/src/sync-events.cjs` | Backend boundary của slice; server identity/validation/transaction. |
-| `functions/index.js` | Đăng ký callable finalization, giữ nguyên export syncEvents do SL-018 sở hữu và dùng bootstrap SL-003 hiện có. |
-| `__tests__/host-finalization-override.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
-| `functions/tests/host-finalization-override.test.cjs` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
-| `functions/tests/host-finalization-discovery.test.cjs` | Kiểm tra callable finalization được export và syncEvents hiện hữu vẫn được discover. |
+| `src/features/rooms/room-completion-repository.ts` | Spark transaction, replay and idempotent outcome; reuse existing completion boundary. |
+| `src/features/rooms/room-listener.ts` | Project HOST_OVERRIDE state for the existing summary UI. |
+| `src/features/rooms/group-violation-repository.ts` | Append eligible post-finalization events as history-only; no score mutation. |
+| `firestore.rules` | Exact Host override/audit link and history-only violation rules; freeze final scores. |
+| `src/screens/GroupSummaryScreen.tsx` | Host warning, confirmation and pending-member summary on existing route. |
+| `src/app/index.tsx` | Wire override action and retryable state into existing Group Summary. |
+| `functions/tests/host-finalization-override.rules.emulator.test.cjs` | Emulator coverage for host/member/outsider, audit linkage, idempotency, frozen score and late history. |
 
 **Unit:** finalizeRoomScores.
 **Nhận:** Host confirmation đúng warning, PENDING room và unsynced membership.
-**Trả:** FINALIZED/HOST_OVERRIDE, append-only audit; late events history-only.
+**Trả:** FINALIZED/HOST_OVERRIDE, append-only audit; late events history-only. Audit's UID list is explicitly Host-observed, not Rules-verified.
 **Đầu vào từ dependency:** capabilities/records/commands đã nghiệm thu theo các plan liên kết; chưa có dependency output thì không giả coi integration có thật.
 **Đầu ra cho slice sau:** outcome và invariants trong mục tiêu/nghiệm thu dưới đây; tên internal unit là đề xuất, wire names chỉ dùng theo API/ADR đã duyệt.
 
@@ -85,13 +84,13 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - Không thêm social login, analytics dashboards, kiosk, wallet, chat, AI coaching hoặc camera-based detection vào MVP.
 - Không install/provision/deploy/publish trong lượt authoring plan này; mọi check bên dưới là hướng dẫn execution sau approval.
 
-## 5. Các task thực hiện sau approval
+## 5. Các task implementation
 
 ### Task 1 — Boundary và quy tắc của Host override khi còn Member chưa sync
 
 **Files:** Dùng units/config/backend/repositories trong bảng mục 3; khi test source đã được chỉ định, đặt cases thuộc boundary vào đúng app/backend target. Không thay presentation chưa cần cho task này.
 
-**Nhận/trả:** Nhận Host confirmation đúng warning, PENDING room và unsynced membership; trả FINALIZED/HOST_OVERRIDE, append-only audit; late events history-only. Với contract đang bị chặn, chưa có quyền thêm schema dù test outcome đã được nêu.
+**Nhận/trả:** Nhận Host confirmation đúng warning, PENDING room và unsynced membership; trả FINALIZED/HOST_OVERRIDE, append-only audit; late events history-only. Audit UID list là Host-observed attestation; Rules không chứng minh được tính đầy đủ.
 
 - [ ] Đọc lại source/spec và xác nhận tất cả blocker cùng dependency cho task đã được giải quyết; nếu chưa, dừng execution và báo đúng blocker.
 - [ ] Viết focused failing cases sau đây; runner không tìm thấy hoặc thiếu dependency không được tính là red nghiệp vụ.
@@ -104,8 +103,8 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
 
 1. Hiện đúng warning: Some Members have not synced. Late violations will not affect payment.
-2. Require confirmedWarning và Host identity; final scores/audit/receipt một transaction.
-3. Ghi actor/request/unsynced UIDs/end time/resulting snapshot ref; audit không editable bởi client.
+2. Require explicit confirmation and active Host identity; finalize the room and create an immutable audit in one Spark transaction.
+3. Record actor/request/Host-observed unsynced UIDs/end time/frozen score reference. Rules link the audit and transition; they cannot prove UID-list completeness.
 
 - [ ] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
 - [ ] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-021-host-finalization-override]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-021-host-finalization-override.md` và `Task: 1`.
@@ -121,7 +120,7 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - [ ] Override khi đã finalized → safe contract error.
 - [ ] Late valid event → excludedFromFinalScore, bill giữ nguyên.
 - [ ] Concurrent last ACK/override → một terminal finalization.
-- [ ] Chạy `functions/tests/host-finalization-discovery.test.cjs` → callable finalization được discover và syncEvents hiện hữu vẫn nguyên vẹn.
+- [ ] Chạy Rules Emulator → Host-only finalization, one audit per request, and history-only late events; frozen scores remain unchanged.
 
 - [ ] Chạy focused checks, xác nhận failure đúng behavior; giữ fixtures tách khỏi device evidence.
 - [ ] Tích hợp theo thứ tự:
@@ -129,7 +128,7 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 1. Không confirm → không command; loading/error cho phép safe retry.
 2. Late valid event vẫn vào history với exclusion reason HOST_OVERRIDE; không sửa frozen score/bill.
 3. ACK cuối và override đồng thời → một finalization canonical, không hai outcomes mâu thuẫn.
-4. Đăng ký callable finalization trong entrypoint SL-003; không đăng ký lại hoặc thay bootstrap của syncEvents từ SL-018.
+4. Không thêm Cloud Functions hoặc thay bootstrap của `syncEvents`.
 
 - [ ] Thực hiện các kịch bản nghiệm thu trực tiếp trong mục 6; thu logs an toàn/device timestamps khi cần.
 - [ ] Review kết quả; một branch fail hoặc thiếu required device/emulator evidence thì slice chưa hoàn thành.
@@ -145,22 +144,31 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - [ ] Concurrent last ACK/override → một terminal finalization.
 - [ ] Host confirm khi một device offline → inspect audit và warning evidence.
 - [ ] Device offline reconnect → history cập nhật, QR/bill không thay đổi.
-- [ ] Functions discovery → callable finalization khả dụng và syncEvents vẫn được export đúng một lần.
+- [ ] Rules Emulator → only active Host can finalize; audit/room transition atomic; replay creates one audit; late history cannot change scores.
 
-Mỗi case phải có actual result. Unit cases dùng controlled fixtures để chứng minh domain; Firebase boundary cần Rules/Functions emulator tests cho allowed/denied/replay/concurrency khi áp dụng. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.
+Mỗi case phải có actual result. Firebase boundary cần Rules Emulator tests cho allowed/denied/replay/concurrency. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.
 
 **Failure recovery bắt buộc:** không hiển thị successful save/transition khi commit/request chưa thành công; giữ dữ liệu/retry context theo hành vi cụ thể trong tasks. Không log email đầy đủ, token, activation code hoặc bank details. Case không áp dụng cho slice phải ghi lý do trong evidence, không bỏ im lặng.
 
 ## 7. Verification và ghi nhận evidence
 
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/host-finalization-override.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/host-finalization-override.test.cjs` và `node --test functions/tests/host-finalization-discovery.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+Focused app tests: `pnpm test -- --runInBand __tests__/room-host-finalization-override.test.ts __tests__/group-violation-repository.test.ts`. Rules tests: `node --test functions/tests/host-finalization-override.rules.emulator.test.cjs` within the configured Firestore Emulator Suite (Java required). TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 
-Ghi trong kết quả execution: baseline/commit mới, command, exit status, số cases, emulator/device/runtime version, date, actual outcomes và remaining gaps. Các checklist hiện đều chưa chạy.
+### Evidence hiện tại — 2026-10-21
+
+- `node node_modules/typescript/bin/tsc --noEmit` từ `dontlift-mobile/`: PASS (exit 0).
+- `node node_modules/jest/bin/jest.js --runInBand __tests__/room-host-finalization-override.test.ts __tests__/group-violation-repository.test.ts`: PASS (2 suites, 6 tests).
+- `git diff --check`: PASS (exit 0).
+- `pnpm run test:emulators` chưa chạy được: Firebase CLI báo `Could not spawn java -version`; Rules Emulator cases vẫn UNVERIFIED.
+- Full app suite trước đó: 32/34 suites pass; hai suite hiện hữu `local-database.test.ts` và `room-lobby-projection.test.ts` fail do kỳ vọng schema/projection cũ (SQLite v8/6 columns trong khi baseline hiện tại là v9/9 columns). Chưa thay đổi các test/file này.
+- Chưa chạy Expo Go/device acceptance, concurrency ACK/override trên Emulator, hoặc production Rules deploy. Không bật billing và không deploy Functions.
+
+Các checklist nghiệm thu chưa có evidence phải giữ UNVERIFIED; thiếu Java và thiết bị là blocker xác minh, không phải PASS.
 
 ## 8. Human review và bàn giao P6.2
 
-Human phải duyệt scope, non-goals, tasks, acceptance cases, dependencies và các quyết định còn mở của **SL-021** trước implementation. Duyệt một slice không duyệt tất cả 37; duyệt authoring batch không duyệt code.
+Human approved the Spark scope, non-goals, tasks, acceptance cases and audit limitation for **SL-021** on 2026-10-21. This approval does not authorize enabling billing, deploying Functions, or production Rules deployment.
 
-Sau approval, cập nhật trạng thái/date/decision evidence trong đúng plan; kế hoạch mới chỉ đủ execution-ready khi blocker đã được giải quyết và baseline được re-inspect. Dùng qskill-executing-plans khi user yêu cầu execute plan đã duyệt. Không tự bắt đầu P6.2 từ file draft hoặc từ prompt batch.
+Kế hoạch đã được duyệt và implementation đang ở working tree. Hoàn tất các evidence còn thiếu trước khi đánh dấu slice xong. Không bắt đầu P6.2 từ kế hoạch này.

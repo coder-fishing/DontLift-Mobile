@@ -25,7 +25,7 @@ export type RoomLobbySnapshot = {
   endedAtUtcMs?: number | null;
   reconciliationStatus?: 'PENDING' | 'FINALIZED' | null;
   pendingMemberCount?: number | null;
-  finalizationReason?: 'ALL_SYNCED' | null;
+  finalizationReason?: 'ALL_SYNCED' | 'HOST_OVERRIDE' | null;
   pin: string;
   createdAt: string | null;
   updatedAt: string | null;
@@ -97,7 +97,8 @@ export function listenToRoomLobby(
       reconciliationStatus: data.reconciliationStatus === 'PENDING' || data.reconciliationStatus === 'FINALIZED'
         ? data.reconciliationStatus : null,
       pendingMemberCount: Number.isInteger(data.pendingMemberCount) ? Number(data.pendingMemberCount) : null,
-      finalizationReason: data.finalizationReason === 'ALL_SYNCED' ? 'ALL_SYNCED' : null,
+      finalizationReason: data.finalizationReason === 'ALL_SYNCED' || data.finalizationReason === 'HOST_OVERRIDE'
+        ? data.finalizationReason : null,
       pin: String(data.pin ?? ''),
       createdAt: createdAt instanceof Timestamp ? createdAt.toDate().toISOString() : null,
       updatedAt: updatedAt instanceof Timestamp ? updatedAt.toDate().toISOString() : null,
