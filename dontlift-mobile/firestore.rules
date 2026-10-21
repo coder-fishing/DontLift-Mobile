@@ -41,6 +41,114 @@ service cloud.firestore {
       return /databases/$(database)/documents/rooms/$(roomId)/settlementDetails/current;
     }
 
+    function billCommandPath(roomId, requestId) {
+      return /databases/$(database)/documents/rooms/$(roomId)/billCommands/$(requestId);
+    }
+
+    function validBillPublishRoom(roomId) {
+      let before = resource.data;
+      let after = request.resource.data;
+      let receiptPath = billCommandPath(roomId, after.get('billRequestId', '_missing_'));
+      let hostPath = hostMemberPath(roomId, request.auth.uid);
+      return signedIn()
+        && before.status == 'COMPLETED'
+        && before.reconciliationStatus == 'FINALIZED'
+        && before.hostId == request.auth.uid
+        && exists(hostPath)
+        && get(hostPath).data.role == 'HOST'
+        && get(hostPath).data.status == 'ACTIVE'
+        && exists(settlementDetailsPath(roomId))
+        && get(settlementDetailsPath(roomId)).data.expiresAt is timestamp
+        && get(settlementDetailsPath(roomId)).data.expiresAt > request.time
+        && before.get('calculationVersion', null) == null
+        && before.get('billRequestId', null) == null
+        && after.diff(before).affectedKeys().hasOnly([
+          'totalBillVnd', 'calculationVersion', 'billRequestId', 'billPublishedAt', 'billShareCount'
+        ])
+        && after.totalBillVnd is int && after.totalBillVnd >= 1000
+        && after.calculationVersion == 1
+        && after.billRequestId is string
+        && after.billRequestId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
+        && after.billPublishedAt == request.time
+        && after.billShareCount is int && after.billShareCount > 0
+        && existsAfter(receiptPath)
+        && getAfter(receiptPath).data.hostUid == request.auth.uid
+        && getAfter(receiptPath).data.requestId == after.billRequestId
+        && getAfter(receiptPath).data.totalBillVnd == after.totalBillVnd
+        && getAfter(receiptPath).data.shareCount == after.billShareCount
+        && getAfter(receiptPath).data.shareUids is list
+        && getAfter(receiptPath).data.shareUids.size() == after.billShareCount
+        && getAfter(receiptPath).data.sumShareVnd == after.totalBillVnd;
+    }
+
+    function validBillCommandCreate(roomId, requestId) {
+      let data = request.resource.data;
+      let roomAfterPath = roomPath(roomId);
+      let hostPath = hostMemberPath(roomId, request.auth.uid);
+      return signedIn()
+        && requestId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
+        && data.keys().hasAll([
+          'version', 'requestId', 'roomId', 'hostUid', 'totalBillVnd',
+          'calculationVersion', 'shareCount', 'shareUids', 'sumShareVnd', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'version', 'requestId', 'roomId', 'hostUid', 'totalBillVnd',
+          'calculationVersion', 'shareCount', 'shareUids', 'sumShareVnd', 'createdAt'
+        ])
+        && data.version == 1
+        && data.requestId == requestId
+        && data.roomId == roomId
+        && data.hostUid == request.auth.uid
+        && data.totalBillVnd is int && data.totalBillVnd >= 1000
+        && data.calculationVersion == 1
+        && data.shareCount is int && data.shareCount > 0
+        && data.shareUids is list && data.shareUids.size() == data.shareCount
+        && data.sumShareVnd == data.totalBillVnd
+        && data.createdAt == request.time
+        && exists(hostPath)
+        && get(hostPath).data.role == 'HOST'
+        && get(hostPath).data.status == 'ACTIVE'
+        && existsAfter(roomAfterPath)
+        && getAfter(roomAfterPath).data.status == 'COMPLETED'
+        && getAfter(roomAfterPath).data.reconciliationStatus == 'FINALIZED'
+        && getAfter(roomAfterPath).data.hostId == request.auth.uid
+        && getAfter(roomAfterPath).data.calculationVersion == 1
+        && getAfter(roomAfterPath).data.billRequestId == requestId
+        && getAfter(roomAfterPath).data.totalBillVnd == data.totalBillVnd
+        && getAfter(roomAfterPath).data.billShareCount == data.shareCount;
+    }
+
+    function validBillShareCreate(roomId, uid) {
+      let data = request.resource.data;
+      let roomAfterPath = roomPath(roomId);
+      let hostPath = hostMemberPath(roomId, request.auth.uid);
+      let shareMemberPath = hostMemberPath(roomId, uid);
+      let receiptPath = billCommandPath(roomId, data.get('requestId', '_missing_'));
+      return signedIn()
+        && uid == data.uid
+        && data.keys().hasAll(['uid', 'shareVnd', 'requestId', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'shareVnd', 'requestId', 'updatedAt'])
+        && data.shareVnd is int && data.shareVnd >= 0
+        && data.requestId is string
+        && data.updatedAt == request.time
+        && exists(hostPath)
+        && get(hostPath).data.role == 'HOST'
+        && get(hostPath).data.status == 'ACTIVE'
+        && exists(shareMemberPath)
+        && get(shareMemberPath).data.status in ['ACTIVE', 'EARLY_EXIT']
+        && existsAfter(roomAfterPath)
+        && getAfter(roomAfterPath).data.status == 'COMPLETED'
+        && getAfter(roomAfterPath).data.reconciliationStatus == 'FINALIZED'
+        && getAfter(roomAfterPath).data.hostId == request.auth.uid
+        && getAfter(roomAfterPath).data.billRequestId == data.requestId
+        && existsAfter(receiptPath)
+        && getAfter(receiptPath).data.hostUid == request.auth.uid
+        && uid in getAfter(receiptPath).data.shareUids
+        && getAfter(receiptPath).data.totalBillVnd == getAfter(roomAfterPath).data.totalBillVnd
+        && exists(settlementDetailsPath(roomId))
+        && get(settlementDetailsPath(roomId)).data.expiresAt > request.time;
+    }
+
     function validSettlementDetails(roomId) {
       let room = get(roomPath(roomId)).data;
       let hostPath = hostMemberPath(roomId, request.auth.uid);
@@ -953,6 +1061,7 @@ service cloud.firestore {
         || validRoomCompletion(roomId)
         || validRoomSyncAcknowledgment(roomId)
         || validHostScoreOverride(roomId)
+        || validBillPublishRoom(roomId)
       );
       allow list, delete: if false;
 
@@ -1023,6 +1132,24 @@ service cloud.firestore {
         allow list: if false;
         allow create, update: if detailId == 'current' && validSettlementDetails(roomId);
         allow delete: if false;
+      }
+
+      match /billCommands/{requestId} {
+        allow get: if roomParticipant(roomId, request.auth.uid);
+        allow list: if false;
+        allow create: if validBillCommandCreate(roomId, requestId);
+        allow update, delete: if false;
+      }
+
+      match /billShares/{uid} {
+        allow get, list: if roomParticipant(roomId, request.auth.uid)
+          && get(roomPath(roomId)).data.calculationVersion == 1
+          && get(roomPath(roomId)).data.reconciliationStatus == 'FINALIZED'
+          && exists(settlementDetailsPath(roomId))
+          && get(settlementDetailsPath(roomId)).data.expiresAt is timestamp
+          && get(settlementDetailsPath(roomId)).data.expiresAt > request.time;
+        allow create: if validBillShareCreate(roomId, uid);
+        allow update, delete: if false;
       }
 
       match /terminationVotes/{voteId} {
