@@ -8,7 +8,14 @@ import { getLocalDatabase } from '../local/database';
 
 type Dependencies = { firestore: Firestore; auth: Auth; database?: () => Promise<SQLite.SQLiteDatabase>; createId?: () => string };
 type PendingRow = { event_id: string; room_id: string; user_id: string; started_at: string; ended_at: string; duration_seconds: number };
-type OpenViolationRow = { event_id: string; room_id: string; user_id: string; started_at: string; created_at: string };
+type OpenViolationRow = {
+  event_id: string;
+  room_id: string;
+  user_id: string;
+  started_at: string;
+  confirmed_at: string;
+  created_at: string;
+};
 
 async function persistRoomViolationOutbox(
   transaction: SQLite.SQLiteDatabase,
@@ -114,13 +121,27 @@ export function createGroupViolationRepository(dependencies: Dependencies) {
       let finalized = 0;
       await db.withExclusiveTransactionAsync(async tx => {
         const openRows = await tx.getAllAsync<OpenViolationRow>(
-          `SELECT event_id, room_id, user_id, started_at, created_at FROM violation_logs
+          `SELECT event_id, room_id, user_id, started_at, confirmed_at, created_at FROM violation_logs
            WHERE room_id = ? AND user_id = ? AND ended_at IS NULL AND confirmed_at IS NOT NULL`,
           input.roomId, actor.uid,
         );
         for (const row of openRows) {
           const startedAtUtcMs = Date.parse(row.started_at);
-          if (!Number.isFinite(startedAtUtcMs)) continue;
+          const confirmedAtUtcMs = Date.parse(row.confirmed_at);
+          if (!Number.isFinite(startedAtUtcMs) || !Number.isFinite(confirmedAtUtcMs)) continue;
+          if (confirmedAtUtcMs > input.endedAtUtcMs
+            || Math.floor((input.endedAtUtcMs - startedAtUtcMs) / 1_000) < 3) {
+            // Grace chưa xong tại cutoff server: event chưa đủ điều kiện nên bỏ local log và outbox.
+            await tx.runAsync(
+              'DELETE FROM sync_outbox WHERE event_id = ? AND actor_uid = ? AND sync_status = \'PENDING\'',
+              row.event_id, actor.uid,
+            );
+            await tx.runAsync(
+              'DELETE FROM violation_logs WHERE event_id = ? AND user_id = ? AND ended_at IS NULL',
+              row.event_id, actor.uid,
+            );
+            continue;
+          }
           const endedAtUtcMs = Math.max(startedAtUtcMs, input.endedAtUtcMs);
           const durationSeconds = Math.floor((endedAtUtcMs - startedAtUtcMs) / 1_000);
           const result = await tx.runAsync(
