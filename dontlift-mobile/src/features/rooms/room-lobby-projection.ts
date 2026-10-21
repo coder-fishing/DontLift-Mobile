@@ -29,7 +29,7 @@ export async function restoreCachedActiveRoom(
           SELECT 1 FROM sessions s
           WHERE s.id = r.room_id AND s.user_id = mine.uid AND s.mode = 'GROUP' AND s.status = 'ACTIVE'
         )
-        OR (r.status = 'COMPLETED' AND r.reconciliation_status = 'PENDING' AND mine.sync_acknowledged_at IS NULL)
+        OR (r.status = 'COMPLETED' AND r.reconciliation_status = 'PENDING' AND mine.sync_acknowledged_at IS NULL))
      ORDER BY CASE WHEN r.status = 'ACTIVE' THEN 0 ELSE 1 END, r.updated_at DESC
      LIMIT 1`,
     userId,
