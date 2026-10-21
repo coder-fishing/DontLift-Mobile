@@ -29,7 +29,14 @@ export async function restoreCachedActiveRoom(
           SELECT 1 FROM sessions s
           WHERE s.id = r.room_id AND s.user_id = mine.uid AND s.mode = 'GROUP' AND s.status = 'ACTIVE'
         )
-        OR (r.status = 'COMPLETED' AND r.reconciliation_status = 'PENDING' AND mine.sync_acknowledged_at IS NULL))
+        OR (r.status = 'COMPLETED' AND r.reconciliation_status = 'PENDING' AND mine.sync_acknowledged_at IS NULL)
+        OR (r.status = 'COMPLETED' AND r.reconciliation_status = 'FINALIZED'
+          AND r.finalization_reason = 'HOST_OVERRIDE'
+          AND EXISTS (
+            SELECT 1 FROM sync_outbox o
+            WHERE o.aggregate_id = r.room_id AND o.aggregate_type = 'ROOM'
+              AND o.actor_uid = mine.uid AND o.sync_status = 'PENDING'
+          )))
      ORDER BY CASE WHEN r.status = 'ACTIVE' THEN 0 ELSE 1 END, r.updated_at DESC
      LIMIT 1`,
     userId,
@@ -87,7 +94,7 @@ export async function persistTerminalRoomProjection(
     endedAtUtcMs: number;
     reconciliationStatus?: 'PENDING' | 'FINALIZED' | null;
     pendingMemberCount?: number | null;
-    finalizationReason?: 'ALL_SYNCED' | null;
+    finalizationReason?: 'ALL_SYNCED' | 'HOST_OVERRIDE' | null;
   },
 ): Promise<void> {
   const database = await databasePromise;

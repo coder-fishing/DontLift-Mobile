@@ -246,7 +246,11 @@ export function createGroupViolationRepository(dependencies: Dependencies) {
             const canReconcileCompletedRoom = roomData?.status === 'COMPLETED'
               && roomData.reconciliationStatus === 'PENDING'
               && memberData?.syncAcknowledgedAt == null;
-            if (!room.exists() || !roomData || (roomData.status !== 'ACTIVE' && !canReconcileCompletedRoom) || !member.exists()
+            const historyOnlyAfterHostOverride = roomData?.status === 'COMPLETED'
+              && roomData.reconciliationStatus === 'FINALIZED'
+              && roomData.finalizationReason === 'HOST_OVERRIDE';
+            if (!room.exists() || !roomData
+              || (roomData.status !== 'ACTIVE' && !canReconcileCompletedRoom && !historyOnlyAfterHostOverride) || !member.exists()
               || !['ACTIVE', 'EARLY_EXIT'].includes(String(member.data().status))) {
               throw new GroupViolationError('failed-precondition');
             }
@@ -274,6 +278,15 @@ export function createGroupViolationRepository(dependencies: Dependencies) {
             if (roomData.status === 'COMPLETED'
               && (!(roomData.endedAt instanceof Timestamp) || endedAt > roomData.endedAt.toMillis())) {
               throw new GroupViolationError('invalid-argument');
+            }
+            if (historyOnlyAfterHostOverride) {
+              // Sau Host override event hợp lệ chỉ được lưu vào history, không cập nhật điểm đã khóa.
+              tx.set(eventRef, {
+                eventId: row.event_id, actorUid: actor.uid, startedAt: Timestamp.fromMillis(startedAt),
+                endedAt: Timestamp.fromMillis(endedAt), durationSeconds, createdAt: serverTimestamp(),
+                excludedFromFinalScore: true, exclusionReason: 'HOST_OVERRIDE',
+              });
+              return;
             }
             tx.set(eventRef, {
               eventId: row.event_id, actorUid: actor.uid, startedAt: Timestamp.fromMillis(startedAt),

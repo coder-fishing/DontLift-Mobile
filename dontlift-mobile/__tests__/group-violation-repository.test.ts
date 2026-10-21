@@ -25,7 +25,7 @@ const rows = [
 ];
 
 describe('group violation sync', () => {
-  beforeEach(() => jest.resetAllMocks());
+  beforeEach(() => jest.clearAllMocks());
 
   it('marks an event before the server room window failed and continues syncing later events', async () => {
     const writes: Array<{ sql: string; params: unknown[] }> = [];
@@ -89,5 +89,46 @@ describe('group violation sync', () => {
 
     await expect(repository.syncPending('room-1')).rejects.toMatchObject({ code: 'failed-precondition' });
     expect(readPaths).toHaveLength(2);
+  });
+
+  it('stores eligible pending violations as excluded history after Host override without changing scores', async () => {
+    const writes: Array<{ sql: string; params: unknown[] }> = [];
+    const database = {
+      getAllAsync: jest.fn().mockResolvedValue([rows[0]]),
+      withExclusiveTransactionAsync: jest.fn(async (operation: (transaction: { runAsync: (...args: unknown[]) => Promise<{ changes: number }> }) => Promise<void>) => {
+        await operation({ runAsync: async (sql, ...params) => { writes.push({ sql: String(sql), params }); return { changes: 1 }; } });
+      }),
+    };
+    const set = jest.fn();
+    const update = jest.fn();
+    let readIndex = 0;
+    jest.mocked(runTransaction).mockImplementation(async (_firestore, callback) => callback({
+      get: async () => {
+        const current = readIndex++ % 3;
+        if (current === 0) return { exists: () => true, data: () => ({
+          status: 'COMPLETED', reconciliationStatus: 'FINALIZED', finalizationReason: 'HOST_OVERRIDE',
+          startedAt: Timestamp.fromMillis(0), endedAt: Timestamp.fromMillis(10_000),
+        }) };
+        if (current === 1) return { exists: () => true, data: () => ({ status: 'ACTIVE', earlyExitAt: null }) };
+        return { exists: () => false, data: () => undefined };
+      },
+      set,
+      update,
+    } as never));
+    const repository = createGroupViolationRepository({
+      firestore: {} as never,
+      auth: { currentUser: { uid: 'member' } } as never,
+      database: async () => database as never,
+    });
+
+    await repository.syncPending('room-1');
+
+    expect(set).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      eventId: rows[0].event_id, excludedFromFinalScore: true, exclusionReason: 'HOST_OVERRIDE',
+    }));
+    expect(update).not.toHaveBeenCalled();
+    expect(writes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ sql: expect.stringContaining("SET sync_status = 'SYNCED'"), params: expect.arrayContaining([rows[0].event_id, 'member']) }),
+    ]));
   });
 });
