@@ -148,7 +148,7 @@ export function SettlementDetailsScreen({
       .then((value) => {
         if (!active) return;
         setDetails(value);
-        if (mode === "host" && value) {
+        if (value) {
           setFields({
             bankId: value.bankId,
             accountNumber: value.accountNumber,
