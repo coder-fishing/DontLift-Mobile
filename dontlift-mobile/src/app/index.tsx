@@ -187,6 +187,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const restoredGroupRoomId = useRef<string | null>(null);
   const terminalRoomCleanupInFlight = useRef(new Set<string>());
   const earlyExitCutoffCleanupTasks = useRef(new Map<string, Promise<void>>());
+  const groupLifecycleCutoffs = useRef(new Map<string, number>());
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const [roomCreateError, setRoomCreateError] = useState<string | undefined>();
   const pendingRoomCommand = useRef<RoomCreateCommand | null>(null);
@@ -220,6 +221,17 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const groupCaptureWork = useRef(new Map<string, ReturnType<typeof createGroupCaptureWorkTracker>>());
   const lobbyRoom = joinedRoom ?? createdRoom;
 
+  const reconcileGroupLifecycleAtCutoff = useCallback(async (roomId: string, userId: string, cutoffUtcMs: number) => {
+    const result = await backgroundRecovery.reconcileAtCutoff({ sessionId: roomId, userId }, cutoffUtcMs);
+    if (result === 'needs-review') {
+      Alert.alert(
+        'Session recovery needs review',
+        'Background time could not be verified. No group violation was added for that interval.',
+      );
+    }
+    return result;
+  }, []);
+
   const runEarlyExitCutoffCleanup = useCallback((input: {
     roomId: string;
     userId: string;
@@ -232,6 +244,8 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     const task = (async () => {
       // Chờ capture/recovery đã xếp hàng ghi xong trước khi chốt cutoff.
       await groupCaptureWork.current.get(input.roomId)?.waitForIdle();
+      // Đưa candidate nền vào violation/outbox trước khi đóng session cục bộ.
+      await reconcileGroupLifecycleAtCutoff(input.roomId, input.userId, input.cutoffUtcMs);
       await groupViolationRepository.finalizeOpenAtRoomEnd({
         roomId: input.roomId, userId: input.userId, endedAtUtcMs: input.cutoffUtcMs,
       });
@@ -246,7 +260,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     };
     void task.then(clearTask, clearTask);
     return task;
-  }, [groupViolationRepository]);
+  }, [groupViolationRepository, reconcileGroupLifecycleAtCutoff]);
 
   useEffect(() => {
     let active = true;
@@ -270,9 +284,24 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       return undefined;
     }
     // Giữ listener sống khi đổi tab để Group Active vẫn nhận trạng thái phòng và tiếp tục capture.
-    return listenToRoomLobby(roomRuntime.firestore, lobbyRoom.roomId, setRoomLobbyState,
+    return listenToRoomLobby(roomRuntime.firestore, lobbyRoom.roomId, state => {
+      const snapshot = state.snapshot;
+      if (snapshot?.status === 'COMPLETED' && snapshot.endedAtUtcMs != null) {
+        const ownMember = snapshot.members.find(member => member.uid === profile.uid);
+        const cutoffUtcMs = ownMember?.status === 'EARLY_EXIT' && ownMember.earlyExitAtUtcMs != null
+          ? Math.min(snapshot.endedAtUtcMs, ownMember.earlyExitAtUtcMs)
+          : snapshot.endedAtUtcMs;
+        groupLifecycleCutoffs.current.set(lobbyRoom.roomId, cutoffUtcMs);
+      } else if (snapshot?.status === 'ACTIVE') {
+        const ownMember = snapshot.members.find(member => member.uid === profile.uid);
+        if (ownMember?.status === 'EARLY_EXIT' && ownMember.earlyExitAtUtcMs != null) {
+          groupLifecycleCutoffs.current.set(lobbyRoom.roomId, ownMember.earlyExitAtUtcMs);
+        }
+      }
+      setRoomLobbyState(state);
+    },
       snapshot => persistRoomLobbyProjection(getLocalDatabase(), snapshot));
-  }, [lobbyRoom?.roomId, roomRuntime.firestore]);
+  }, [lobbyRoom?.roomId, roomRuntime.firestore, profile.uid]);
 
   useEffect(() => {
     if (!lobbyRoom) return undefined;
@@ -313,6 +342,12 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
         try {
           // Không chốt local interval cho tới khi lần ghi capture cuối cùng đã hoàn tất.
           await groupCaptureWork.current.get(roomId)?.waitForIdle();
+          if (snapshot.status === 'COMPLETED') {
+            // Reconcile candidate nền theo cutoff server trước khi terminal cleanup đóng session.
+            const cutoffUtcMs = earlyExitCutoffUtcMs == null
+              ? endedAtUtcMs : Math.min(endedAtUtcMs, earlyExitCutoffUtcMs);
+            await reconcileGroupLifecycleAtCutoff(roomId, profile.uid, cutoffUtcMs);
+          }
           if (earlyExitCutoffUtcMs != null && startedAtUtcMs != null) {
             // Nếu đây là snapshot đầu tiên sau khi Host duyệt, áp cutoff trước giờ kết thúc phòng.
             await runEarlyExitCutoffCleanup({
@@ -354,7 +389,8 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       setCurrentScreen('06-group-active');
       restoredGroupRoomId.current = null;
     }
-  }, [roomLobbyState, currentScreen, profile.uid, groupViolationRepository, runEarlyExitCutoffCleanup]);
+  }, [roomLobbyState, currentScreen, profile.uid, groupViolationRepository,
+    runEarlyExitCutoffCleanup, reconcileGroupLifecycleAtCutoff]);
 
   const earlyExitSnapshot = roomLobbyState?.snapshot;
   const earlyExitMember = earlyExitSnapshot?.members.find(member => member.uid === profile.uid);
@@ -519,8 +555,13 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     try {
       // Chờ sensor/recovery đã ghi xong, sau đó chốt interval mở tại endedAt và gửi hết outbox đủ điều kiện.
       await groupCaptureWork.current.get(lobbyRoom.roomId)?.waitForIdle();
+      if (snapshot.endedAtUtcMs == null) throw new RoomCompletionError('failed-precondition');
+      const ownMember = snapshot.members.find(member => member.uid === profile.uid);
+      const lifecycleCutoffUtcMs = ownMember?.status === 'EARLY_EXIT' && ownMember.earlyExitAtUtcMs != null
+        ? Math.min(snapshot.endedAtUtcMs, ownMember.earlyExitAtUtcMs)
+        : snapshot.endedAtUtcMs;
+      await reconcileGroupLifecycleAtCutoff(lobbyRoom.roomId, profile.uid, lifecycleCutoffUtcMs);
       if (snapshot.startedAtUtcMs != null) {
-        const ownMember = snapshot.members.find(member => member.uid === profile.uid);
         if (ownMember?.status === 'EARLY_EXIT' && ownMember.earlyExitAtUtcMs != null) {
           await runEarlyExitCutoffCleanup({
             roomId: lobbyRoom.roomId, userId: profile.uid,
@@ -528,7 +569,6 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
           });
         }
       }
-      if (snapshot.endedAtUtcMs == null) throw new RoomCompletionError('failed-precondition');
       await groupViolationRepository.finalizeOpenAtRoomEnd({
         roomId: lobbyRoom.roomId, userId: profile.uid, endedAtUtcMs: snapshot.endedAtUtcMs,
       });
@@ -909,7 +949,15 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
           session: { sessionId: roomId, userId: profile.uid },
           // Mọi thay đổi kể từ lúc effect bắt đầu được replay từ trạng thái foreground này.
           initialState: 'active',
-          repository: backgroundRecovery,
+          repository: {
+            begin: input => backgroundRecovery.begin(input),
+            reconcile: input => {
+              const cutoffUtcMs = groupLifecycleCutoffs.current.get(input.sessionId);
+              return cutoffUtcMs == null
+                ? backgroundRecovery.reconcile(input)
+                : backgroundRecovery.reconcileAtCutoff(input, cutoffUtcMs);
+            },
+          },
           captureTime: backgroundRecovery.captureTime,
           getDetector: () => controller,
           onPendingChange: pending => {
