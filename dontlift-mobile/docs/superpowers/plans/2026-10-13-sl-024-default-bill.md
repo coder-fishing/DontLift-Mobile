@@ -4,7 +4,7 @@
 > Kế hoạch chỉ mô tả file, unit, hành vi, quy tắc, đầu ra và test cases; không có implementation code hoặc signatures. Đọc source thật trước mỗi task.
 > **Gate:** Không execute kế hoạch khi trạng thái còn DRAFT hoặc khi blocker/dependency chưa giải quyết. Việc tạo file này không phê duyệt backlog hay P6.2.
 
-**Mục tiêu:** Nhập bill và tính shares mặc định: Canonical shares không âm, deterministic và tổng bằng total bill.
+**Mục tiêu:** Host nhập bill và tính shares mặc định; mọi thành viên xem được breakdown canonical khi Host công bố. Shares không âm, deterministic và tổng bằng total bill.
 
 **Slice:** SL-024. **Ưu tiên đề xuất:** P0. **Release:** MVP + activation/Premium; post-MVP deferred. SL-036 chỉ được tính release sau D6.
 
@@ -49,10 +49,14 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | `functions/tests/bill-shares-rules.emulator.test.cjs` | Client-SDK Emulator Suite tests cho member breakdown reads, outsider/cross-room denial và direct share/payment write denial. SL-025–027 reuse suite/policy. |
 | `src/features/settlement/bill-controller.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `src/screens/BillAllocationScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
+| `src/features/settlement/published-bill-listener.ts` | Theo dõi bill shares canonical đã công bố để Member nhận cập nhật realtime. |
+| `src/screens/GroupSummaryScreen.tsx` | Giữ Member ở summary khi chưa có bill; chuyển sang breakdown khi nhận shares đã công bố. |
+| `src/app/index.tsx` | Nối trạng thái room/member với luồng Member từ Group Summary tới Bill Allocation. |
 | `functions/src/bill-allocation.cjs` | Backend boundary của slice; server identity/validation/transaction. |
 | `functions/src/calculate-bill-shares.cjs` | Backend boundary của slice; server identity/validation/transaction. |
 | `functions/index.js` | Backend boundary của slice; server identity/validation/transaction. |
 | `__tests__/default-bill.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
+| `__tests__/published-bill-navigation.test.ts` | Kiểm chứng Member chờ tại Group Summary, tự chuyển khi Host publish, và chỉ thấy breakdown read-only. |
 | `functions/tests/default-bill.test.cjs` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
 
 **Unit:** bill allocation engine và calculateBillShares.
@@ -134,13 +138,19 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - [ ] Repeated calculation request → stable same shares.
 - [ ] Nhiều random valid inputs → shares integer/non-negative/exact-sum/tie deterministic.
 - [ ] Member reads bill shares trong room → allowed; outsider/cross-room → denied; mọi direct client share/payment write → denied trên Emulator Suite.
+- [ ] Member ở Group Summary trước khi publish → vẫn ở summary, thấy trạng thái bill chưa được Host công bố.
+- [ ] Host công bố canonical shares → Member đang ở Group Summary được chuyển tới breakdown read-only và thấy đúng shares mới nhất.
+- [ ] Bill listener lỗi hoặc offline trước khi có snapshot mới → không điều hướng như thể bill đã công bố; hiển thị trạng thái chờ/lỗi phù hợp và giữ khả năng thử lại.
+- [ ] Member mở breakdown → không thấy hoặc dùng được thao tác nhập bill, tính lại, override hay publish dành riêng cho Host.
 
 - [ ] Chạy focused checks, xác nhận failure đúng behavior; giữ fixtures tách khỏi device evidence.
 - [ ] Tích hợp theo thứ tự:
 
 1. Atomically replace shares/room total/calculationVersion/receipt; client chỉ preview hoặc canonical read.
-2. Input lỗi không gọi compute; Member read-only; loading/error/offline/cached breakdown rõ.
-3. Property tests covers small bills/many members/zero penalty; nonzero-share wording không được dùng để invent impossible minima.
+2. Host tiếp tục nhập và công bố bill theo quyền hiện có. Member ở Group Summary chờ snapshot bill shares đã công bố; khi snapshot tới, điều hướng tới Bill Allocation ở chế độ chỉ xem.
+3. Bill Allocation phân biệt Host và Member: chỉ Host có controls nhập/tính/publish; Member chỉ đọc breakdown canonical. Không dùng cache cũ để tạo hoặc khẳng định một lần publish mới.
+4. Giữ trạng thái loading, chưa publish, cached/offline và error rõ ràng; lỗi listener không được điều hướng giả hoặc che nút retry.
+5. Property tests covers small bills/many members/zero penalty; nonzero-share wording không được dùng để invent impossible minima.
 
 - [ ] Thực hiện các kịch bản nghiệm thu trực tiếp trong mục 6; thu logs an toàn/device timestamps khi cần.
 - [ ] Review kết quả; một branch fail hoặc thiếu required device/emulator evidence thì slice chưa hoàn thành.
@@ -155,6 +165,8 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - [ ] Repeated calculation request → stable same shares.
 - [ ] Nhiều random valid inputs → shares integer/non-negative/exact-sum/tie deterministic.
 - [ ] Host nhập bill thực, Member thấy canonical breakdown.
+- [ ] Member ở Group Summary nhận publish realtime và chuyển tới breakdown read-only; trước publish vẫn ở summary.
+- [ ] Member không thể nhập bill, override, tính lại hoặc publish từ breakdown.
 - [ ] Unauthorized direct share write → deny; client score sửa không thay server snapshot.
 
 Mỗi case phải có actual result. Unit cases dùng controlled fixtures để chứng minh domain; Firebase boundary cần Rules/Functions emulator tests cho allowed/denied/replay/concurrency khi áp dụng. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.

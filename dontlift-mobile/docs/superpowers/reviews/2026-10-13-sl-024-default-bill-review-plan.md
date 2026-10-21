@@ -1,7 +1,7 @@
 # Review kế hoạch — SL-024
 
 **Target:** [Plan](../plans/2026-10-13-sl-024-default-bill.md).
-**Baseline:** PRD/Architecture yêu cầu dùng frozen score của Early Exit Member đã được duyệt khi chia bill; SL-018 tạo ra kết quả này.
+**Baseline:** PRD/Architecture yêu cầu dùng frozen score của Early Exit Member đã được duyệt khi chia bill; SL-018 tạo ra kết quả này. US-14 và Feature Specification §4.3 yêu cầu mọi Member thấy breakdown shares theo snapshot realtime.
 **Nguồn:** [Finding trên PR #24](https://github.com/coder-fishing/DontLift-Mobile/pull/24#discussion_r4256674259), commit được review `52b3a79`.
 **Execution scope:** Chỉ sửa plan/index/report; không triển khai bill hoặc early-exit code.
 
@@ -19,7 +19,22 @@
 - **Review reference:** [P2 finding](https://github.com/coder-fishing/DontLift-Mobile/pull/24#discussion_r4256674259).
 - **Response:** SL-024 và index hiện yêu cầu SL-018 cùng SL-020/SL-023; D3 được ghi là blocker thừa hưởng qua early-exit producer. Frozen-score acceptance được giữ nguyên theo source-of-truth precedence trong [AGENTS.md, dòng 14–17](../../../AGENTS.md#L14-L17); dependency graph vẫn acyclic vì SL-018 chỉ phụ thuộc SL-017. Finding được resolved ở plan level, không phải implementation evidence.
 
+## PR24-4259668581
+
+- **Status:** RESOLVED
+- **Severity:** High
+- **Category:** Member bill-breakdown navigation
+- **Location:** Mục 3, Task 2 và Mục 6 của SL-024.
+- **Problem:** Plan chỉ phân công Host tới Bill Allocation. Member ở Group Summary không có listener/route khi Host công bố shares nên không thể xem breakdown mà US-14 yêu cầu.
+- **Recommendation:** Giao SL-024 sở hữu listener shares đã công bố, điều hướng Member từ Group Summary tới Bill Allocation read-only và kiểm thử trạng thái chờ, publish realtime, lỗi/offline, cùng giới hạn quyền Member.
+- **Created At:** 2026-10-13, PR #24 review.
+- **Updated By:** Codex, theo yêu cầu xử lý review.
+- **Updated At:** 2026-10-21, Asia/Saigon.
+- **Review reference:** [P1 finding](https://github.com/coder-fishing/DontLift-Mobile/pull/24#discussion_r4259668581).
+- **Response:** SL-024 hiện giao listener shares, Group Summary và route integration cho Member; Task 2/Mục 6 yêu cầu giữ Member ở summary trước publish, chuyển tới breakdown chỉ xem sau snapshot canonical và kiểm chứng lỗi/offline cùng quyền Host-only. Điều này khớp PRD US-14 và Feature Specification §4.3. Đã sửa kế hoạch, chưa phải bằng chứng triển khai.
+
 ## Self-review
 
 - Dependency header, blocker và index row đồng bộ; frozen-score test không còn chạy trước producer.
+- Member route và listener được thêm vào SL-024 cùng acceptance; Host vẫn là người duy nhất nhập/tính/publish.
 - Không thay công thức bill, D9 hoặc approved scope.
