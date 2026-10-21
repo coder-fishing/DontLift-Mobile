@@ -56,6 +56,7 @@ import { listenToRoomLobby, type RoomLobbyState } from '../features/rooms/room-l
 import { createGroupViolationRepository, GroupViolationError } from '../features/rooms/group-violation-repository';
 import { createEarlyExitSyncRetry } from '../features/rooms/early-exit-sync-retry';
 import { createEarlyExitCleanupRetry } from '../features/rooms/early-exit-cleanup-retry';
+import { createCompletedGroupViolationSyncRetry } from '../features/rooms/completed-group-violation-sync-retry';
 import { createGroupCaptureWorkTracker } from '../features/rooms/group-capture-work';
 import { createEarlyExitRepository, EarlyExitError, type EarlyExitDecision, type EarlyExitRequest } from '../features/rooms/early-exit-repository';
 import { listenToOpenEarlyExitRequests } from '../features/rooms/early-exit-listener';
@@ -279,6 +280,33 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     });
     return () => { active = false; };
   }, [profile.uid]);
+
+  useEffect(() => {
+    let active = true;
+    const retry = createCompletedGroupViolationSyncRetry(groupViolationRepository);
+    const updateConnectivity = (state: Network.NetworkState) => {
+      retry.setOnline(state.isConnected === true && state.isInternetReachable !== false);
+    };
+    const networkSubscription = Network.addNetworkStateListener(updateConnectivity);
+    const appStateSubscription = AppState.addEventListener('change', state => {
+      if (state !== 'active') {
+        retry.setOnline(false);
+        return;
+      }
+      void Network.getNetworkStateAsync().then(state => {
+        if (active) updateConnectivity(state);
+      }).catch(() => retry.setOnline(false));
+    });
+    void Network.getNetworkStateAsync().then(state => {
+      if (active) updateConnectivity(state);
+    }).catch(() => retry.setOnline(false));
+    return () => {
+      active = false;
+      networkSubscription.remove();
+      appStateSubscription.remove();
+      retry.dispose();
+    };
+  }, [groupViolationRepository]);
 
   useEffect(() => {
     if (!lobbyRoom) {
@@ -851,18 +879,11 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     const update = (state: Network.NetworkState) => {
       if (active) setGroupIsOnline(state.isConnected === true && state.isInternetReachable !== false);
     };
-    const syncPendingHistory = () => {
-      if (active && lobbyRoom && groupSummarySnapshot?.finalizationReason === 'HOST_OVERRIDE') {
-        void groupViolationRepository.syncPending(lobbyRoom.roomId).catch(() => undefined);
-      }
-    };
     const subscription = Network.addNetworkStateListener(state => {
       update(state);
-      if (state.isConnected === true && state.isInternetReachable !== false) syncPendingHistory();
     });
     void Network.getNetworkStateAsync().then(state => {
       update(state);
-      if (state.isConnected === true && state.isInternetReachable !== false) syncPendingHistory();
     }).catch(() => {
       if (active) setGroupIsOnline(false);
     });
@@ -870,7 +891,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       active = false;
       subscription.remove();
     };
-  }, [currentScreen, lobbyRoom?.roomId, groupSummarySnapshot?.finalizationReason, groupViolationRepository]);
+  }, [currentScreen]);
 
   useEffect(() => {
     if (!groupRoomSnapshot) {

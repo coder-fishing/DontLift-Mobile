@@ -80,7 +80,47 @@ export function createGroupViolationRepository(dependencies: Dependencies) {
   const createId = dependencies.createId ?? Crypto.randomUUID;
   // Tuần tự hóa sync và normalize cutoff để kết quả sync cũ không ghi đè payload mới.
   const serializeRoomWork = createRoomWorkQueue();
-  return {
+  let syncPendingRoom!: (roomId: string) => Promise<void>;
+  // Quét outbox room đã kết thúc để retry vẫn chạy sau khi UI bỏ chọn room.
+  const syncPendingCompletedRooms = async (): Promise<number> => {
+    const actor = dependencies.auth.currentUser;
+    if (!actor) throw new GroupViolationError('unauthenticated');
+    const db = await database();
+    const candidateRooms = await db.getAllAsync<{ room_id: string }>(
+      `SELECT DISTINCT r.room_id
+       FROM rooms r
+       JOIN sync_outbox o ON o.aggregate_id = r.room_id
+         AND o.aggregate_type = 'ROOM' AND o.actor_uid = ? AND o.sync_status = 'PENDING'
+       JOIN violation_logs v ON v.event_id = o.event_id AND v.room_id = r.room_id
+         AND v.user_id = o.actor_uid AND v.ended_at IS NOT NULL
+       WHERE r.status = 'COMPLETED'
+       ORDER BY r.room_id`,
+      actor.uid,
+    );
+    let firstError: unknown;
+    for (const room of candidateRooms) {
+      try {
+        await syncPendingRoom(room.room_id);
+      } catch (error) {
+        // Một room lỗi tạm thời không được cản retry các room đã kết thúc khác.
+        firstError ??= error;
+      }
+    }
+    if (firstError) throw firstError;
+    const pending = await db.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS count
+       FROM rooms r
+       JOIN sync_outbox o ON o.aggregate_id = r.room_id
+         AND o.aggregate_type = 'ROOM' AND o.actor_uid = ? AND o.sync_status = 'PENDING'
+       JOIN violation_logs v ON v.event_id = o.event_id AND v.room_id = r.room_id
+         AND v.user_id = o.actor_uid AND v.ended_at IS NOT NULL
+       WHERE r.status = 'COMPLETED'`,
+      actor.uid,
+    );
+    return pending?.count ?? 0;
+  };
+  const repository = {
+    syncPendingCompletedRooms,
     async start(input: { sessionId: string; userId: string; startedAtUtcMs: number; confirmedAtUtcMs: number }): Promise<ViolationRecord> {
       const actor = dependencies.auth.currentUser;
       if (!actor || actor.uid !== input.userId) throw new GroupViolationError('unauthenticated');
@@ -339,4 +379,6 @@ export function createGroupViolationRepository(dependencies: Dependencies) {
       return result?.count ?? 0;
     },
   };
+  syncPendingRoom = roomId => repository.syncPending(roomId);
+  return repository;
 }
