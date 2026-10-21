@@ -192,11 +192,16 @@ export function createGroupViolationRepository(dependencies: Dependencies) {
         try {
           await runTransaction(dependencies.firestore, async tx => {
             const [room, member] = await Promise.all([tx.get(roomRef), tx.get(memberRef)]);
-            if (!room.exists() || room.data().status !== 'ACTIVE' || !member.exists()
+            const roomData = room.data();
+            const memberData = member.data();
+            const canReconcileCompletedRoom = roomData?.status === 'COMPLETED'
+              && roomData.reconciliationStatus === 'PENDING'
+              && memberData?.syncAcknowledgedAt == null;
+            if (!room.exists() || !roomData || (roomData.status !== 'ACTIVE' && !canReconcileCompletedRoom) || !member.exists()
               || !['ACTIVE', 'EARLY_EXIT'].includes(String(member.data().status))) {
               throw new GroupViolationError('failed-precondition');
             }
-            // Chỉ đọc event khi room còn ACTIVE; room terminal giữ outbox cho SL-020 reconciliation.
+            // Sau completion chỉ flush event trước endedAt và trước ACK của chính member.
             const existing = await tx.get(eventRef);
             if (existing.exists()) {
               const saved = existing.data();
@@ -206,15 +211,19 @@ export function createGroupViolationRepository(dependencies: Dependencies) {
               }
               return;
             }
-            const memberData = member.data();
-            if (memberData.status === 'EARLY_EXIT'
-              && (!(memberData.earlyExitAt instanceof Timestamp) || endedAt > memberData.earlyExitAt.toMillis())) {
+            const memberValues = member.data();
+            if (memberValues.status === 'EARLY_EXIT'
+              && (!(memberValues.earlyExitAt instanceof Timestamp) || endedAt > memberValues.earlyExitAt.toMillis())) {
               // Event kết thúc sau cutoff không được tính; giữ log cục bộ nhưng không retry vô hạn.
               throw new GroupViolationError('invalid-argument');
             }
             const serverStartedAt = room.data().startedAt;
             if (!(serverStartedAt instanceof Timestamp) || startedAt < serverStartedAt.toMillis()) {
               // Event xảy ra trước mốc room phía server sẽ không hợp lệ cả trong reconciliation.
+              throw new GroupViolationError('invalid-argument');
+            }
+            if (roomData.status === 'COMPLETED'
+              && (!(roomData.endedAt instanceof Timestamp) || endedAt > roomData.endedAt.toMillis())) {
               throw new GroupViolationError('invalid-argument');
             }
             tx.set(eventRef, {
