@@ -8,7 +8,15 @@ import { getLocalDatabase } from '../local/database';
 
 type Dependencies = { firestore: Firestore; auth: Auth; database?: () => Promise<SQLite.SQLiteDatabase>; createId?: () => string };
 type PendingRow = { event_id: string; room_id: string; user_id: string; started_at: string; ended_at: string; duration_seconds: number };
-type OpenViolationRow = { event_id: string; room_id: string; user_id: string; started_at: string; created_at: string };
+type FinalizableViolationRow = {
+  event_id: string;
+  room_id: string;
+  user_id: string;
+  started_at: string;
+  confirmed_at: string;
+  ended_at: string | null;
+  created_at: string;
+};
 
 async function persistRoomViolationOutbox(
   transaction: SQLite.SQLiteDatabase,
@@ -53,9 +61,25 @@ function mapError(error: unknown): GroupViolationError {
   return new GroupViolationError('unknown');
 }
 
+function createRoomWorkQueue() {
+  const tails = new Map<string, Promise<unknown>>();
+  return function serialize<T>(roomId: string, work: () => Promise<T>): Promise<T> {
+    const previous = tails.get(roomId) ?? Promise.resolve();
+    const current = previous.catch(() => undefined).then(work);
+    tails.set(roomId, current);
+    void current.then(
+      () => { if (tails.get(roomId) === current) tails.delete(roomId); },
+      () => { if (tails.get(roomId) === current) tails.delete(roomId); },
+    );
+    return current;
+  };
+}
+
 export function createGroupViolationRepository(dependencies: Dependencies) {
   const database = dependencies.database ?? getLocalDatabase;
   const createId = dependencies.createId ?? Crypto.randomUUID;
+  // Tuần tự hóa sync và normalize cutoff để kết quả sync cũ không ghi đè payload mới.
+  const serializeRoomWork = createRoomWorkQueue();
   return {
     async start(input: { sessionId: string; userId: string; startedAtUtcMs: number; confirmedAtUtcMs: number }): Promise<ViolationRecord> {
       const actor = dependencies.auth.currentUser;
@@ -110,33 +134,57 @@ export function createGroupViolationRepository(dependencies: Dependencies) {
       const actor = dependencies.auth.currentUser;
       if (!actor || actor.uid !== input.userId) throw new GroupViolationError('unauthenticated');
       if (!Number.isFinite(input.endedAtUtcMs)) throw new GroupViolationError('invalid-argument');
-      const db = await database();
-      let finalized = 0;
-      await db.withExclusiveTransactionAsync(async tx => {
-        const openRows = await tx.getAllAsync<OpenViolationRow>(
-          `SELECT event_id, room_id, user_id, started_at, created_at FROM violation_logs
-           WHERE room_id = ? AND user_id = ? AND ended_at IS NULL AND confirmed_at IS NOT NULL`,
-          input.roomId, actor.uid,
+      return serializeRoomWork(input.roomId, async () => {
+        const db = await database();
+        let finalized = 0;
+        const cutoffIso = new Date(input.endedAtUtcMs).toISOString();
+        await db.withExclusiveTransactionAsync(async tx => {
+        const pendingRows = await tx.getAllAsync<FinalizableViolationRow>(
+          `SELECT v.event_id, v.room_id, v.user_id, v.started_at, v.confirmed_at, v.ended_at, v.created_at
+           FROM violation_logs v
+           JOIN sync_outbox o ON o.event_id = v.event_id AND o.actor_uid = v.user_id
+           WHERE v.room_id = ? AND v.user_id = ? AND v.confirmed_at IS NOT NULL
+             AND v.sync_status IN ('PENDING', 'FAILED') AND o.sync_status IN ('PENDING', 'FAILED')
+             AND (v.ended_at IS NULL OR v.ended_at > ?)` ,
+          input.roomId, actor.uid, cutoffIso,
         );
-        for (const row of openRows) {
+        for (const row of pendingRows) {
           const startedAtUtcMs = Date.parse(row.started_at);
-          if (!Number.isFinite(startedAtUtcMs)) continue;
-          const endedAtUtcMs = Math.max(startedAtUtcMs, input.endedAtUtcMs);
+          const confirmedAtUtcMs = Date.parse(row.confirmed_at);
+          if (!Number.isFinite(startedAtUtcMs) || !Number.isFinite(confirmedAtUtcMs)) continue;
+          if (confirmedAtUtcMs > input.endedAtUtcMs
+            || Math.floor((input.endedAtUtcMs - startedAtUtcMs) / 1_000) < 3) {
+            // Grace chưa xong tại cutoff server: event chưa đủ điều kiện nên bỏ local log và outbox.
+            await tx.runAsync(
+              `DELETE FROM sync_outbox WHERE event_id = ? AND actor_uid = ? AND sync_status IN ('PENDING', 'FAILED')`,
+              row.event_id, actor.uid,
+            );
+            await tx.runAsync(
+              `DELETE FROM violation_logs WHERE event_id = ? AND user_id = ? AND sync_status IN ('PENDING', 'FAILED')`,
+              row.event_id, actor.uid,
+            );
+            continue;
+          }
+          const existingEndedAtUtcMs = row.ended_at === null ? input.endedAtUtcMs : Date.parse(row.ended_at);
+          if (!Number.isFinite(existingEndedAtUtcMs)) continue;
+          const endedAtUtcMs = Math.min(existingEndedAtUtcMs, input.endedAtUtcMs);
           const durationSeconds = Math.floor((endedAtUtcMs - startedAtUtcMs) / 1_000);
           const result = await tx.runAsync(
-            `UPDATE violation_logs SET ended_at = ?, duration_seconds = ?
-             WHERE event_id = ? AND user_id = ? AND ended_at IS NULL`,
+            `UPDATE violation_logs SET ended_at = ?, duration_seconds = ?, sync_status = 'PENDING', synced_at = NULL
+             WHERE event_id = ? AND user_id = ? AND sync_status IN ('PENDING', 'FAILED')`,
             new Date(endedAtUtcMs).toISOString(), durationSeconds, row.event_id, actor.uid,
           );
           if (result.changes !== 1) continue;
+          // Closed event sau cutoff cũng được cắt lại và mở retry nếu lần sync trước đã bị Rules từ chối.
           await persistRoomViolationOutbox(tx, {
             eventId: row.event_id, roomId: row.room_id, userId: actor.uid,
             startedAtUtcMs, endedAtUtcMs, durationSeconds, createdAt: row.created_at,
           });
           finalized += 1;
         }
+        });
+        return finalized;
       });
-      return finalized;
     },
     async getSummary(roomId: string): Promise<ViolationSummary> {
       const actor = dependencies.auth.currentUser;
@@ -154,6 +202,7 @@ export function createGroupViolationRepository(dependencies: Dependencies) {
       return row?.confirmed_at ? { eventId: row.event_id, startedAtUtcMs: Date.parse(row.started_at), confirmedAtUtcMs: Date.parse(row.confirmed_at) } : null;
     },
     async syncPending(roomId: string): Promise<void> {
+      return serializeRoomWork(roomId, async () => {
       const actor = dependencies.auth.currentUser;
       if (!actor) throw new GroupViolationError('unauthenticated');
       const db = await database();
@@ -192,11 +241,16 @@ export function createGroupViolationRepository(dependencies: Dependencies) {
         try {
           await runTransaction(dependencies.firestore, async tx => {
             const [room, member] = await Promise.all([tx.get(roomRef), tx.get(memberRef)]);
-            if (!room.exists() || room.data().status !== 'ACTIVE' || !member.exists()
+            const roomData = room.data();
+            const memberData = member.data();
+            const canReconcileCompletedRoom = roomData?.status === 'COMPLETED'
+              && roomData.reconciliationStatus === 'PENDING'
+              && memberData?.syncAcknowledgedAt == null;
+            if (!room.exists() || !roomData || (roomData.status !== 'ACTIVE' && !canReconcileCompletedRoom) || !member.exists()
               || !['ACTIVE', 'EARLY_EXIT'].includes(String(member.data().status))) {
               throw new GroupViolationError('failed-precondition');
             }
-            // Chỉ đọc event khi room còn ACTIVE; room terminal giữ outbox cho SL-020 reconciliation.
+            // Sau completion chỉ flush event trước endedAt và trước ACK của chính member.
             const existing = await tx.get(eventRef);
             if (existing.exists()) {
               const saved = existing.data();
@@ -206,15 +260,19 @@ export function createGroupViolationRepository(dependencies: Dependencies) {
               }
               return;
             }
-            const memberData = member.data();
-            if (memberData.status === 'EARLY_EXIT'
-              && (!(memberData.earlyExitAt instanceof Timestamp) || endedAt > memberData.earlyExitAt.toMillis())) {
+            const memberValues = member.data();
+            if (memberValues.status === 'EARLY_EXIT'
+              && (!(memberValues.earlyExitAt instanceof Timestamp) || endedAt > memberValues.earlyExitAt.toMillis())) {
               // Event kết thúc sau cutoff không được tính; giữ log cục bộ nhưng không retry vô hạn.
               throw new GroupViolationError('invalid-argument');
             }
             const serverStartedAt = room.data().startedAt;
             if (!(serverStartedAt instanceof Timestamp) || startedAt < serverStartedAt.toMillis()) {
               // Event xảy ra trước mốc room phía server sẽ không hợp lệ cả trong reconciliation.
+              throw new GroupViolationError('invalid-argument');
+            }
+            if (roomData.status === 'COMPLETED'
+              && (!(roomData.endedAt instanceof Timestamp) || endedAt > roomData.endedAt.toMillis())) {
               throw new GroupViolationError('invalid-argument');
             }
             tx.set(eventRef, {
@@ -247,6 +305,7 @@ export function createGroupViolationRepository(dependencies: Dependencies) {
           throw mapped;
         }
       }
+      });
     },
     async getPendingCount(roomId: string): Promise<number> {
       const actor = dependencies.auth.currentUser;

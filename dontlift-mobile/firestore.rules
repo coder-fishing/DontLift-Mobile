@@ -151,6 +151,11 @@ service cloud.firestore {
         && get(hostMemberPath(roomId, uid)).data.status in ['ACTIVE', 'EARLY_EXIT'];
     }
 
+    function canReadGroupViolations(roomId, uid) {
+      return roomParticipant(roomId, uid)
+        && get(roomPath(roomId)).data.status in ['ACTIVE', 'COMPLETED'];
+    }
+
     function terminalRoomHost(roomId, uid) {
       return signedIn()
         && exists(roomPath(roomId))
@@ -163,9 +168,106 @@ service cloud.firestore {
     function canRecordGroupViolation(roomId, memberUid, endedAt) {
       let room = get(roomPath(roomId)).data;
       let member = get(hostMemberPath(roomId, memberUid)).data;
-      return room.status == 'ACTIVE'
+      let withinRoom = room.status == 'ACTIVE'
+        || (room.status == 'COMPLETED'
+          && room.get('reconciliationStatus', null) == 'PENDING'
+          && member.get('syncAcknowledgedAt', null) == null
+          && room.endedAt is timestamp
+          && endedAt <= room.endedAt);
+      return withinRoom
         && (member.status == 'ACTIVE'
           || (member.status == 'EARLY_EXIT' && member.earlyExitAt is timestamp && endedAt <= member.earlyExitAt));
+    }
+
+    // Chỉ Host đang ACTIVE được chốt room; pending count lấy từ roster đã khóa sau start.
+    function validRoomCompletion(roomId) {
+      let before = resource.data;
+      let after = request.resource.data;
+      let hostPath = hostMemberPath(roomId, request.auth.uid);
+      let host = get(hostPath).data;
+      return signedIn()
+        && before.status == 'ACTIVE'
+        && before.hostId == request.auth.uid
+        && host.role == 'HOST'
+        && host.status == 'ACTIVE'
+        && before.participantCount is int
+        && before.participantCount > 0
+        && before.startedAt is timestamp
+        && after.diff(before).affectedKeys().hasOnly([
+          'status', 'endedAt', 'updatedAt', 'reconciliationStatus', 'pendingMemberCount',
+          'completionRequestId', 'lastSyncAckMemberUid', 'lastSyncAckRequestId',
+          'finalizedAt', 'finalizedBy', 'finalizationReason'
+        ])
+        && after.status == 'COMPLETED'
+        && after.endedAt == request.time
+        && after.updatedAt == request.time
+        && after.reconciliationStatus == 'PENDING'
+        && after.pendingMemberCount == before.participantCount
+        && after.completionRequestId is string
+        && after.completionRequestId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
+        && after.lastSyncAckMemberUid == null
+        && after.lastSyncAckRequestId == null
+        && after.finalizedAt == null
+        && after.finalizedBy == null
+        && after.finalizationReason == null;
+    }
+
+    // ACK của chính member phải đổi cùng counter; Rules chặn ACK lặp giảm count lần nữa.
+    function validRoomSyncAcknowledgment(roomId) {
+      let before = resource.data;
+      let after = request.resource.data;
+      let memberBefore = get(hostMemberPath(roomId, request.auth.uid)).data;
+      let memberAfter = getAfter(hostMemberPath(roomId, request.auth.uid)).data;
+      let finalAck = before.pendingMemberCount == 1;
+      return signedIn()
+        && before.status == 'COMPLETED'
+        && before.reconciliationStatus == 'PENDING'
+        && before.endedAt is timestamp
+        && before.pendingMemberCount is int
+        && before.pendingMemberCount > 0
+        && memberBefore.get('syncAcknowledgedAt', null) == null
+        && memberAfter.syncedThroughAt == before.endedAt
+        && memberAfter.syncAcknowledgedAt == request.time
+        && memberAfter.syncAckRequestId is string
+        && memberAfter.syncAckRequestId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
+        && after.diff(before).affectedKeys().hasOnly([
+          'pendingMemberCount', 'lastSyncAckMemberUid', 'lastSyncAckRequestId',
+          'reconciliationStatus', 'finalizationReason', 'finalizedAt', 'finalizedBy'
+        ])
+        && after.pendingMemberCount == before.pendingMemberCount - 1
+        && after.lastSyncAckMemberUid == request.auth.uid
+        && after.lastSyncAckRequestId == memberAfter.syncAckRequestId
+        && (finalAck
+          ? (after.reconciliationStatus == 'FINALIZED'
+            && after.finalizationReason == 'ALL_SYNCED'
+            && after.finalizedAt == request.time
+            && after.finalizedBy == request.auth.uid)
+          : (after.reconciliationStatus == 'PENDING'
+            && after.get('finalizationReason', null) == before.get('finalizationReason', null)
+            && after.get('finalizedAt', null) == before.get('finalizedAt', null)
+            && after.get('finalizedBy', null) == before.get('finalizedBy', null)));
+    }
+
+    function validMemberSyncAcknowledgment(roomId, memberUid) {
+      let room = get(roomPath(roomId)).data;
+      let roomAfter = getAfter(roomPath(roomId)).data;
+      let before = resource.data;
+      let after = request.resource.data;
+      return signedIn()
+        && memberUid == request.auth.uid
+        && room.status == 'COMPLETED'
+        && room.reconciliationStatus == 'PENDING'
+        && room.endedAt is timestamp
+        && before.status in ['ACTIVE', 'EARLY_EXIT']
+        && before.get('syncAcknowledgedAt', null) == null
+        && after.diff(before).affectedKeys().hasOnly(['syncedThroughAt', 'syncAcknowledgedAt', 'syncAckRequestId'])
+        && after.syncedThroughAt == room.endedAt
+        && after.syncAcknowledgedAt == request.time
+        && after.syncAckRequestId is string
+        && after.syncAckRequestId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
+        && roomAfter.lastSyncAckMemberUid == memberUid
+        && roomAfter.lastSyncAckRequestId == after.syncAckRequestId
+        && roomAfter.pendingMemberCount == room.pendingMemberCount - 1;
     }
 
     function validEarlyExitRequest(roomId, memberUid, data, isUpdate) {
@@ -657,6 +759,8 @@ service cloud.firestore {
           && (!exists(terminationBallotPath(roomId, request.auth.uid))
             || get(terminationBallotPath(roomId, request.auth.uid)).data.voteId != get(terminationVotePath(roomId)).data.voteId)
         ) || validEarlyExitRoomUpdate(roomId)
+        || validRoomCompletion(roomId)
+        || validRoomSyncAcknowledgment(roomId)
       );
       allow list, delete: if false;
 
@@ -668,11 +772,11 @@ service cloud.firestore {
           && memberUid == request.auth.uid
           && request.resource.data.keys().hasAll([
             'displayName', 'role', 'status', 'penaltyScore', 'liftCount',
-            'violationDurationSeconds', 'joinedAt', 'earlyExitAt', 'syncedThroughAt', 'syncAcknowledgedAt'
+          'violationDurationSeconds', 'joinedAt', 'earlyExitAt', 'syncedThroughAt', 'syncAcknowledgedAt'
           ])
           && request.resource.data.keys().hasOnly([
             'displayName', 'role', 'status', 'penaltyScore', 'liftCount',
-            'violationDurationSeconds', 'joinedAt', 'earlyExitAt', 'syncedThroughAt', 'syncAcknowledgedAt', 'lastViolationEventId'
+          'violationDurationSeconds', 'joinedAt', 'earlyExitAt', 'syncedThroughAt', 'syncAcknowledgedAt', 'lastViolationEventId', 'syncAckRequestId'
           ])
           && request.resource.data.displayName == get(profilePath(memberUid)).data.displayName
           && request.resource.data.status == 'ACTIVE'
@@ -683,6 +787,7 @@ service cloud.firestore {
           && request.resource.data.earlyExitAt == null
           && request.resource.data.syncedThroughAt == null
           && request.resource.data.syncAcknowledgedAt == null
+        && request.resource.data.get('syncAckRequestId', null) == null
           && request.resource.data.get('lastViolationEventId', null) == null
           && (
             (request.resource.data.role == 'HOST' && hasRoomCreateLinks(
@@ -697,6 +802,7 @@ service cloud.firestore {
         allow list: if roomParticipant(roomId, request.auth.uid);
         allow update: if signedIn() && (
           validGroupViolationMemberUpdate(roomId, memberUid)
+          || validMemberSyncAcknowledgment(roomId, memberUid)
           || validEarlyExitMemberApproval(roomId, memberUid)
         );
         allow delete: if false;
@@ -727,8 +833,8 @@ service cloud.firestore {
       }
 
       match /violations/{eventId} {
-        // Member đã được duyệt rời vẫn cần đọc event để transaction retry/replay trước khi room kết thúc.
-        allow get, list: if activeRoomParticipant(roomId, request.auth.uid);
+        // Thành viên còn trong roster đọc event khi ACTIVE hoặc COMPLETED để retry/replay reconciliation.
+        allow get, list: if canReadGroupViolations(roomId, request.auth.uid);
         allow create: if signedIn()
           && canRecordGroupViolation(roomId, request.auth.uid, request.resource.data.endedAt)
           && validGroupViolation(roomId, eventId, request.resource.data);

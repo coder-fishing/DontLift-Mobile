@@ -295,6 +295,26 @@ const migrations: LocalMigration[] = [
       `);
     },
   },
+  {
+    version: 9,
+    async migrate(database) {
+      // Lưu trạng thái reconciliation để khôi phục room COMPLETED còn chờ ACK sau khi app bị đóng.
+      const roomColumns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(rooms)');
+      if (!roomColumns.some(column => column.name === 'reconciliation_status')) {
+        await database.execAsync('ALTER TABLE rooms ADD COLUMN reconciliation_status TEXT');
+      }
+      if (!roomColumns.some(column => column.name === 'pending_member_count')) {
+        await database.execAsync('ALTER TABLE rooms ADD COLUMN pending_member_count INTEGER');
+      }
+      if (!roomColumns.some(column => column.name === 'finalization_reason')) {
+        await database.execAsync('ALTER TABLE rooms ADD COLUMN finalization_reason TEXT');
+      }
+      const memberColumns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(room_members)');
+      if (!memberColumns.some(column => column.name === 'sync_acknowledged_at')) {
+        await database.execAsync('ALTER TABLE room_members ADD COLUMN sync_acknowledged_at TEXT');
+      }
+    },
+  },
 ];
 
 const latestSchemaVersion = migrations.at(-1)?.version ?? 0;

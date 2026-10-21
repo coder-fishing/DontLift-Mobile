@@ -12,6 +12,7 @@ export type RoomLobbyMember = {
   violationDurationSeconds: number;
   joinedAt: string | null;
   earlyExitAtUtcMs?: number | null;
+  syncAcknowledgedAtUtcMs?: number | null;
 };
 
 export type RoomLobbySnapshot = {
@@ -22,6 +23,9 @@ export type RoomLobbySnapshot = {
   activeMemberCount?: number | null;
   startedAtUtcMs: number | null;
   endedAtUtcMs?: number | null;
+  reconciliationStatus?: 'PENDING' | 'FINALIZED' | null;
+  pendingMemberCount?: number | null;
+  finalizationReason?: 'ALL_SYNCED' | null;
   pin: string;
   createdAt: string | null;
   updatedAt: string | null;
@@ -90,6 +94,10 @@ export function listenToRoomLobby(
       activeMemberCount: Number.isInteger(data.activeMemberCount) ? Number(data.activeMemberCount) : null,
       startedAtUtcMs: startedAt instanceof Timestamp ? startedAt.toMillis() : null,
       endedAtUtcMs: endedAt instanceof Timestamp ? endedAt.toMillis() : null,
+      reconciliationStatus: data.reconciliationStatus === 'PENDING' || data.reconciliationStatus === 'FINALIZED'
+        ? data.reconciliationStatus : null,
+      pendingMemberCount: Number.isInteger(data.pendingMemberCount) ? Number(data.pendingMemberCount) : null,
+      finalizationReason: data.finalizationReason === 'ALL_SYNCED' ? 'ALL_SYNCED' : null,
       pin: String(data.pin ?? ''),
       createdAt: createdAt instanceof Timestamp ? createdAt.toDate().toISOString() : null,
       updatedAt: updatedAt instanceof Timestamp ? updatedAt.toDate().toISOString() : null,
@@ -120,6 +128,7 @@ export function listenToRoomLobby(
           violationDurationSeconds: Number(data.violationDurationSeconds ?? 0),
           joinedAt: data.joinedAt instanceof Timestamp ? data.joinedAt.toDate().toISOString() : null,
           earlyExitAtUtcMs: data.earlyExitAt instanceof Timestamp ? data.earlyExitAt.toMillis() : null,
+          syncAcknowledgedAtUtcMs: data.syncAcknowledgedAt instanceof Timestamp ? data.syncAcknowledgedAt.toMillis() : null,
         };
       });
       membersReady = true;

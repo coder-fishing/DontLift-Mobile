@@ -10,6 +10,8 @@
 
 > Early-exit update 2026-10-20: [ADR-015](decisions/ADR-015-spark-early-exit.md) adds narrowly scoped Rules-authorized transactions for early-exit requests and decisions, plus the per-Member cutoff used by SL-017 violation sync. No Cloud Functions or billing are added.
 
+> Room-completion update 2026-10-21: [ADR-017](decisions/ADR-017-spark-room-completion.md) replaces the `completeRoom` and `acknowledgeMemberSync` callables with narrowly scoped Firestore client transactions on Spark. ACK is a client attestation after draining the local outbox; Rules cannot inspect SQLite.
+
 > **Owner:** Software architecture package  
 > **Status:** APPROVED  
 > **Wire version:** `1`  
@@ -17,7 +19,7 @@
 
 ## 1. Common envelope
 
-Every callable requires Firebase Authentication. Functions derive `actorUid` from the verified ID token and never trust a UID supplied by the client. `createRoom` (§2), `startRoom` (§3), `joinRoomByPin` (§4), and termination-vote transactions (§3.2) are Rules-authorized transaction exceptions defined by their corresponding ADRs.
+Every callable requires Firebase Authentication. Functions derive `actorUid` from the verified ID token and never trust a UID supplied by the client. `createRoom` (§2), `startRoom` (§3), `joinRoomByPin` (§4), termination-vote transactions (§3.2), early-exit transactions (§3.1), and room-completion transactions (§5) are Rules-authorized exceptions defined by their corresponding ADRs.
 
 Every side-effecting request contains:
 
@@ -26,13 +28,15 @@ Every side-effecting request contains:
 | `version` | integer | yes | Must equal `1` |
 | `requestId` | UUID string | yes | Idempotency key for the authenticated actor and function |
 
-Every success response contains:
+Every callable success response contains:
 
 | Field | Type | Rule |
 |---|---|---|
 | `version` | integer | Always `1` |
 | `requestId` | UUID string | Echoes the accepted request |
 | `serverTimeUtcMs` | integer | Server-observed UTC timestamp |
+
+Rules-authorized Spark transaction results are returned from the committed transaction outcome; server timestamp fields are read from the Firestore snapshot/listener where needed. These transaction results do not claim a separate `serverTimeUtcMs` envelope.
 
 Repeating the same `requestId` with the same canonical payload returns the previous outcome. Reusing it with a different payload returns `already-exists`. Error details contain only stable codes and safe field names; tokens, activation codes, bank details and full emails are never logged or returned in diagnostics.
 
@@ -182,27 +186,29 @@ The event document is the idempotency receipt. A retry with the same ID and iden
 
 Members of the room may read its violation documents. The leaderboard reads room member documents and sorts by ascending `penaltyScore`, then ascending UID for a stable tie. Outsiders and cross-room users remain denied. Firestore listeners provide updates after the transaction commits.
 
-## 6. Reconciliation callables
+## 6. Room completion and reconciliation transactions
 
 ### 5.1 `completeRoom`
 
 **Request:** common request plus required `roomId: UUID`.
 
-**Response:** common response plus `roomId`, `status: "COMPLETED"`, `endedAtUtcMs`, `reconciliationStatus: "PENDING"`, `pendingMemberUids: string[]` visible only to the Host.
+**Response:** version `1`, echoed `requestId`, `roomId`, `status: "COMPLETED"`, authoritative `endedAtUtcMs`, `reconciliationStatus: "PENDING"`, and `pendingMemberCount`. `pendingMemberUids` are derived by the Host from the room-scoped member listener; the transaction does not query a collection.
 
-**Errors:** `unauthenticated`, `permission-denied`, `not-found`, `failed-precondition` unless room is `ACTIVE`, `unavailable`, `already-exists`.
+**Errors:** `unauthenticated`, `permission-denied`, `not-found`, `failed-precondition` unless room is `ACTIVE` or the same completion request was already committed, `unavailable`, `already-exists` for a reused request ID with conflicting intent.
 
-**Transaction outputs:** transition `ACTIVE → COMPLETED`, freeze `endedAt`, set reconciliation `PENDING`, compute pending Members and store command receipt.
+**Transaction outputs:** the active Host transitions `ACTIVE → COMPLETED`, freezes `endedAt = request.time`, sets `reconciliationStatus = PENDING`, initializes `pendingMemberCount` from the fixed `participantCount`, and stores `completionRequestId`. Repeating the same command reads the stored marker and does not change the result. Early-exit Members remain in the roster count.
 
 ### 5.2 `acknowledgeMemberSync`
 
-**Request:** common request plus required `roomId: UUID` and `syncedThroughUtcMs: integer`. The timestamp must cover the authoritative room `endedAt`.
+**Request:** common request plus required `roomId: UUID`. The authenticated member may ACK only after its local outbox contains no PENDING group violation through the room end. The repository checks this before sending; the client does not send a timestamp to claim server verification.
 
 **Response:** common response plus `roomId`, `memberUid`, `reconciliationStatus: "PENDING" | "FINALIZED"`, `pendingMemberCount`, optional `finalizationReason: "ALL_SYNCED"`.
 
-**Errors:** `unauthenticated`, `permission-denied`, `not-found`, `failed-precondition` for incomplete flush or wrong room state, `unavailable`, `already-exists`.
+**Errors:** `unauthenticated`, `permission-denied`, `not-found`, `failed-precondition` for an incomplete local flush or wrong room state, `unavailable`, `already-exists` for a reused request ID with conflicting intent.
 
-**Transaction outputs:** update Member acknowledgment; decrement pending count once; when count reaches zero, finalize scores with `ALL_SYNCED`; store command receipt.
+**Transaction outputs:** atomically update the caller's `syncedThroughAt = room.endedAt` and `syncAcknowledgedAt = request.time`, then decrement the room pending count once. When count reaches zero, the same transaction sets `reconciliationStatus = FINALIZED`, `finalizationReason = ALL_SYNCED`, `finalizedAt = request.time`, and `finalizedBy = request.auth.uid`. Room/member markers link both writes; duplicate delivery cannot decrement twice. Rules reject new violation events after the member ACKs or the room finalizes.
+
+**Spark limit:** Rules cannot inspect SQLite or establish that the device has no additional offline event. The app's local outbox check is best-effort and the ACK is an authenticated member attestation. A modified client could ACK early and omit its own unsynced penalties; eliminating that risk requires a trusted backend, outside this Spark-only slice.
 
 ### 5.3 `finalizeRoomScores`
 
@@ -212,7 +218,7 @@ Members of the room may read its violation documents. The leaderboard reads room
 
 **Errors:** `unauthenticated`, `permission-denied`, `invalid-argument` unless the exact warning was confirmed, `not-found`, `failed-precondition` when already finalized or no Members remain pending, `unavailable`, `already-exists`.
 
-**Transaction outputs:** freeze score snapshot, finalize reconciliation, append `reconciliationAudits/{auditId}` with Host/request/unsynced-member evidence, and store command receipt. Later valid events remain history-only with `excludedFromFinalScore = true` and `exclusionReason = "HOST_OVERRIDE"`.
+**Transaction outputs:** retained as a future callable contract for a later slice; HOST_OVERRIDE is not implemented by SL-020 and is unavailable on the Spark transaction path defined in ADR-017.
 
 ## 7. Bill and settlement callables
 

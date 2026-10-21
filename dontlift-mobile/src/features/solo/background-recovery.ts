@@ -11,6 +11,8 @@ export type BackgroundRecoveryInput = {
   sessionId: string;
   userId: string;
   observedAt?: BackgroundTimestamp;
+  // Cutoff server của room hoặc early-exit; background interval không được vượt qua mốc này.
+  cutoffUtcMs?: number;
 };
 
 type RecoveryDependencies = {
@@ -178,7 +180,7 @@ export async function reconcileBackgroundCandidate(
     const sessionCutoffUtcMs = session.mode === 'COUNTDOWN'
       ? startedAtUtcMs + session.duration_seconds * 1_000
       : Number.POSITIVE_INFINITY;
-    const endedAtUtcMs = Math.min(nowUtcMs, sessionCutoffUtcMs);
+    const endedAtUtcMs = Math.min(nowUtcMs, sessionCutoffUtcMs, input.cutoffUtcMs ?? Number.POSITIVE_INFINITY);
     const confirmedAtUtcMs = candidate.transition_at_utc_ms + BACKGROUND_GRACE_PERIOD_MS;
     if (endedAtUtcMs < confirmedAtUtcMs) {
       await resolveCandidate(transaction, candidate.id, 'CANCELLED', nowUtcMs);
@@ -269,6 +271,14 @@ export function createBackgroundRecoveryRepository(dependencies: RecoveryDepende
     },
     async reconcile(input: BackgroundRecoveryInput) {
       return reconcileBackgroundCandidate(await getLocalDatabase(), input, dependencies);
+    },
+    async reconcileAtCutoff(input: Omit<BackgroundRecoveryInput, 'cutoffUtcMs'>, cutoffUtcMs: number) {
+      if (!Number.isFinite(cutoffUtcMs)) throw new Error('Background recovery cutoff must be a finite timestamp.');
+      return reconcileBackgroundCandidate(
+        await getLocalDatabase(),
+        { ...input, cutoffUtcMs },
+        dependencies,
+      );
     },
   };
 }
