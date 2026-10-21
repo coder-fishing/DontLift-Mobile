@@ -120,7 +120,7 @@ Trên Android, lifecycle observer persist candidate tại `ON_STOP`; WorkManager
 | early-exit requests | Thành viên room | Rules-authorized request/decision transactions per ADR-015 |
 | termination votes | Thành viên room | Spark Firestore transactions per ADR-016 |
 | `billShares/{uid}` | Thành viên room | Settlement Functions |
-| `settlementDetails/current` | Thành viên room | `setSettlementDetails` Host-only Function |
+| `settlementDetails/current` | Thành viên room trước expiry | Host-only Spark Firestore transaction per ADR-020 |
 | PIN, usage, activation, receipts | Không client nào | Functions |
 
 ### 5.2 Security Rules principles
@@ -192,7 +192,7 @@ History query của US-16 đọc collection này theo owner path, sắp xếp `c
 - `reconciliationAudits/{auditId}`
 - `settlementDetails/current`
 
-A bill share stores `baseShareVnd`, `penaltyShareVnd`, optional override information, `shareVnd`, `paymentStatus` và `updatedAt`. `settlementDetails/current` stores `bankId`, `accountNumber`, `accountName`, `updatedAt` và `expiresAt = room.completedAt + 30 days`; only `setSettlementDetails` writes it, room Members may read it, and scheduled cleanup deletes it at expiry. Bank details never enter logs or analytics. A `reconciliationAudits` document is append-only and stores `action = HOST_OVERRIDE`, `actorUid`, `requestId`, `unsyncedMemberUids`, `roomEndedAt`, `createdAt` và resulting score snapshot reference.
+A bill share stores `baseShareVnd`, `penaltyShareVnd`, optional override information, `shareVnd`, `paymentStatus` và `updatedAt`. `settlementDetails/current` stores `bankId`, `accountNumber`, `accountName`, `updatedAt` và `expiresAt = room.endedAt + 30 days`; only the active Host may upsert it after reconciliation is `FINALIZED`, and room Members may read it until expiry. Spark Rules enforce logical expiry; physical deletion is deferred to SL-033 and is not scheduled by this slice. Bank details never enter logs, analytics, or SQLite. A `reconciliationAudits` document is append-only and stores `action = HOST_OVERRIDE`, `actorUid`, `requestId`, `unsyncedMemberUids`, `roomEndedAt`, `createdAt` và resulting score snapshot reference.
 
 ### 6.2 Server-owned supporting collections
 
@@ -260,7 +260,7 @@ Wire-level request, response, required-field, response-version, per-command erro
 | `finalizeRoomScores` | Future Host override contract; outside SL-020 |
 | `calculateBillShares` | Reconciliation finalized, integer-only allocation |
 | `applyBillOverrides` | Host-only, total and type validation |
-| `setSettlementDetails` | Host-only room-scoped bank details; 30-day expiry |
+| `setSettlementDetails` | Host-only Spark transaction; room-scoped bank details, Rules-enforced 30-day expiry per ADR-020 |
 | `markBillSharePaid` | Host-only manual state change |
 | `redeemActivationCode` | One-time transaction and verified entitlement |
 | `sendHostHeartbeat` / `abortStaleRoom` | Rules-authorized Spark transactions; foreground heartbeat and reconnect-triggered stale transition per ADR-019 (no scheduler) |

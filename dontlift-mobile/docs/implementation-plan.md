@@ -57,7 +57,7 @@ P0 là nền tảng/critical journey trước; P1 là cần hoàn tất MVP; P2 
 | SL-020 | [Host complete và ALL_SYNCED reconciliation](./superpowers/plans/2026-10-13-sl-020-room-completion.md) | P0 | SL-017, SL-018 | D3 |
 | SL-021 | [Host override khi còn Member chưa sync](./superpowers/plans/2026-10-13-sl-021-host-finalization-override.md) | P1 | SL-020 | Resolved: Spark transaction/Rules và audit Host-observed theo ADR-018 (2026-10-21) |
 | SL-022 | [Stale room chuyển ABORTED](./superpowers/plans/2026-10-13-sl-022-stale-room-abort.md) | P1 | SL-017 | Resolved for Spark by ADR-019; no scheduled guarantee while all clients are offline |
-| SL-023 | [Host nhập thông tin nhận tiền](./superpowers/plans/2026-10-13-sl-023-settlement-details.md) | P1 | SL-020 | Không xác nhận riêng |
+| SL-023 | [Host nhập thông tin nhận tiền](./superpowers/plans/2026-10-13-sl-023-settlement-details.md) | P1 | SL-020 | Resolved: Spark transaction/Rules, no billing, per ADR-020 (2026-10-21) |
 | SL-024 | [Nhập bill và tính shares mặc định](./superpowers/plans/2026-10-13-sl-024-default-bill.md) | P0 | SL-018, SL-020, SL-023 | D3, D9 |
 | SL-025 | [Host override bill shares](./superpowers/plans/2026-10-13-sl-025-bill-overrides.md) | P1 | SL-024 | D8 |
 | SL-026 | [Tạo VietQR cho share](./superpowers/plans/2026-10-13-sl-026-vietqr-payment.md) | P1 | SL-024 | E3 |
@@ -146,7 +146,7 @@ Shared ownership: 001 sở hữu test harness/root lockfile changes; 002 native 
 | `rooms/{roomId}/violations/{eventId}` | 017 Group-active Rules | Thành viên cùng room đọc; leaderboard hiện dùng room/member resources đã được SL-016 cấp read. Không thêm projection path nếu chưa có contract duyệt. |
 | Early-exit request resource (path theo contract được duyệt) | 018; sau khi D3 chốt path/schema | Host và requester/member theo policy đã duyệt đọc; client writes chỉ được mở nếu contract/ADR cho phép, mặc định giữ server boundary. |
 | Termination-vote resource (path theo contract được duyệt) | 019; sau khi D3 chốt path/schema | Active members đọc trong room; mở client writes chỉ theo contract được duyệt; expiry/finalization server-owned. |
-| `rooms/{roomId}/settlementDetails/current` | 023 settlement-details Rules | Thành viên cùng room đọc; chỉ callable/server ghi; không đọc bởi outsider. |
+| `rooms/{roomId}/settlementDetails/current` | 023 settlement-details Rules | Thành viên cùng room đọc trước expiry; chỉ Host active ghi bằng Spark transaction sau khi room FINALIZED; outsider bị deny. |
 | `rooms/{roomId}/billShares/{uid}` | 024 bill-share Rules; 025–027 reuse và kiểm tra consumer reads | Members đọc breakdown/status; chỉ calculation/payment callables ghi. |
 | Group-history queries trên room/member/violation/share resources hiện có | 028 kiểm chứng consumer query sau khi D4 chốt destination/projection | Không tạo path hoặc quyền mới trước D4; reuse Rules của producer cho mọi document được đọc. |
 | Advanced leaderboard read model nếu behavior D6 yêu cầu resource mới | 036 sau D6; nếu dùng projection hiện có thì reuse 017 | Chỉ audience/entitlement đã duyệt đọc; mọi projection writes server-only. |

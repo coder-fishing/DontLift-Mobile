@@ -11,7 +11,8 @@ export type ScreenId =
   | '10-hardware-diagnostics'
   | '11-solo-history'
   | '12-join-room'
-  | '13-group-summary';
+  | '13-group-summary'
+  | '14-settlement-details';
 
 export type FocusModeType = 'countdown' | 'stopwatch';
 

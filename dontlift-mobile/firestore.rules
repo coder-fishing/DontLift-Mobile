@@ -37,6 +37,35 @@ service cloud.firestore {
       return /databases/$(database)/documents/rooms/$(roomId)/reconciliationAudits/$(auditId);
     }
 
+    function settlementDetailsPath(roomId) {
+      return /databases/$(database)/documents/rooms/$(roomId)/settlementDetails/current;
+    }
+
+    function validSettlementDetails(roomId) {
+      let room = get(roomPath(roomId)).data;
+      let hostPath = hostMemberPath(roomId, request.auth.uid);
+      let data = request.resource.data;
+      return signedIn()
+        && room.status == 'COMPLETED'
+        && room.reconciliationStatus == 'FINALIZED'
+        && room.endedAt is timestamp
+        && room.hostId == request.auth.uid
+        && exists(hostPath)
+        && get(hostPath).data.role == 'HOST'
+        && get(hostPath).data.status == 'ACTIVE'
+        && data.keys().hasAll(['bankId', 'accountNumber', 'accountName', 'updatedAt', 'expiresAt'])
+        && data.keys().hasOnly(['bankId', 'accountNumber', 'accountName', 'updatedAt', 'expiresAt'])
+        && data.bankId is string && data.bankId.size() >= 1 && data.bankId.size() <= 32
+        && data.bankId.matches('.*[^\\s].*')
+        && data.accountNumber is string && data.accountNumber.size() >= 1 && data.accountNumber.size() <= 64
+        && data.accountNumber.matches('.*[^\\s].*')
+        && data.accountName is string && data.accountName.size() >= 1 && data.accountName.size() <= 100
+        && data.accountName.matches('.*[^\\s].*')
+        && data.updatedAt == request.time
+        && data.expiresAt == room.endedAt + duration.value(30, 'd')
+        && request.time < data.expiresAt;
+    }
+
     function pinPath(pin) {
       return /databases/$(database)/documents/roomPins/$(pin);
     }
@@ -835,7 +864,7 @@ service cloud.firestore {
       }
     }
 
-    // Ngoại lệ Spark chỉ mở các room transaction cụ thể đã được ADR-011/013/019 duyệt.
+    // Ngoại lệ Spark chỉ mở các room transaction cụ thể đã được ADR phê duyệt.
     match /rooms/{roomId} {
       allow get: if canReadRoom(roomId);
       allow create: if signedIn()
@@ -985,6 +1014,15 @@ service cloud.firestore {
         allow get, list: if roomParticipant(roomId, request.auth.uid);
         allow create: if validHostOverrideAuditCreate(roomId, auditId);
         allow update, delete: if false;
+      }
+
+      match /settlementDetails/{detailId} {
+        allow get: if detailId == 'current' && roomParticipant(roomId, request.auth.uid)
+          && (!exists(settlementDetailsPath(roomId))
+            || (resource.data.expiresAt is timestamp && resource.data.expiresAt > request.time));
+        allow list: if false;
+        allow create, update: if detailId == 'current' && validSettlementDetails(roomId);
+        allow delete: if false;
       }
 
       match /terminationVotes/{voteId} {
