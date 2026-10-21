@@ -170,10 +170,10 @@ As a Host, I want to enter the total bill amount so the app can calculate each m
 As any participant, I want to see the calculated breakdown so I know exactly what each person owes.
 
 *Acceptance Criteria:*
-- Each member's share is calculated by default using a penalty-weighted formula computed via a Firestore Cloud Function.
+- Each member's default share is calculated by the authenticated Host client using the finalized scores and the integer penalty-weighted formula. On Firebase Spark, Firestore Rules authorize the Host and room state but do not verify calculation correctness or roster completeness (ADR-021).
 - The Host may optionally override default penalty weights by manually assigning percentage or absolute VND penalty amounts per member; the remaining bill balance is split equally among non-penalized members.
 - Shares are rounded to the nearest 1,000 VND with deterministic rounding adjustment such that SUM(Member Shares) = Total Bill exactly.
-- Members with 0 violations receive a valid non-zero base share.
+- Members with 0 violations receive a positive mathematical base component before rounding; the final integer VND share may be zero for a small bill after deterministic rounding (ADR-021).
 - Early Exit members participate in bill allocation using the same formula (automated penalty weight or Host override) based on their Penalty Score frozen at exit time. A member with zero violations at exit pays a normal equal base share identical to any non-penalized member.
 - Bill breakdown is read-only for Members; only the Host can trigger calculation or override adjustments.
 

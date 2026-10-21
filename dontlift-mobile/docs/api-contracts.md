@@ -16,6 +16,8 @@
 
 > Settlement update 2026-10-21: [ADR-020](decisions/ADR-020-spark-settlement-details.md) adds a Host-only settlement-details transaction and member-scoped expiring read on Spark, with no Functions or billing.
 
+> Default bill update 2026-10-22: [ADR-021](decisions/ADR-021-spark-default-bill.md) adds a narrowly scoped Host-calculated bill-share transaction on Spark. Rules authorize Host/lifecycle/schema but do not verify calculation correctness or roster completeness.
+
 > **Owner:** Software architecture package  
 > **Status:** APPROVED  
 > **Wire version:** `1`  
@@ -23,7 +25,7 @@
 
 ## 1. Common envelope
 
-Every callable requires Firebase Authentication. Functions derive `actorUid` from the verified ID token and never trust a UID supplied by the client. `createRoom` (§2), `startRoom` (§3), `joinRoomByPin` (§4), termination-vote transactions (§3.2), early-exit transactions (§3.1), and room-completion transactions (§5) are Rules-authorized exceptions defined by their corresponding ADRs.
+Every callable requires Firebase Authentication. Functions derive `actorUid` from the verified ID token and never trust a UID supplied by the client. Rules-authorized Spark transactions, including `createRoom` (§2), `startRoom` (§3), `joinRoomByPin` (§4), termination-vote transactions (§3.2), early-exit transactions (§3.1), room-completion transactions (§5), and `calculateBillShares` (§6.2), are exceptions defined by their corresponding ADRs.
 
 Every side-effecting request contains:
 
@@ -256,15 +258,19 @@ This approved SL-023 exception uses the authenticated Firebase client and Firest
 
 Expired documents are hidden by Rules but not physically deleted in this slice. Retention/purge is deferred to SL-033 and must not be represented as automatic cleanup here.
 
-### 6.2 `calculateBillShares`
+### 6.2 `calculateBillShares` — Host-calculated Firestore transaction (Spark)
 
-**Request:** common request plus required `roomId: UUID` and `totalBillVnd: integer >= 1000`.
+The authenticated Host client runs an online Firestore transaction under [ADR-021](decisions/ADR-021-spark-default-bill.md). The Host app supplies the UID list observed in the finalized room listener as local transaction input; the transaction individually rereads those member documents and uses their frozen scores. The list is a Host-client attestation; Rules cannot prove it is complete. The transaction atomically writes final-only `billShares/{uid}` documents, room bill metadata, and `billCommands/{requestId}` receipt. No offline queue is used.
 
-**Response:** common response plus `roomId`, `totalBillVnd`, `calculationVersion: 1`, `shares[]` containing `uid`, `baseShareVnd`, `penaltyShareVnd`, `shareVnd`, and invariant `sumShareVnd` equal to `totalBillVnd`.
+**Request:** `version: 1`, `requestId: UUID`, `roomId: UUID`, and `totalBillVnd: integer >= 1000`. The Host client derives member scores/eligibility and calculates the per-member result from the transaction's finalized snapshot; callers do not submit UIDs or share values.
 
-**Errors:** `unauthenticated`, `permission-denied`, `invalid-argument`, `not-found`, `failed-precondition` unless reconciliation is `FINALIZED` and settlement details exist, `unavailable`, `already-exists`.
+**Response:** `{ version: 1, requestId, roomId, totalBillVnd, calculationVersion: 1, shares[], sumShareVnd }`, where each share contains `uid` and `shareVnd`; `sumShareVnd` equals `totalBillVnd`. This Spark response does not claim `serverTimeUtcMs`.
 
-**Transaction outputs:** run the canonical rounding/residual algorithm, replace authoritative bill-share documents, set room total and calculation version, and store command receipt atomically.
+**Errors:** `unauthenticated`, `permission-denied`, `invalid-argument`, `not-found`, `failed-precondition` unless reconciliation is `FINALIZED`, settlement details exist, and no bill has been published; `unavailable`, `already-exists` for request-ID payload collision.
+
+**Transaction outcomes:** the Host client runs the canonical integer rounding/residual algorithm, validates non-negative integer shares and exact sum, creates each share once, sets room total and calculation version, and stores an immutable room-scoped receipt containing request metadata and the share UID list atomically. Replaying the same request and payload reads the saved share documents and returns the committed result. A new request after publication is rejected; SL-024 does not edit or replace a published breakdown.
+
+**Authority limit:** Rules check authenticated Host ownership, finalized room state, settlement-details existence, document ownership, and field shape. They cannot independently recalculate the roster-wide result or prove that all members and scores were included. The published values are Host-authoritative under Spark; do not describe them as server-verified. A same-room Member may read the published breakdown; direct writes by Members and outsiders are denied.
 
 ### 6.3 `applyBillOverrides`
 

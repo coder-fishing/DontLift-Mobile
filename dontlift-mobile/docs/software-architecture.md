@@ -1,6 +1,8 @@
 # Kiến trúc phần mềm DontLift
 
 > Runtime update 2026-10-18: [ADR-010](decisions/ADR-010-expo-go-firebase-js.md) replaces native Firebase with Firebase JS SDK / Expo Go and replaces callable registration bootstrap with create-only Firestore Rules. Other planned authoritative commands below remain future work.
+>
+> Settlement update 2026-10-22: [ADR-021](decisions/ADR-021-spark-default-bill.md) adds Host-calculated SL-024 share publication on Spark; Rules do not verify the math or roster completeness.
 
 > **Trạng thái:** APPROVED  
 > **Ngày phê duyệt:** 2026-09-23
@@ -14,7 +16,7 @@ DontLift dùng kiến trúc mobile offline-first với Firebase làm backend aut
 1. `Solo Focus Mode` hoạt động đầy đủ khi không có mạng.
 2. `Group Room Mode` yêu cầu mạng để create/join nhưng tiếp tục `Phone-Down Detection` và ghi `Violation Log` khi kết nối bị gián đoạn.
 3. Mọi offline event được ghi SQLite trước khi đồng bộ, giao ít nhất một lần và tạo hiệu ứng backend idempotent.
-4. Mobile client không có quyền authoritative đối với lifecycle, Penalty Score cuối cùng, quota, entitlement hoặc bill allocation.
+4. Mobile client không có quyền authoritative đối với lifecycle, Penalty Score cuối cùng, quota, entitlement hoặc bill allocation, except the Host-authoritative SL-024 Spark exception in ADR-021.
 5. `VietQR P2P` là non-custodial; DontLift không giữ tiền, không có ví và không xác minh ngân hàng tự động.
 
 Không thuộc phạm vi: Kiosk Mode, In-App Wallet, In-App Chat, AI Assistant, camera detection, automatic bank verification và hạ tầng ngoài Expo + Firebase không được nêu trong tài liệu này.
@@ -34,7 +36,7 @@ Sơ đồ hệ thống: [`design/system-context.mmd`](../design/system-context.m
 
 - **Firebase Authentication:** Email/Password identity cho MVP.
 - **Cloud Firestore Standard:** Nguồn sự thật cho shared state.
-- **Cloud Functions 2nd gen:** Command authorization, lifecycle transitions, quota, idempotent event ingestion, score finalization, bill calculation và entitlement redemption.
+- **Cloud Functions 2nd gen:** Command authorization, lifecycle transitions, quota, idempotent event ingestion, score finalization and entitlement redemption. SL-024 default bill calculation is the Host-authoritative Spark exception in ADR-021.
 - **Scheduled Functions:** Dọn vote hết hạn, đánh dấu room `ABORTED`, purge free-tier Solo history và xóa expired settlement details.
 
 ### 2.3 External boundary
@@ -119,7 +121,7 @@ Trên Android, lifecycle observer persist candidate tại `ON_STOP`; WorkManager
 | `violations/{eventId}` | Thành viên room | ADR-014 Spark transaction for group violations; `syncEvents` for other event types |
 | early-exit requests | Thành viên room | Rules-authorized request/decision transactions per ADR-015 |
 | termination votes | Thành viên room | Spark Firestore transactions per ADR-016 |
-| `billShares/{uid}` | Thành viên room | Settlement Functions |
+| `billShares/{uid}` | Thành viên room | Host-only Spark transaction for SL-024 per ADR-021; Rules do not verify calculation correctness or roster completeness |
 | `settlementDetails/current` | Thành viên room trước expiry | Host-only Spark Firestore transaction per ADR-020 |
 | PIN, usage, activation, receipts | Không client nào | Functions |
 
@@ -188,11 +190,12 @@ History query của US-16 đọc collection này theo owner path, sắp xếp `c
 - `earlyExitRequests/{memberUid}` (one current request per member; see ADR-015)
 - `terminationVotes/current` (one current vote; see ADR-016)
 - `terminationVotes/current/ballots/{uid}` (one replaceable per-UID ballot for the current vote)
-- `billShares/{uid}`
+- `billShares/{uid}` (final `shareVnd` only in SL-024)
+- `billCommands/{requestId}` (immutable Spark publish receipt)
 - `reconciliationAudits/{auditId}`
 - `settlementDetails/current`
 
-A bill share stores `baseShareVnd`, `penaltyShareVnd`, optional override information, `shareVnd`, `paymentStatus` và `updatedAt`. `settlementDetails/current` stores `bankId`, `accountNumber`, `accountName`, `updatedAt` và `expiresAt = room.endedAt + 30 days`; only the active Host may upsert it after reconciliation is `FINALIZED`, and room Members may read it until expiry. Spark Rules enforce logical expiry; physical deletion is deferred to SL-033 and is not scheduled by this slice. Bank details never enter logs, analytics, or SQLite. A `reconciliationAudits` document is append-only and stores `action = HOST_OVERRIDE`, `actorUid`, `requestId`, `unsyncedMemberUids`, `roomEndedAt`, `createdAt` và resulting score snapshot reference.
+SL-024 bill shares store only `uid`, final `shareVnd`, `requestId`, and `updatedAt`; component shares and payment state are not part of this slice. `billCommands/{requestId}` stores the Host, total, calculation version, sum, share count and UID list so the same request can replay; new publication is denied after the room marker is set. The authenticated Host computes the default shares on Spark. Rules authorize Host/finalized state and ownership, but do not verify share math or roster completeness (ADR-021). `settlementDetails/current` stores `bankId`, `accountNumber`, `accountName`, `updatedAt` and `expiresAt = room.endedAt + 30 days`; only the active Host may upsert it after reconciliation is `FINALIZED`, and room Members may read it until expiry. Spark Rules enforce logical expiry; physical deletion is deferred to SL-033 and is not scheduled by this slice. Bank details never enter logs, analytics, or SQLite. A `reconciliationAudits` document is append-only and stores `action = HOST_OVERRIDE`, `actorUid`, `requestId`, `unsyncedMemberUids`, `roomEndedAt`, `createdAt` and resulting score snapshot reference.
 
 ### 6.2 Server-owned supporting collections
 
@@ -258,9 +261,9 @@ Wire-level request, response, required-field, response-version, per-command erro
 | `completeRoom` | Host-only Spark transaction: `ACTIVE → COMPLETED`, opens reconciliation per ADR-017 |
 | `acknowledgeMemberSync` | Member checks local outbox then attests sync; Rules atomically decrement once and finalize at zero |
 | `finalizeRoomScores` | Future Host override contract; outside SL-020 |
-| `calculateBillShares` | Reconciliation finalized, integer-only allocation |
 | `applyBillOverrides` | Host-only, total and type validation |
 | `setSettlementDetails` | Host-only Spark transaction; room-scoped bank details, Rules-enforced 30-day expiry per ADR-020 |
+| `calculateBillShares` | Host-calculated Spark transaction; Rules verify Host/finalized state and schema but do not verify calculation math or roster completeness per ADR-021 |
 | `markBillSharePaid` | Host-only manual state change |
 | `redeemActivationCode` | One-time transaction and verified entitlement |
 | `sendHostHeartbeat` / `abortStaleRoom` | Rules-authorized Spark transactions; foreground heartbeat and reconnect-triggered stale transition per ADR-019 (no scheduler) |
