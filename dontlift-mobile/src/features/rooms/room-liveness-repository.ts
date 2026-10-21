@@ -72,12 +72,18 @@ export function createRoomLivenessRepository(dependencies: { firestore: Firestor
             throw new RoomLivenessError('failed-precondition');
           }
           // Bản app cũ chưa refresh heartbeat ở start; startedAt vẫn là mốc liveness hợp lệ.
-          const livenessAtUtcMs = Math.max(heartbeatAt.toMillis(), startedAt.toMillis());
-          const cutoffUtcMs = livenessAtUtcMs + HOST_STALE_AFTER_MS;
+          const heartbeatIsLater = heartbeatAt.seconds > startedAt.seconds
+            || (heartbeatAt.seconds === startedAt.seconds && heartbeatAt.nanoseconds >= startedAt.nanoseconds);
+          const livenessAt = heartbeatIsLater ? heartbeatAt : startedAt;
+          // Cộng giây trực tiếp để giữ nguyên nanoseconds khi Rules so cutoff với request.time.
+          const cutoff = new Timestamp(
+            livenessAt.seconds + HOST_STALE_AFTER_MS / 1_000,
+            livenessAt.nanoseconds,
+          );
           // Không dùng giờ thiết bị để quyết định; Rules từ chối nếu server chưa qua cutoff.
           transaction.update(roomRef, {
             status: 'ABORTED',
-            endedAt: Timestamp.fromMillis(cutoffUtcMs),
+            endedAt: cutoff,
             updatedAt: serverTimestamp(),
           });
           return 'aborted';
