@@ -29,6 +29,9 @@ type Props = {
   terminationVoteError?: string;
   onOpenTerminationVote?: () => void;
   onCastTerminationVote?: (choice: TerminationChoice) => void;
+  isCompletingRoom?: boolean;
+  completionError?: string;
+  onCompleteRoom?: () => void;
 };
 
 export function GroupActiveScreen({ snapshot, elapsedSeconds, detection, isOnline, syncMessage, actorUid,
@@ -36,7 +39,8 @@ export function GroupActiveScreen({ snapshot, elapsedSeconds, detection, isOnlin
   onRequestEarlyExit, onDecideEarlyExit,
   terminationVoteState = { vote: null, ownBallot: null, error: false },
   isOpeningTerminationVote = false, isCastingTerminationVote = false, terminationVoteError,
-  onOpenTerminationVote = () => undefined, onCastTerminationVote = () => undefined }: Props) {
+  onOpenTerminationVote = () => undefined, onCastTerminationVote = () => undefined,
+  isCompletingRoom = false, completionError, onCompleteRoom = () => undefined }: Props) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1_000);
@@ -67,6 +71,14 @@ export function GroupActiveScreen({ snapshot, elapsedSeconds, detection, isOnlin
     [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Start vote', onPress: onOpenTerminationVote },
+    ],
+  );
+  const confirmRoomCompletion = () => Alert.alert(
+    'End this group session?',
+    'The room will close at server time. Everyone must sync their saved session data before final scores are locked.',
+    [
+      { text: 'Keep session open', style: 'cancel' },
+      { text: 'End session', style: 'destructive', onPress: onCompleteRoom },
     ],
   );
   return (
@@ -213,6 +225,21 @@ export function GroupActiveScreen({ snapshot, elapsedSeconds, detection, isOnlin
           </GlassCard>
         ))}
       </View>
+
+      {isHost && snapshot.status === 'ACTIVE' ? (
+        <GlassCard style={styles.endCard}>
+          <Text style={styles.sectionTitle}>Finish the group session</Text>
+          <Text style={styles.body}>Close the room now. Final scores stay pending until all members sync.</Text>
+          {completionError ? <Text accessibilityRole="alert" style={styles.error}>{completionError}</Text> : null}
+          <Pressable accessibilityRole="button" accessibilityLabel="End group session" disabled={!isOnline || isCompletingRoom}
+            onPress={confirmRoomCompletion}
+            style={({ pressed }) => [styles.endButton, pressed && styles.pressed, (!isOnline || isCompletingRoom) && styles.disabled]}>
+            {isCompletingRoom ? <ActivityIndicator accessibilityLabel="Ending group session" color={Colors.light.onPrimary} /> : null}
+            <Text style={styles.actionText}>{isCompletingRoom ? 'Ending session…' : 'End group session'}</Text>
+          </Pressable>
+          {!isOnline ? <Text style={styles.body}>Connect to the internet to end the room.</Text> : null}
+        </GlassCard>
+      ) : null}
     </View>
   );
 }
@@ -230,10 +257,12 @@ const styles = StyleSheet.create({
   leaderboard: { gap: 8 },
   exitCard: { padding: 16, gap: 9 },
   voteCard: { padding: 16, gap: 9 },
+  endCard: { padding: 16, gap: 9 },
   exitRequests: { gap: 8 },
   requestCard: { padding: 14, gap: 10 },
   actionRow: { flexDirection: 'row', gap: 10 },
   actionButton: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 16, borderRadius: 12, backgroundColor: Colors.light.primary },
+  endButton: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 16, borderRadius: 12, backgroundColor: Colors.light.error },
   secondaryButton: { minHeight: 44, flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, borderRadius: 12, borderWidth: 1, borderColor: Colors.light.border },
   actionText: { color: Colors.light.onPrimary, fontWeight: '800' },
   secondaryActionText: { color: Colors.light.text, fontWeight: '800' },
