@@ -16,8 +16,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Network from 'expo-network';
 import * as Crypto from 'expo-crypto';
-import { ScreenId, Participant, BillParticipantShare } from '../types';
-import { INITIAL_PARTICIPANTS } from '../constants';
+import { ScreenId } from '../types';
 import { Header } from '../components/Header';
 import { BottomNav } from '../components/BottomNav';
 import { ControlDeckDrawer } from '../components/ControlDeckDrawer';
@@ -65,6 +64,9 @@ import { createTerminationVoteRepository, TerminationVoteError, type Termination
 import { createRoomCompletionRepository, RoomCompletionError } from '../features/rooms/room-completion-repository';
 import { createSettlementDetailsRepository, type SettlementDetails } from '../features/settlement/settlement-details-repository';
 import { createBankDirectoryRepository } from '../features/settlement/bank-directory';
+import { createBillRepository, BillRepositoryError, type CalculateBillCommand, type PublishedBill } from '../features/settlement/bill-repository';
+import { listenToPublishedBill, type PublishedBillState } from '../features/settlement/published-bill-listener';
+import { shouldOpenPublishedBillForMember } from '../features/settlement/published-bill-navigation';
 import {
   createRoomLivenessRepository, HOST_HEARTBEAT_INTERVAL_MS, HOST_STALE_AFTER_MS, STALE_ROOM_RETRY_MS,
   RoomLivenessError,
@@ -104,6 +106,19 @@ function earlyExitErrorMessage(error: unknown): string {
     case 'unavailable': return 'Connect to Firebase and retry. No offline command was queued.';
     case 'already-exists': return 'This request ID was already used for another request.';
     default: return 'Could not complete the early-exit action. Try again.';
+  }
+}
+
+function billPublishErrorMessage(error: unknown): string {
+  if (!(error instanceof BillRepositoryError)) return 'Could not publish the bill split. Reconnect and retry.';
+  switch (error.code) {
+    case 'unauthenticated': return 'Your sign-in expired. Sign in again and retry.';
+    case 'invalid-argument': return 'Enter a whole bill amount of at least 1,000 VND.';
+    case 'not-found': return 'This room could not be found.';
+    case 'permission-denied': return 'Firebase denied publishing. Confirm the Host role, saved payment details, and deployed Firestore Rules.';
+    case 'failed-precondition': return 'Finalize room scores and save payment details before publishing. A room can be published only once.';
+    case 'already-exists': return 'This request ID was already used for a different bill.';
+    case 'unavailable': return 'Could not confirm the transaction. Reconnect and retry the same request; it is not queued offline.';
   }
 }
 
@@ -191,6 +206,10 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     auth: roomRuntime.auth,
   }), [roomRuntime]);
   const settlementDetailsRepository = useMemo(() => createSettlementDetailsRepository({
+    firestore: roomRuntime.firestore,
+    auth: roomRuntime.auth,
+  }), [roomRuntime]);
+  const billRepository = useMemo(() => createBillRepository({
     firestore: roomRuntime.firestore,
     auth: roomRuntime.auth,
   }), [roomRuntime]);
@@ -990,7 +1009,6 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   }, [soloSummary]);
   const [soloStartError, setSoloStartError] = useState<string | undefined>();
   // Group State
-  const [participants, setParticipants] = useState<Participant[]>(INITIAL_PARTICIPANTS);
   const [groupTimerSeconds, setGroupTimerSeconds] = useState(0);
   const [groupDetection, setGroupDetection] = useState<ForegroundDetectionViewState>(INITIAL_DETECTION_STATE);
   const [groupIsOnline, setGroupIsOnline] = useState(false);
@@ -1001,6 +1019,45 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const groupSummarySnapshot = candidateGroupRoom?.status === 'COMPLETED' ? candidateGroupRoom : null;
   const [settlementDetailsMode, setSettlementDetailsMode] = useState<'host' | 'member'>('member');
   const [settlementDetails, setSettlementDetails] = useState<SettlementDetails | null>(null);
+  const [publishedBillState, setPublishedBillState] = useState<PublishedBillState>({ kind: 'loading' });
+  const [committedBill, setCommittedBill] = useState<PublishedBill | null>(null);
+  const [isPublishingBill, setIsPublishingBill] = useState(false);
+  const [billPublishError, setBillPublishError] = useState<string>();
+  const pendingBillCommand = useRef<{ command: CalculateBillCommand; rosterMemberUids: string[] } | null>(null);
+  const activeBillRoomId = useRef<string | null>(null);
+
+  useEffect(() => {
+    activeBillRoomId.current = groupSummarySnapshot?.roomId ?? null;
+    pendingBillCommand.current = null;
+    setCommittedBill(null);
+    setBillPublishError(undefined);
+    setIsPublishingBill(false);
+  }, [groupSummarySnapshot?.roomId]);
+
+  useEffect(() => {
+    if (!groupSummarySnapshot || groupSummarySnapshot.reconciliationStatus !== 'FINALIZED') {
+      setPublishedBillState({ kind: 'loading' });
+      return undefined;
+    }
+    setPublishedBillState({ kind: 'loading' });
+    return listenToPublishedBill(roomRuntime.firestore, groupSummarySnapshot.roomId, setPublishedBillState);
+  }, [groupSummarySnapshot?.roomId, groupSummarySnapshot?.reconciliationStatus, roomRuntime.firestore]);
+
+  useEffect(() => {
+    const ownMember = groupSummarySnapshot?.members.find(member => member.uid === profile.uid);
+    if (shouldOpenPublishedBillForMember(publishedBillState, ownMember?.role, currentScreen)) {
+      setCurrentScreen('07-bill-allocation');
+    }
+  }, [publishedBillState, groupSummarySnapshot, profile.uid, currentScreen]);
+
+  useEffect(() => {
+    if (publishedBillState.kind === 'published') setCommittedBill(publishedBillState.bill);
+    if (publishedBillState.kind === 'published') pendingBillCommand.current = null;
+  }, [publishedBillState]);
+
+  const billScreenState: PublishedBillState = committedBill != null && committedBill.roomId === groupSummarySnapshot?.roomId
+    && publishedBillState.kind !== 'published'
+    ? { kind: 'published', bill: committedBill } : publishedBillState;
   useEffect(() => {
     if (currentScreen !== '08-vietqr-settlement') return undefined;
     setSettlementDetails(null);
@@ -1258,9 +1315,58 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     };
   }, [groupCaptureRoomSnapshot?.roomId, profile.uid, groupViolationRepository]);
 
-  // Bill State
-  const [totalBillAmount, setTotalBillAmount] = useState<number>(550000);
-  const [hostOverrideMode, setHostOverrideMode] = useState<boolean>(false);
+  const handlePublishBill = async (totalBillVnd?: number) => {
+    const snapshot = groupSummarySnapshot;
+    const ownMember = snapshot?.members.find(member => member.uid === profile.uid);
+    if (!snapshot || snapshot.reconciliationStatus !== 'FINALIZED' || ownMember?.role !== 'HOST'
+      || ownMember.status !== 'ACTIVE' || isPublishingBill) return;
+
+    let pending = pendingBillCommand.current;
+    if (!pending) {
+      if (totalBillVnd == null) return;
+      pending = {
+        command: { version: 1, requestId: Crypto.randomUUID(), roomId: snapshot.roomId, totalBillVnd },
+        rosterMemberUids: snapshot.members
+          .filter(member => member.status === 'ACTIVE' || member.status === 'EARLY_EXIT')
+          .map(member => member.uid),
+      };
+      pendingBillCommand.current = pending;
+    } else if (pending.command.roomId !== snapshot.roomId
+      || (totalBillVnd != null && pending.command.totalBillVnd !== totalBillVnd)) {
+      return;
+    }
+
+    setIsPublishingBill(true);
+    setBillPublishError(undefined);
+    try {
+      const result = await billRepository.publish(pending.command, pending.rosterMemberUids);
+      if (activeBillRoomId.current === pending.command.roomId) {
+        pendingBillCommand.current = null;
+        setCommittedBill(result);
+        setPublishedBillState({ kind: 'published', bill: result });
+      }
+    } catch (error) {
+      if (activeBillRoomId.current === pending.command.roomId) setBillPublishError(billPublishErrorMessage(error));
+      if (activeBillRoomId.current === pending.command.roomId
+        && error instanceof BillRepositoryError && error.code !== 'unavailable') {
+        pendingBillCommand.current = null;
+      }
+    } finally {
+      if (activeBillRoomId.current === pending.command.roomId) setIsPublishingBill(false);
+    }
+  };
+
+  const handleRetryPublishedBill = async () => {
+    const roomId = groupSummarySnapshot?.roomId;
+    if (!roomId) return;
+    setPublishedBillState({ kind: 'loading' });
+    try {
+      const bill = await billRepository.readPublished(roomId);
+      setPublishedBillState(bill ? { kind: 'published', bill } : { kind: 'unpublished' });
+    } catch {
+      setPublishedBillState({ kind: 'error' });
+    }
+  };
 
   const createSoloLifecycle = (soloSession: SoloSession, initialState: typeof AppState.currentState) =>
     createSessionLifecycleController({
@@ -1417,28 +1523,6 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     });
     return () => back.remove();
   }, [currentScreen]);
-
-  // 40/60 Bill Split calculation
-  const billBreakdown: BillParticipantShare[] = useMemo(() => {
-    const N = participants.length || 1;
-    const baseSharePool = totalBillAmount * 0.4;
-    const penaltySharePool = totalBillAmount * 0.6;
-    const basePerPerson = Math.round(baseSharePool / N);
-    const totalViolations = participants.reduce((sum, p) => sum + p.lifts, 0);
-
-    return participants.map((p) => {
-      let penaltyShare = 0;
-      if (totalViolations > 0) {
-        penaltyShare = Math.round((p.lifts / totalViolations) * penaltySharePool);
-      }
-      return {
-        ...p,
-        baseShare: basePerPerson,
-        penaltyShare,
-        totalShare: basePerPerson + penaltyShare,
-      };
-    });
-  }, [participants, totalBillAmount]);
 
   // Solo handlers
   const handleStartSolo = async (mode: 'COUNTDOWN' | 'STOPWATCH', mins: number) => {
@@ -1715,6 +1799,13 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
         return;
       }
     }
+    if (screen === '07-bill-allocation') {
+      const ownMember = groupSummarySnapshot?.members.find(member => member.uid === profile.uid);
+      if (!groupSummarySnapshot || groupSummarySnapshot.reconciliationStatus !== 'FINALIZED' || !ownMember) {
+        setCurrentScreen(groupSummarySnapshot ? '13-group-summary' : '05-group-lobby');
+        return;
+      }
+    }
     if (screen === '14-settlement-details') {
       const ownMember = groupSummarySnapshot?.members.find(member => member.uid === profile.uid);
       if (!groupSummarySnapshot || groupSummarySnapshot.reconciliationStatus !== 'FINALIZED' || !ownMember) {
@@ -1747,6 +1838,25 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
             repository={soloHistoryRepository}
             onBack={() => navigateToScreen('02-solo-select')}
           />
+        ) : currentScreen === '07-bill-allocation' ? (
+          groupSummarySnapshot?.reconciliationStatus === 'FINALIZED' ? (
+            <BillAllocationScreen
+              roomId={groupSummarySnapshot.roomId}
+              mode={groupSummarySnapshot.members.find(member => member.uid === profile.uid)?.role === 'HOST' ? 'host' : 'member'}
+              members={groupSummarySnapshot.members
+                .filter(member => member.status === 'ACTIVE' || member.status === 'EARLY_EXIT')
+                .map(member => ({ uid: member.uid, displayName: member.displayName, penaltyScore: member.penaltyScore }))}
+              state={billScreenState}
+              isOnline={groupIsOnline}
+              isPublishing={isPublishingBill}
+              pendingTotalVnd={pendingBillCommand.current?.command.totalBillVnd}
+              publishError={billPublishError}
+              onPublish={amount => { void handlePublishBill(amount); }}
+              onRetry={() => { void handleRetryPublishedBill(); }}
+              onRetryPublish={() => { void handlePublishBill(); }}
+              onBack={() => setCurrentScreen('13-group-summary')}
+            />
+          ) : <Text accessibilityRole="alert">Waiting for finalized room scores…</Text>
         ) : <ScrollView
           style={styles.mainBodyScrollView}
           contentContainerStyle={styles.scrollContent}
@@ -1884,6 +1994,8 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
                 overrideErrorMessage={roomOverrideError}
                 onSyncAndAcknowledge={() => { void handleAcknowledgeRoomSync(); }}
                 onFinalizeWithOverride={uids => { void handleFinalizeRoomOverride(uids); }}
+                billState={billScreenState}
+                onOpenBillAllocation={() => setCurrentScreen('07-bill-allocation')}
                 onOpenSettlementDetails={() => {
                   const ownMember = groupSummarySnapshot.members.find(member => member.uid === profile.uid);
                   if (!ownMember) return;
@@ -1905,6 +2017,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
             mode={settlementDetailsMode}
             repository={settlementDetailsRepository}
             bankDirectory={settlementBankDirectory}
+            onContinueToBill={() => setCurrentScreen('07-bill-allocation')}
             onSaved={details => {
               setSettlementDetails(details);
               setCurrentScreen('07-bill-allocation');
@@ -1913,19 +2026,9 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
           />
         ) : null}
 
-        {currentScreen === '07-bill-allocation' && (
-          <BillAllocationScreen
-            totalBillAmount={totalBillAmount}
-            billBreakdown={billBreakdown}
-            hostOverrideMode={hostOverrideMode}
-            onUpdateTotalBill={setTotalBillAmount}
-            onToggleHostOverride={() => setHostOverrideMode(!hostOverrideMode)}
-            onPublishBill={() => setCurrentScreen('08-vietqr-settlement')}
-          />
-        )}
-
         {currentScreen === '08-vietqr-settlement' && (
-          <VietQRSettlementScreen billBreakdown={billBreakdown} settlementDetails={settlementDetails} />
+          <VietQRSettlementScreen bill={publishedBillState.kind === 'published' ? publishedBillState.bill : null}
+            actorUid={profile.uid} settlementDetails={settlementDetails} />
         )}
 
         {currentScreen === '09-activation' && <ActivationScreen />}

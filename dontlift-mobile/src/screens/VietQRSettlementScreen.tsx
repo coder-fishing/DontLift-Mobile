@@ -3,22 +3,25 @@ import { StyleSheet, Text, View } from 'react-native';
 import { GlassCard } from '../components/GlassCard';
 import { Colors } from '../constants/theme';
 import { formatVND } from '../constants';
-import type { BillParticipantShare } from '../types';
+import type { PublishedBill } from '../features/settlement/bill-repository';
 import type { SettlementDetails } from '../features/settlement/settlement-details-repository';
 
 type Props = {
-  billBreakdown: BillParticipantShare[];
+  bill: PublishedBill | null;
+  actorUid: string;
   settlementDetails: SettlementDetails | null;
 };
 
-export function VietQRSettlementScreen({ billBreakdown, settlementDetails }: Props) {
-  const myShare = billBreakdown.find(participant => participant.isCurrentUser)?.totalShare ?? 0;
+export function VietQRSettlementScreen({ bill, actorUid, settlementDetails }: Props) {
+  const myShare = bill?.shares.find(participant => participant.uid === actorUid)?.shareVnd;
 
   return (
     <View style={styles.container}>
       <GlassCard style={styles.card}>
         <Text style={styles.eyebrow}>YOUR SHARE</Text>
-        <Text style={styles.amount}>{formatVND(myShare)} <Text style={styles.currency}>VND</Text></Text>
+        {myShare == null
+          ? <Text style={styles.body}>No published bill split is available for this room.</Text>
+          : <Text style={styles.amount}>{formatVND(myShare)} <Text style={styles.currency}>VND</Text></Text>}
         <Text style={styles.body}>Payment tracking and scannable VietQR are planned for a later slice.</Text>
       </GlassCard>
 

@@ -34,9 +34,3 @@ export interface Participant {
   violationSeconds: number;
   isCurrentUser?: boolean;
 }
-
-export interface BillParticipantShare extends Participant {
-  baseShare: number;
-  penaltyShare: number;
-  totalShare: number;
-}
