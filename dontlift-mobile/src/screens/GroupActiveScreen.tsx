@@ -50,8 +50,9 @@ export function GroupActiveScreen({ snapshot, elapsedSeconds, detection, isOnlin
   const ownBallot = terminationVoteState.ownBallot?.voteId === vote?.voteId ? terminationVoteState.ownBallot : null;
   const voteSecondsLeft = vote?.openedAtUtcMs == null ? null
     : Math.max(0, Math.ceil((vote.openedAtUtcMs + 30_000 - now) / 1_000));
-  const voteExpired = voteSecondsLeft === 0;
-  const canOpenVote = ownMember?.status === 'ACTIVE' && (!vote || voteExpired);
+  // Giờ thiết bị chỉ để tham khảo; Rules quyết định còn được bỏ phiếu/mở vote mới.
+  const canParticipate = snapshot.status === 'ACTIVE' && ownMember?.status === 'ACTIVE';
+  const canOpenVote = canParticipate && (!vote || vote.status === 'OPEN');
   const confirmEarlyExitRequest = () => Alert.alert(
     'Request early exit?',
     'Your score will freeze at current time.',
@@ -105,41 +106,42 @@ export function GroupActiveScreen({ snapshot, elapsedSeconds, detection, isOnlin
 
       <GlassCard style={styles.voteCard}>
         <Text style={styles.sectionTitle}>End session early</Text>
-        {vote && !voteExpired && vote.status === 'OPEN' ? (
+        {vote && vote.status === 'OPEN' ? (
           <>
-            <Text accessibilityLabel={`Vote ends in ${voteSecondsLeft ?? 'an unknown number of'} seconds`} style={styles.body}>
-              Unanimous Yes ends the session · {voteSecondsLeft ?? '…'}s left
+            <Text accessibilityLabel={`Estimated time remaining: ${voteSecondsLeft ?? 'unknown'} seconds`} style={styles.body}>
+              Unanimous Yes ends the session · approximately {voteSecondsLeft ?? '…'}s left
             </Text>
             <Text style={styles.body}>Yes votes: {vote.yesVoteCount} / {vote.eligibleVoterCount}</Text>
-            {ownBallot ? <Text style={styles.notice}>Your vote: {ownBallot.choice === 'YES' ? 'Yes' : 'No'}</Text> : (
+            {ownBallot ? <Text style={styles.notice}>Your vote: {ownBallot.choice === 'YES' ? 'Yes' : 'No'}</Text> : canParticipate ? (
               <View style={styles.actionRow}>
-                <Pressable accessibilityRole="button" accessibilityLabel="Vote yes to end session" disabled={!isOnline || isCastingTerminationVote || voteSecondsLeft == null}
+                <Pressable accessibilityRole="button" accessibilityLabel="Vote yes to end session" disabled={!isOnline || isCastingTerminationVote}
                   onPress={() => onCastTerminationVote('YES')}
-                  style={({ pressed }) => [styles.actionButton, pressed && styles.pressed, (!isOnline || isCastingTerminationVote || voteSecondsLeft == null) && styles.disabled]}>
+                  style={({ pressed }) => [styles.actionButton, pressed && styles.pressed, (!isOnline || isCastingTerminationVote) && styles.disabled]}>
                   {isCastingTerminationVote ? <ActivityIndicator color={Colors.light.onPrimary} /> : null}
                   <Text style={styles.actionText}>Yes</Text>
                 </Pressable>
-                <Pressable accessibilityRole="button" accessibilityLabel="Vote no to continue session" disabled={!isOnline || isCastingTerminationVote || voteSecondsLeft == null}
+                <Pressable accessibilityRole="button" accessibilityLabel="Vote no to continue session" disabled={!isOnline || isCastingTerminationVote}
                   onPress={() => onCastTerminationVote('NO')}
-                  style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed, (!isOnline || isCastingTerminationVote || voteSecondsLeft == null) && styles.disabled]}>
+                  style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed, (!isOnline || isCastingTerminationVote) && styles.disabled]}>
                   <Text style={styles.secondaryActionText}>No</Text>
                 </Pressable>
               </View>
-            )}
+            ) : null}
           </>
         ) : (
           <>
             <Text style={styles.body}>{vote?.status === 'CANCELLED' ? 'This room was cancelled by unanimous vote.' : 'All active members must agree within 30 seconds. A No or timeout keeps the room active.'}</Text>
-            {canOpenVote ? (
-              <Pressable accessibilityRole="button" accessibilityLabel="Initiate termination vote" disabled={!isOnline || isOpeningTerminationVote}
-                onPress={confirmTerminationVote}
-                style={({ pressed }) => [styles.actionButton, pressed && styles.pressed, (!isOnline || isOpeningTerminationVote) && styles.disabled]}>
-                {isOpeningTerminationVote ? <ActivityIndicator color={Colors.light.onPrimary} /> : null}
-                <Text style={styles.actionText}>{voteExpired ? 'Start a new vote' : 'Start vote'}</Text>
-              </Pressable>
-            ) : null}
           </>
         )}
+        {canOpenVote ? (
+          <Pressable accessibilityRole="button" accessibilityLabel="Initiate termination vote" disabled={!isOnline || isOpeningTerminationVote}
+            onPress={confirmTerminationVote}
+            style={({ pressed }) => [styles.actionButton, pressed && styles.pressed, (!isOnline || isOpeningTerminationVote) && styles.disabled]}>
+            {isOpeningTerminationVote ? <ActivityIndicator color={Colors.light.onPrimary} /> : null}
+            <Text style={styles.actionText}>{vote ? 'Try starting a new vote' : 'Start vote'}</Text>
+          </Pressable>
+        ) : null}
+        {vote?.status === 'OPEN' ? <Text style={styles.body}>A new vote can start only after the current vote expires on the server.</Text> : null}
         {terminationVoteState.error || terminationVoteError ? (
           <Text accessibilityRole="alert" style={styles.error}>{terminationVoteError || 'Could not load the current vote. Reconnect and reopen the room to retry.'}</Text>
         ) : null}

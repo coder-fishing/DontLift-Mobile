@@ -289,6 +289,31 @@ service cloud.firestore {
         && (voteAfter.status == 'OPEN' || voteAfter.closedAt == request.time);
     }
 
+    // Marker cũ không đủ: phải có lần duyệt rời mới trong chính giao dịch này.
+    function hasNewApprovedVoteExit(roomId) {
+      let roomBefore = get(roomPath(roomId)).data;
+      let roomAfter = getAfter(roomPath(roomId)).data;
+      let uid = roomAfter.lastEarlyExitMemberUid;
+      let memberBefore = get(hostMemberPath(roomId, uid)).data;
+      let memberAfter = getAfter(hostMemberPath(roomId, uid)).data;
+      let exitBefore = get(earlyExitRequestPath(roomId, uid)).data;
+      let exitAfter = getAfter(earlyExitRequestPath(roomId, uid)).data;
+      return roomBefore.hostId == request.auth.uid
+        && roomAfter.activeMemberCount == roomBefore.activeMemberCount - 1
+        && roomAfter.activeMemberCount > 0
+        && roomAfter.updatedAt == request.time
+        && memberBefore.status == 'ACTIVE'
+        && memberAfter.status == 'EARLY_EXIT'
+        && memberAfter.earlyExitAt == request.time
+        && exitBefore.status == 'OPEN'
+        && exitAfter.status == 'APPROVED'
+        && exitAfter.requestId == exitBefore.requestId
+        && exitAfter.requestId == roomAfter.lastEarlyExitRequestId
+        && exitAfter.decision == 'APPROVE'
+        && exitAfter.decidedBy == request.auth.uid
+        && exitAfter.cutoffAt == request.time;
+    }
+
     function validTerminationVoteUpdate(roomId) {
       let before = resource.data;
       let after = request.resource.data;
@@ -311,13 +336,21 @@ service cloud.firestore {
         && request.time < before.openedAt + duration.value(30, 's')
         && after.voteId == before.voteId
         && after.openedAt == before.openedAt
+        && after.eligibleVoterCount is int && after.eligibleVoterCount > 0
+        && after.yesVoteCount is int && after.yesVoteCount >= 0
+        && after.yesVoteCount <= after.eligibleVoterCount
+        && (after.status != 'CANCELLED'
+          || (getAfter(roomPath(roomId)).data.status == 'CANCELLED'
+            && getAfter(roomPath(roomId)).data.endedAt == request.time))
         && after.diff(before).affectedKeys().hasOnly(['yesVoteCount', 'eligibleVoterCount', 'status', 'closedAt'])
         && ((hasNewBallot
           && after.eligibleVoterCount == before.eligibleVoterCount
           && after.yesVoteCount == before.yesVoteCount + (callerBallot.choice == 'YES' ? 1 : 0)
           && after.status == (after.yesVoteCount == after.eligibleVoterCount ? 'CANCELLED' : 'OPEN')
           && (after.status == 'OPEN' || after.closedAt == request.time))
-          || (getAfter(roomPath(roomId)).data.lastEarlyExitMemberUid is string
+          || (hasNewApprovedVoteExit(roomId)
+            && before.eligibleVoterCount == room.activeMemberCount
+            && after.eligibleVoterCount == getAfter(roomPath(roomId)).data.activeMemberCount
             && after.eligibleVoterCount == before.eligibleVoterCount - 1
             && after.yesVoteCount == before.yesVoteCount - (removedYes ? 1 : 0)
             && after.status == (after.yesVoteCount == after.eligibleVoterCount ? 'CANCELLED' : 'OPEN')
@@ -617,8 +650,12 @@ service cloud.firestore {
           && getAfter(terminationVotePath(roomId)).data.status == 'CANCELLED'
           && getAfter(terminationVotePath(roomId)).data.closedAt == request.time
           && getAfter(terminationVotePath(roomId)).data.yesVoteCount == getAfter(terminationVotePath(roomId)).data.eligibleVoterCount
-          && (existsAfter(terminationBallotPath(roomId, request.auth.uid))
-            || getAfter(roomPath(roomId)).data.get('lastEarlyExitMemberUid', null) is string)
+          && getAfter(terminationVotePath(roomId)).data.eligibleVoterCount > 0
+          && existsAfter(terminationBallotPath(roomId, request.auth.uid))
+          && getAfter(terminationBallotPath(roomId, request.auth.uid)).data.voteId == get(terminationVotePath(roomId)).data.voteId
+          && getAfter(terminationBallotPath(roomId, request.auth.uid)).data.choice == 'YES'
+          && (!exists(terminationBallotPath(roomId, request.auth.uid))
+            || get(terminationBallotPath(roomId, request.auth.uid)).data.voteId != get(terminationVotePath(roomId)).data.voteId)
         ) || validEarlyExitRoomUpdate(roomId)
       );
       allow list, delete: if false;

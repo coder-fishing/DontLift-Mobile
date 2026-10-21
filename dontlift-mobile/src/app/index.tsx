@@ -528,7 +528,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     } catch (error) {
       if (!(error instanceof TerminationVoteError) || error.code !== 'unavailable') pendingTerminationVoteOpen.current = null;
       setTerminationVoteError(error instanceof TerminationVoteError && error.code === 'permission-denied'
-        ? 'Firebase Rules rejected opening the vote. Confirm the deployed Rules include ADR-016.'
+        ? 'Could not start a new vote. The current vote may still be open; wait and try again.'
         : 'Could not start the vote. Reconnect and try again.');
     } finally { setIsOpeningTerminationVote(false); }
   };
@@ -550,7 +550,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     } catch (error) {
       if (!(error instanceof TerminationVoteError) || error.code !== 'unavailable') pendingTerminationBallot.current = null;
       setTerminationVoteError(error instanceof TerminationVoteError && error.code === 'permission-denied'
-        ? 'Firebase Rules rejected this ballot. Confirm the deployed Rules include ADR-016.'
+        ? 'Your vote was not accepted. The voting window may have ended; check the room and try again.'
         : 'Could not submit your vote. Reconnect and try again.');
     } finally { setIsCastingTerminationVote(false); }
   };

@@ -25,7 +25,6 @@ export class TerminationVoteError extends Error {
 }
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const DEADLINE_MS = 30_000;
 
 function mapError(error: unknown): never {
   if (error instanceof TerminationVoteError) throw error;
@@ -80,9 +79,11 @@ export function createTerminationVoteRepository(dependencies: {
       const roomRef = doc(dependencies.firestore, 'rooms', input.roomId);
       const memberRef = doc(dependencies.firestore, 'rooms', input.roomId, 'members', actor.uid);
       const currentVoteRef = voteRef(input.roomId);
+      let replacedVoteId: string | null = null;
       try {
         // Transaction yêu cầu mạng; Rules mới quyết định vote hiện tại đã hết hạn hay chưa.
         const result = await runTransaction(dependencies.firestore, async transaction => {
+          replacedVoteId = null;
           const [room, member, current] = await Promise.all([
             transaction.get(roomRef), transaction.get(memberRef), transaction.get(currentVoteRef),
           ]);
@@ -95,12 +96,14 @@ export function createTerminationVoteRepository(dependencies: {
           }
           if (current.exists()) {
             const existing = current.data();
+            replacedVoteId = String(existing.voteId);
             const openedAt = existing.openedAt;
             if (existing.status === 'OPEN' && openedAt instanceof Timestamp
-              && (Date.now() < openedAt.toMillis() + DEADLINE_MS || existing.requestId === input.requestId)) {
+              && existing.requestId === input.requestId) {
               return toVote(input.roomId, existing);
             }
           }
+          // Không dùng clock điện thoại để mở lại: Rules kiểm tra deadline bằng request.time.
           const newVote = {
             version: 1, voteId: input.requestId, requestId: input.requestId, openedByUid: actor.uid,
             openedAt: serverTimestamp(), eligibleVoterCount: roomData.activeMemberCount,
@@ -116,7 +119,20 @@ export function createTerminationVoteRepository(dependencies: {
           if (committed.exists()) return toVote(input.roomId, committed.data());
         } catch { /* Phép đọc lại không đảo ngược giao dịch đã commit. */ }
         return result;
-      } catch (error) { return mapError(error); }
+      } catch (error) {
+        // Server có thể giữ vote cũ vì chưa hết hạn. Trả snapshot hiện có, không báo đã tạo vote mới.
+        const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
+        if (!(error instanceof TerminationVoteError) && replacedVoteId !== null
+          && ['permission-denied', 'firestore/permission-denied'].includes(code)) {
+          try {
+            const current = await getDocFromServer(currentVoteRef);
+            if (current.exists() && current.data().status === 'OPEN' && current.data().voteId === replacedVoteId) {
+              return toVote(input.roomId, current.data());
+            }
+          } catch { /* Giữ lỗi gốc nếu không đọc lại được trạng thái server. */ }
+        }
+        return mapError(error);
+      }
     },
 
     async cast(input: {
@@ -146,9 +162,9 @@ export function createTerminationVoteRepository(dependencies: {
             }
             throw new TerminationVoteError('failed-precondition');
           }
+          // Countdown không có quyền từ chối phiếu; server kiểm tra hạn trong giao dịch.
           if (room.data().status !== 'ACTIVE' || member.data().status !== 'ACTIVE'
-            || savedVote.status !== 'OPEN' || !(savedVote.openedAt instanceof Timestamp)
-            || Date.now() >= savedVote.openedAt.toMillis() + DEADLINE_MS) {
+            || savedVote.status !== 'OPEN' || !(savedVote.openedAt instanceof Timestamp)) {
             throw new TerminationVoteError('failed-precondition');
           }
           const yesVoteCount = Number(savedVote.yesVoteCount) + (input.choice === 'YES' ? 1 : 0);
