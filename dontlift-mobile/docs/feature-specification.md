@@ -82,7 +82,7 @@
 | `WAITING` | `ACTIVE` | Host taps "Start Session" | Authenticated Firestore transaction guarded by Security Rules (ADR-013) | Canonical room state changes once; active tracking is handled by SL-017. |
 | `ACTIVE` | `COMPLETED` | Host confirms "End group session" | Rules-authorized Spark transaction (ADR-017) | Opens PENDING reconciliation; each member syncs and ACKs; final ACK locks scores as ALL_SYNCED before settlement. |
 | `ACTIVE` | `CANCELLED` | All currently ACTIVE room members vote YES within 30 seconds | Spark Firestore transaction + Rules (ADR-016) | Session terminated early; Bill Settlement bypassed (`US-11`). |
-| `ACTIVE` | `ABORTED` | Host offline timeout / drop > 15m | Cloud Function Cron | Room marked stale; participant stats saved locally. |
+| `ACTIVE` | `ABORTED` | No confirmed Host heartbeat for more than 15m | Rules-authorized Firestore transaction on Spark (ADR-019) | A connected member marks the room aborted; exact cutoff is heartbeat + 15m; local stats remain. If all clients are offline, transition occurs after reconnect. |
 
 ---
 

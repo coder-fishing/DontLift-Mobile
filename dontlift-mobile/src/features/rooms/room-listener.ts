@@ -22,6 +22,7 @@ export type RoomLobbySnapshot = {
   participantCount: number;
   activeMemberCount?: number | null;
   startedAtUtcMs: number | null;
+  hostHeartbeatAtUtcMs?: number | null;
   endedAtUtcMs?: number | null;
   reconciliationStatus?: 'PENDING' | 'FINALIZED' | null;
   pendingMemberCount?: number | null;
@@ -83,6 +84,7 @@ export function listenToRoomLobby(
     const data = snapshot.data();
     roomFromCache = snapshot.metadata.fromCache;
     const startedAt = data.startedAt;
+    const hostHeartbeatAt = data.hostHeartbeatAt;
     const endedAt = data.endedAt;
     const createdAt = data.createdAt;
     const updatedAt = data.updatedAt;
@@ -93,6 +95,7 @@ export function listenToRoomLobby(
       participantCount: Number(data.participantCount ?? 0),
       activeMemberCount: Number.isInteger(data.activeMemberCount) ? Number(data.activeMemberCount) : null,
       startedAtUtcMs: startedAt instanceof Timestamp ? startedAt.toMillis() : null,
+      hostHeartbeatAtUtcMs: hostHeartbeatAt instanceof Timestamp ? hostHeartbeatAt.toMillis() : null,
       endedAtUtcMs: endedAt instanceof Timestamp ? endedAt.toMillis() : null,
       reconciliationStatus: data.reconciliationStatus === 'PENDING' || data.reconciliationStatus === 'FINALIZED'
         ? data.reconciliationStatus : null,

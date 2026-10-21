@@ -263,7 +263,7 @@ Wire-level request, response, required-field, response-version, per-command erro
 | `setSettlementDetails` | Host-only room-scoped bank details; 30-day expiry |
 | `markBillSharePaid` | Host-only manual state change |
 | `redeemActivationCode` | One-time transaction and verified entitlement |
-| `abortStaleRooms` | Scheduled stale-host transition to `ABORTED` |
+| `sendHostHeartbeat` / `abortStaleRoom` | Rules-authorized Spark transactions; foreground heartbeat and reconnect-triggered stale transition per ADR-019 (no scheduler) |
 | `cleanupExpiredVotes` | Scheduled physical cleanup; logical expiry uses `expiresAt` |
 
 ### 7.2 Client listeners
@@ -350,6 +350,8 @@ Valid transitions:
 - `ACTIVE → COMPLETED`
 - `ACTIVE → CANCELLED`
 - `ACTIVE → ABORTED`
+
+For `ACTIVE → ABORTED`, ADR-019 uses a server-timestamp Host heartbeat and a Rules-authorized client transaction after the 15-minute stale window. The cutoff is `max(hostHeartbeatAt, startedAt) + 15 minutes`; a connected room member may trigger it. Spark has no scheduler here, so a room remains `ACTIVE` until a client reconnects if all devices are offline. Unsent local violations are retained but do not update shared scores after abort.
 
 `CANCELLED` cần mọi voter đang ACTIVE đồng ý trong 30 giây từ `openedAt` server. Rules dùng `request.time` làm authority, không có scheduled cleanup. `activeMemberCount` được khởi tạo khi Host start và giảm cùng Host approval; một Member EARLY_EXIT không còn thuộc voter denominator. Nếu remaining ACTIVE members đã unanimous sau approval, cùng transaction hủy room.
 

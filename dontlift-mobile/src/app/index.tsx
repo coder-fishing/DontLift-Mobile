@@ -62,6 +62,10 @@ import { createEarlyExitRepository, EarlyExitError, type EarlyExitDecision, type
 import { listenToOpenEarlyExitRequests } from '../features/rooms/early-exit-listener';
 import { createTerminationVoteRepository, TerminationVoteError, type TerminationChoice } from '../features/rooms/termination-vote-repository';
 import { createRoomCompletionRepository, RoomCompletionError } from '../features/rooms/room-completion-repository';
+import {
+  createRoomLivenessRepository, HOST_HEARTBEAT_INTERVAL_MS, HOST_STALE_AFTER_MS, STALE_ROOM_RETRY_MS,
+  RoomLivenessError,
+} from '../features/rooms/room-liveness-repository';
 import { listenToTerminationVote, type TerminationVoteState } from '../features/rooms/termination-vote-listener';
 import { roomCreateErrorMessage } from '../features/rooms/room-create-error';
 import { JoinRoomScreen } from '../screens/JoinRoomScreen';
@@ -162,6 +166,10 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       database: getLocalDatabase(),
       randomUUID: Crypto.randomUUID,
     }), [roomRuntime]);
+  const roomLivenessRepository = useMemo(() => createRoomLivenessRepository({
+    firestore: roomRuntime.firestore,
+    auth: roomRuntime.auth,
+  }), [roomRuntime]);
   const groupViolationRepository = useMemo(() => createGroupViolationRepository({
     firestore: roomRuntime.firestore,
     auth: roomRuntime.auth,
@@ -317,7 +325,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     // Giữ listener sống khi đổi tab để Group Active vẫn nhận trạng thái phòng và tiếp tục capture.
     return listenToRoomLobby(roomRuntime.firestore, lobbyRoom.roomId, state => {
       const snapshot = state.snapshot;
-      if (snapshot?.status === 'COMPLETED' && snapshot.endedAtUtcMs != null) {
+      if ((snapshot?.status === 'COMPLETED' || snapshot?.status === 'ABORTED') && snapshot.endedAtUtcMs != null) {
         const ownMember = snapshot.members.find(member => member.uid === profile.uid);
         const cutoffUtcMs = ownMember?.status === 'EARLY_EXIT' && ownMember.earlyExitAtUtcMs != null
           ? Math.min(snapshot.endedAtUtcMs, ownMember.earlyExitAtUtcMs)
@@ -333,6 +341,119 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     },
       snapshot => persistRoomLobbyProjection(getLocalDatabase(), snapshot));
   }, [lobbyRoom?.roomId, roomRuntime.firestore, profile.uid]);
+
+  useEffect(() => {
+    const snapshot = roomLobbyState?.snapshot;
+    const ownMember = snapshot?.members.find(member => member.uid === profile.uid);
+    if (!lobbyRoom || roomLobbyState?.kind !== 'live' || snapshot?.status !== 'ACTIVE'
+      || ownMember?.role !== 'HOST' || ownMember.status !== 'ACTIVE') return undefined;
+
+    let active = true;
+    let heartbeatInFlight = false;
+    let resumeCheckInFlight = false;
+    // Không gửi heartbeat nền; chỉ lần commit thành công mới làm mới liveness server.
+    const sendHeartbeat = async () => {
+      if (!active || heartbeatInFlight || AppState.currentState !== 'active') return;
+      heartbeatInFlight = true;
+      try {
+        await roomLivenessRepository.sendHostHeartbeat(lobbyRoom.roomId);
+      } catch (error) {
+        if (__DEV__ && active) {
+          const code = error instanceof RoomLivenessError ? error.code : 'unknown';
+          console.warn('[room-liveness] heartbeat failed', { code });
+        }
+      } finally {
+        heartbeatInFlight = false;
+      }
+    };
+    const refreshOnResume = async () => {
+      if (!active || resumeCheckInFlight || AppState.currentState !== 'active') return;
+      resumeCheckInFlight = true;
+      try {
+        const result = await roomLivenessRepository.abortStaleRoom(lobbyRoom.roomId);
+        // Khi Host quay lại sau thời gian stale, không hồi sinh phòng đã được abort.
+        if (result === 'aborted' || result === 'terminal') return;
+      } catch (error) {
+        // Rules từ chối một lần thử sớm; heartbeat kế tiếp dùng server time làm mốc mới.
+        if (!(error instanceof RoomLivenessError) || error.code !== 'rejected') {
+          if (__DEV__ && active) {
+            const code = error instanceof RoomLivenessError ? error.code : 'unknown';
+            console.warn('[room-liveness] resume check failed', { code });
+          }
+          return;
+        }
+      } finally {
+        resumeCheckInFlight = false;
+      }
+      await sendHeartbeat();
+    };
+    void refreshOnResume();
+    const timer = setInterval(() => { void sendHeartbeat(); }, HOST_HEARTBEAT_INTERVAL_MS);
+    const appStateSubscription = AppState.addEventListener('change', state => {
+      if (state === 'active') void refreshOnResume();
+    });
+    const networkSubscription = Network.addNetworkStateListener(state => {
+      if (state.isConnected === true && state.isInternetReachable !== false) void refreshOnResume();
+    });
+    return () => {
+      active = false;
+      clearInterval(timer);
+      appStateSubscription.remove();
+      networkSubscription.remove();
+    };
+  }, [lobbyRoom?.roomId, profile.uid, roomLivenessRepository, roomLobbyState?.kind, roomLobbyState?.snapshot?.status]);
+
+  useEffect(() => {
+    const snapshot = roomLobbyState?.snapshot;
+    const ownMember = snapshot?.members.find(member => member.uid === profile.uid);
+    if (!lobbyRoom || roomLobbyState?.kind !== 'live' || snapshot?.status !== 'ACTIVE'
+      || snapshot.startedAtUtcMs == null || ownMember == null || ownMember.role === 'HOST'
+      || !['ACTIVE', 'EARLY_EXIT'].includes(ownMember.status)) return undefined;
+    const heartbeatAt = snapshot.hostHeartbeatAtUtcMs;
+    if (heartbeatAt == null) return undefined;
+
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let abortInFlight = false;
+    const cutoffUtcMs = Math.max(heartbeatAt, snapshot.startedAtUtcMs) + HOST_STALE_AFTER_MS;
+    let attemptAbort: () => Promise<void>;
+    const retry = () => {
+      if (!active) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(attemptAbort, STALE_ROOM_RETRY_MS);
+    };
+    attemptAbort = async () => {
+      if (!active || abortInFlight || AppState.currentState !== 'active') return;
+      abortInFlight = true;
+      try {
+        await roomLivenessRepository.abortStaleRoom(lobbyRoom.roomId);
+      } catch (error) {
+        if (__DEV__ && active && (!(error instanceof RoomLivenessError) || error.code !== 'rejected')) {
+          const code = error instanceof RoomLivenessError ? error.code : 'unknown';
+          console.warn('[room-liveness] stale check failed', { code });
+        }
+        retry();
+      } finally {
+        abortInFlight = false;
+      }
+    };
+    const remainingMs = cutoffUtcMs - Date.now();
+    timer = setTimeout(attemptAbort, Math.max(0, remainingMs) + 1);
+    const appStateSubscription = AppState.addEventListener('change', state => {
+      if (state === 'active') void attemptAbort();
+    });
+    const networkSubscription = Network.addNetworkStateListener(state => {
+      if (state.isConnected === true && state.isInternetReachable !== false) void attemptAbort();
+    });
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+      appStateSubscription.remove();
+      networkSubscription.remove();
+    };
+  }, [lobbyRoom?.roomId, profile.uid, roomLivenessRepository, roomLobbyState?.kind,
+    roomLobbyState?.snapshot?.hostHeartbeatAtUtcMs, roomLobbyState?.snapshot?.startedAtUtcMs,
+    roomLobbyState?.snapshot?.status]);
 
   useEffect(() => {
     if (!lobbyRoom) return undefined;
@@ -373,7 +494,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
         try {
           // Không chốt local interval cho tới khi lần ghi capture cuối cùng đã hoàn tất.
           await groupCaptureWork.current.get(roomId)?.waitForIdle();
-          if (snapshot.status === 'COMPLETED') {
+          if (snapshot.status === 'COMPLETED' || snapshot.status === 'ABORTED') {
             // Reconcile candidate nền theo cutoff server trước khi terminal cleanup đóng session.
             const cutoffUtcMs = earlyExitCutoffUtcMs == null
               ? endedAtUtcMs : Math.min(endedAtUtcMs, earlyExitCutoffUtcMs);

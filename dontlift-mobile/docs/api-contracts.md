@@ -5,6 +5,8 @@
 > Room-creation update 2026-10-20: [ADR-011](decisions/ADR-011-spark-room-creation.md) replaces the `createRoom` callable with one authenticated Firestore client transaction guarded by Security Rules. This exception is designed for Firebase Spark and does not change the remaining callable contracts.
 
 > Room-start update 2026-10-20: [ADR-013](decisions/ADR-013-spark-room-start.md) adds a narrowly scoped Rules-authorized `startRoom` Firestore transaction for Firebase Spark. It does not add a callable or alter other lifecycle commands.
+>
+> Stale-room update 2026-10-21: [ADR-019](decisions/ADR-019-spark-stale-room-abort.md) defines foreground Host heartbeat and opportunistic `ACTIVE → ABORTED` transactions on Spark. No scheduled service is used; terminal status converges when a client reconnects.
 
 > Termination-vote update 2026-10-21: [ADR-016](decisions/ADR-016-spark-termination-vote.md) adds Rules-authorized vote transactions for Firebase Spark without Functions or billing.
 
@@ -74,13 +76,25 @@ The authenticated Expo Go client executes one online Firestore transaction guard
 | `requestId` | UUIDv4 string | yes | Idempotency marker for the room's single start transition |
 | `roomId` | UUIDv4 string | yes | Existing room document ID |
 
-The transaction reads `rooms/{roomId}` and `rooms/{roomId}/members/{authenticatedUid}` before writes. Rules require `room.hostId == request.auth.uid`, the membership role/status to be `HOST`/`ACTIVE`, and the current room state to be `WAITING`. The only allowed update changes `status` to `ACTIVE`, sets `startedAt` and `updatedAt` to `serverTimestamp()`, and sets `lastStartRequestId` to the request ID. Rules require both timestamps to equal `request.time`; every other room field remains unchanged.
+The transaction reads `rooms/{roomId}` and `rooms/{roomId}/members/{authenticatedUid}` before writes. Rules require `room.hostId == request.auth.uid`, the membership role/status to be `HOST`/`ACTIVE`, and the current room state to be `WAITING`. The current client changes `status` to `ACTIVE`, sets `startedAt`, `updatedAt`, and `hostHeartbeatAt` to `serverTimestamp()`, and sets `lastStartRequestId` to the request ID. Rules require each supplied timestamp to equal `request.time`; older clients may omit `hostHeartbeatAt`, in which case Rules use `startedAt` as the initial liveness time. Other room fields remain unchanged.
 
 **Replay and concurrency:** `lastStartRequestId` is the durable marker for the room's one start transition. If the room is already `ACTIVE` with the same marker, return the existing outcome. If it is `ACTIVE` with another marker, return `failed-precondition`. Concurrent transactions serialize on the room document; a retry with the same ID receives the committed outcome, while a different ID cannot produce a second transition. No separate command receipt is created.
 
 **Response:** `{ version: 1, requestId, roomId, status: "ACTIVE", startedAtUtcMs }`, where `startedAtUtcMs` is read from the committed server timestamp. If the write committed but its server readback is unavailable, retain the same request ID; the room listener remains authoritative and a retry reconciles the committed state.
 
 **Errors:** `unauthenticated`; `invalid-argument` for malformed IDs/envelope; `not-found` for a missing room; `failed-precondition` for a room already started by a different request; `permission-denied` for wrong role or a Rules-rejected/raced update; `unavailable` for network/service failure. Rules cannot return application-specific error codes, so ambiguous denials remain `permission-denied`. Offline transactions are not queued.
+
+## 3.3 Host heartbeat and stale-room abort — Firestore transactions (Spark)
+
+Resources: `rooms/{roomId}` and `rooms/{roomId}/members/{uid}`. Both operations require a signed-in client and an online Firestore transaction; neither queues offline writes.
+
+`sendHostHeartbeat(roomId)` derives UID from Firebase Auth and requires the caller to be the active Host of an `ACTIVE` room. It updates only `hostHeartbeatAt` and `updatedAt`, both with `serverTimestamp()`. Rules require both values to equal `request.time`. The client reports a heartbeat only after the transaction commits.
+
+`abortStaleRoom(roomId)` is attempted by a connected room member when the liveness cutoff is due, and again on foreground/reconnect. Rules require active or approved-early-exit membership, room status `ACTIVE`, timestamp heartbeat/start values, and `request.time > max(hostHeartbeatAt, startedAt) + 15 minutes`. The transaction writes `status: "ABORTED"`, `endedAt` equal to that exact cutoff, and `updatedAt: serverTimestamp()`. This treats `startedAt` as the liveness timestamp for older app builds that did not refresh the heartbeat during start. A fresh Host heartbeat racing the abort causes the transaction to re-evaluate against the new room document and Rules reject the stale transition.
+
+This is best-effort while clients are online. Spark has no scheduler in this design: if every app is offline/suspended, Firestore remains `ACTIVE` until a client reconnects and runs the check. Local pending violation events are retained at the cutoff but are not synced into the shared score after `ABORTED`.
+
+**Outcomes:** already terminal or not yet stale returns without mutation; unauthenticated/missing room and retryable Firebase failures are surfaced by the client; Rules rejection means the server has not confirmed an abort. Offline transactions are not queued.
 
 ## 3.1 Early exit — Firestore transactions (Spark)
 

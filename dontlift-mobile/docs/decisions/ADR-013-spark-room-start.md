@@ -13,7 +13,7 @@ SL-016 cần realtime đọc room/member và Host-only `WAITING → ACTIVE`. ADR
 - `startRoom` dùng một Firestore JS client transaction online, được Security Rules giới hạn; không deploy Cloud Functions hoặc bật billing.
 - Request gồm `version: 1`, UUIDv4 `requestId`, `roomId`; Auth UID chỉ lấy từ Firebase Auth.
 - Chỉ `hostId` có membership `HOST`/`ACTIVE` được chuyển room `WAITING → ACTIVE`.
-- Transaction chỉ sửa `status`, `startedAt`, `updatedAt`, `lastStartRequestId`; hai timestamp dùng `serverTimestamp()` và Rules đối chiếu `request.time`.
+- Transaction sửa `status`, `startedAt`, `updatedAt`, `lastStartRequestId`, và `hostHeartbeatAt`; timestamp dùng `serverTimestamp()` và Rules đối chiếu `request.time`. `hostHeartbeatAt` được khởi tạo lúc bắt đầu để thời gian chờ `WAITING` không bị tính là Host stale theo ADR-019.
 - `lastStartRequestId` trên room là idempotency marker cho lần start duy nhất. Cùng ID sau commit trả lại outcome đã lưu; ID khác khi room đã `ACTIVE` nhận `failed-precondition`. Không tạo receipt document mới.
 - Rules là authority cho transition. Client không queue lệnh khi offline và không báo ACTIVE trước khi server transaction/snapshot xác nhận.
 - Room/member realtime reads dùng Firestore listeners và membership Rules; khi thoát hoặc đổi room, subscriptions cũ phải được hủy.
@@ -31,7 +31,7 @@ SL-016 cần realtime đọc room/member và Host-only `WAITING → ACTIVE`. ADR
 - Rules không trả application error code; lỗi race/authorization có thể hiện là `permission-denied`.
 - Rules và tests có thêm một lifecycle exception; mọi field/update ngoài allowlist vẫn bị từ chối.
 - Start yêu cầu online. Read/listener usage tăng theo roster và lần reconnect.
-- Đây chỉ là boundary của SL-016; early-exit, votes, heartbeat và các command khác không được phép dùng client transactions theo quyết định này.
+- Đây là boundary của SL-016; heartbeat và stale abort dùng transaction riêng được Rules giới hạn theo ADR-019. Các command khác không được mở rộng transaction này.
 
 ## Alternatives considered
 
