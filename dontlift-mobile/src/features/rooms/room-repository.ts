@@ -333,6 +333,8 @@ export function createRoomRepository(dependencies: RoomCreateDependencies) {
           transaction.update(roomRef, {
             status: 'ACTIVE', startedAt: serverTimestamp(), updatedAt: serverTimestamp(),
             lastStartRequestId: command.requestId,
+            // Chốt mẫu số voter từ roster đã hoàn tất trước khi Host bắt đầu room.
+            activeMemberCount: room.participantCount,
           });
           return { version: 1 as const, roomId: command.roomId, requestId: command.requestId, status: 'ACTIVE' as const };
         });

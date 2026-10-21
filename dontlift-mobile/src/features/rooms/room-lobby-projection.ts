@@ -73,7 +73,7 @@ export async function persistRoomLobbyProjection(
 
 export async function persistTerminalRoomProjection(
   databasePromise: Promise<SQLite.SQLiteDatabase>,
-  input: { roomId: string; userId: string; status: 'COMPLETED' | 'ABORTED'; endedAtUtcMs: number },
+  input: { roomId: string; userId: string; status: 'COMPLETED' | 'CANCELLED' | 'ABORTED'; endedAtUtcMs: number },
 ): Promise<void> {
   const database = await databasePromise;
   const endedAt = new Date(input.endedAtUtcMs).toISOString();

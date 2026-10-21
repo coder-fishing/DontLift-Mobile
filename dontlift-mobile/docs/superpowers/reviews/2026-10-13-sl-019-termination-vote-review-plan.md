@@ -5,6 +5,8 @@
 **Nguồn:** [Finding trên PR #24](https://github.com/coder-fishing/DontLift-Mobile/pull/24#discussion_r4256559404), commit được review `4452eaa`.
 **Execution scope:** Chỉ sửa plan/report; không triển khai hoặc deploy Functions.
 
+**Superseded 2026-10-21:** Human-approved ADR-016 replaces the earlier Functions/scheduled-cleanup implementation with Spark Firestore transactions and Rules. The historical PR findings below remain valid for the old draft's Functions route; their proposed Functions export/discovery work is no longer part of SL-019.
+
 ## PR24-4259341504
 
 - **Status:** RESOLVED
@@ -17,7 +19,7 @@
 - **Updated By:** Codex.
 - **Updated At:** 2026-10-13, Asia/Saigon.
 - **Review reference:** [P2 finding](https://github.com/coder-fishing/DontLift-Mobile/pull/24#discussion_r4259341504).
-- **Response:** SL-019 nay phụ thuộc SL-018; acceptance yêu cầu approved early-exit Member vẫn được giữ trong session/history nhưng bị loại khỏi voter denominator, kể cả khi vote đã mở. D3 tiếp tục chặn wire và policy roster-change chi tiết chưa được duyệt; [AGENTS.md dòng 13–20](../../../AGENTS.md#L13-L20) giữ ADR/architecture/API làm nguồn ưu tiên.
+- **Response (historical):** SL-019 depended on SL-018 and required approved early-exit Members to remain in history while leaving the voter denominator. ADR-016 now approves and implements the atomic denominator adjustment.
 
 ## PR24-4256559404
 

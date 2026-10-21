@@ -44,6 +44,7 @@ async function startTransaction(db, uid, requestId) {
     if (room.data().status === 'ACTIVE' && room.data().lastStartRequestId === requestId) return 'replayed';
     transaction.update(roomRef, {
       status: 'ACTIVE', startedAt: serverTimestamp(), updatedAt: serverTimestamp(), lastStartRequestId: requestId,
+      activeMemberCount: room.data().participantCount,
     });
     return 'started';
   });

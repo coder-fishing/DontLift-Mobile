@@ -25,6 +25,14 @@ service cloud.firestore {
       return /databases/$(database)/documents/rooms/$(roomId)/earlyExitRequests/$(memberUid);
     }
 
+    function terminationVotePath(roomId) {
+      return /databases/$(database)/documents/rooms/$(roomId)/terminationVotes/current;
+    }
+
+    function terminationBallotPath(roomId, uid) {
+      return /databases/$(database)/documents/rooms/$(roomId)/terminationVotes/current/ballots/$(uid);
+    }
+
     function pinPath(pin) {
       return /databases/$(database)/documents/roomPins/$(pin);
     }
@@ -214,7 +222,151 @@ service cloud.firestore {
         && after.cutoffAt == (approved ? request.time : null)
         && (!approved || (memberAfter.status == 'EARLY_EXIT'
           && memberAfter.earlyExitAt == request.time
-          && memberAfter.diff(memberBefore).affectedKeys().hasOnly(['status', 'earlyExitAt'])));
+          && memberAfter.diff(memberBefore).affectedKeys().hasOnly(['status', 'earlyExitAt'])
+          && (room.get('activeMemberCount', null) == null
+            ? getAfter(roomPath(roomId)).data.get('activeMemberCount', null) == null
+            : (room.activeMemberCount > 1
+              && getAfter(roomPath(roomId)).data.activeMemberCount == room.activeMemberCount - 1
+              && getAfter(roomPath(roomId)).data.lastEarlyExitMemberUid == memberUid
+              && getAfter(roomPath(roomId)).data.lastEarlyExitRequestId == before.requestId))));
+    }
+
+    function validOpenTerminationVote(roomId, isUpdate) {
+      let data = request.resource.data;
+      let room = get(roomPath(roomId)).data;
+      let member = get(hostMemberPath(roomId, request.auth.uid)).data;
+      return signedIn()
+        && room.status == 'ACTIVE'
+        && member.status == 'ACTIVE'
+        && data.keys().hasAll(['version', 'voteId', 'requestId', 'openedByUid', 'openedAt', 'eligibleVoterCount', 'yesVoteCount', 'status'])
+        && data.keys().hasOnly(['version', 'voteId', 'requestId', 'openedByUid', 'openedAt', 'eligibleVoterCount', 'yesVoteCount', 'status', 'closedAt'])
+        && data.version == 1
+        && data.voteId is string
+        && data.voteId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
+        && data.requestId == data.voteId
+        && data.openedByUid == request.auth.uid
+        && data.openedAt == request.time
+        && data.eligibleVoterCount == room.activeMemberCount
+        && data.eligibleVoterCount is int && data.eligibleVoterCount > 0
+        && data.yesVoteCount == 0
+        && data.status == 'OPEN'
+        && data.get('closedAt', null) == null
+        && (!isUpdate || (resource.data.status == 'OPEN'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'voteId', 'requestId', 'openedByUid', 'openedAt', 'eligibleVoterCount', 'yesVoteCount', 'status', 'closedAt'
+          ])
+          && resource.data.openedAt is timestamp
+          && request.time >= resource.data.openedAt + duration.value(30, 's')
+          && data.voteId != resource.data.voteId));
+    }
+
+    function validTerminationBallot(roomId, uid) {
+      let data = request.resource.data;
+      let voteBefore = get(terminationVotePath(roomId)).data;
+      let voteAfter = getAfter(terminationVotePath(roomId)).data;
+      let room = get(roomPath(roomId)).data;
+      let member = get(hostMemberPath(roomId, uid)).data;
+      return signedIn()
+        && uid == request.auth.uid
+        && room.status == 'ACTIVE'
+        && member.status == 'ACTIVE'
+        && data.keys().hasAll(['version', 'voteId', 'requestId', 'choice', 'castAt'])
+        && data.keys().hasOnly(['version', 'voteId', 'requestId', 'choice', 'castAt'])
+        && data.version == 1
+        && data.voteId == voteBefore.voteId
+        && data.requestId is string
+        && data.requestId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
+        && data.choice in ['YES', 'NO']
+        && data.castAt == request.time
+        && voteBefore.status == 'OPEN'
+        && voteBefore.openedAt is timestamp
+        && request.time < voteBefore.openedAt + duration.value(30, 's')
+        && (!exists(terminationBallotPath(roomId, uid))
+          || get(terminationBallotPath(roomId, uid)).data.voteId != voteBefore.voteId)
+        && voteAfter.yesVoteCount == voteBefore.yesVoteCount + (data.choice == 'YES' ? 1 : 0)
+        && voteAfter.eligibleVoterCount == voteBefore.eligibleVoterCount
+        && voteAfter.status == (voteAfter.yesVoteCount == voteAfter.eligibleVoterCount ? 'CANCELLED' : 'OPEN')
+        && (voteAfter.status == 'OPEN' || voteAfter.closedAt == request.time);
+    }
+
+    function validTerminationVoteUpdate(roomId) {
+      let before = resource.data;
+      let after = request.resource.data;
+      let room = get(roomPath(roomId)).data;
+      let member = get(hostMemberPath(roomId, request.auth.uid)).data;
+      let callerBallotPath = terminationBallotPath(roomId, request.auth.uid);
+      let hasNewBallot = existsAfter(callerBallotPath)
+        && getAfter(callerBallotPath).data.voteId == before.voteId
+        && (!exists(callerBallotPath) || get(callerBallotPath).data.voteId != before.voteId);
+      let callerBallot = existsAfter(callerBallotPath) ? getAfter(callerBallotPath).data : {};
+      let exitUid = getAfter(roomPath(roomId)).data.get('lastEarlyExitMemberUid', request.auth.uid);
+      let exitBallotPath = terminationBallotPath(roomId, exitUid);
+      let removedYes = exitUid is string && exists(exitBallotPath)
+        && get(exitBallotPath).data.voteId == before.voteId && get(exitBallotPath).data.choice == 'YES';
+      return signedIn()
+        && room.status == 'ACTIVE'
+        && member.status == 'ACTIVE'
+        && before.status == 'OPEN'
+        && before.openedAt is timestamp
+        && request.time < before.openedAt + duration.value(30, 's')
+        && after.voteId == before.voteId
+        && after.openedAt == before.openedAt
+        && after.diff(before).affectedKeys().hasOnly(['yesVoteCount', 'eligibleVoterCount', 'status', 'closedAt'])
+        && ((hasNewBallot
+          && after.eligibleVoterCount == before.eligibleVoterCount
+          && after.yesVoteCount == before.yesVoteCount + (callerBallot.choice == 'YES' ? 1 : 0)
+          && after.status == (after.yesVoteCount == after.eligibleVoterCount ? 'CANCELLED' : 'OPEN')
+          && (after.status == 'OPEN' || after.closedAt == request.time))
+          || (getAfter(roomPath(roomId)).data.lastEarlyExitMemberUid is string
+            && after.eligibleVoterCount == before.eligibleVoterCount - 1
+            && after.yesVoteCount == before.yesVoteCount - (removedYes ? 1 : 0)
+            && after.status == (after.yesVoteCount == after.eligibleVoterCount ? 'CANCELLED' : 'OPEN')
+            && after.get('closedAt', null) == (after.status == 'CANCELLED' ? request.time : before.get('closedAt', null))));
+    }
+
+    function validEarlyExitRoomUpdate(roomId) {
+      let after = request.resource.data;
+      let memberUid = after.lastEarlyExitMemberUid;
+      let requestPath = earlyExitRequestPath(roomId, memberUid);
+      let exitRequest = getAfter(requestPath).data;
+      let votePath = terminationVotePath(roomId);
+      let voteBefore = get(votePath).data;
+      let voteAfter = getAfter(votePath).data;
+      let ballotPath = terminationBallotPath(roomId, memberUid);
+      let currentVote = exists(votePath) && voteBefore.status == 'OPEN'
+        && voteBefore.openedAt is timestamp
+        && request.time < voteBefore.openedAt + duration.value(30, 's');
+      let removeYes = exists(ballotPath) && get(ballotPath).data.voteId == voteBefore.voteId
+        && get(ballotPath).data.choice == 'YES';
+      return signedIn()
+        && resource.data.status == 'ACTIVE'
+        && after.diff(resource.data).affectedKeys().hasOnly([
+          'activeMemberCount', 'updatedAt', 'lastEarlyExitMemberUid', 'lastEarlyExitRequestId', 'status', 'endedAt'
+        ])
+        && resource.data.activeMemberCount is int
+        && after.activeMemberCount == resource.data.activeMemberCount - 1
+        && after.updatedAt == request.time
+        && memberUid is string
+        && get(hostMemberPath(roomId, memberUid)).data.status == 'ACTIVE'
+        && getAfter(hostMemberPath(roomId, memberUid)).data.status == 'EARLY_EXIT'
+        && getAfter(hostMemberPath(roomId, memberUid)).data.earlyExitAt == request.time
+        && exitRequest.status == 'APPROVED'
+        && exitRequest.requestId == after.lastEarlyExitRequestId
+        && exitRequest.decision == 'APPROVE'
+        && exitRequest.decidedBy == request.auth.uid
+        && exitRequest.cutoffAt == request.time
+        && get(roomPath(roomId)).data.hostId == request.auth.uid
+        && get(hostMemberPath(roomId, request.auth.uid)).data.role == 'HOST'
+        && get(hostMemberPath(roomId, request.auth.uid)).data.status == 'ACTIVE'
+        && (currentVote
+          ? (voteAfter.eligibleVoterCount == voteBefore.eligibleVoterCount - 1
+            && voteAfter.yesVoteCount == voteBefore.yesVoteCount - (removeYes ? 1 : 0))
+          : (!exists(votePath) || voteAfter.diff(voteBefore).affectedKeys().size() == 0))
+        && (after.status == 'CANCELLED'
+          ? (currentVote && voteAfter.status == 'CANCELLED'
+            && voteAfter.yesVoteCount == voteAfter.eligibleVoterCount && after.endedAt == request.time)
+          : (after.status == 'ACTIVE' && after.endedAt == resource.data.endedAt
+            && (!currentVote || voteAfter.status == 'OPEN')));
     }
 
     function validEarlyExitMemberApproval(roomId, memberUid) {
@@ -401,7 +553,8 @@ service cloud.firestore {
         ])
         && request.resource.data.keys().hasOnly([
           'hostId', 'pin', 'status', 'participantCount', 'createdAt', 'updatedAt',
-          'hostHeartbeatAt', 'startedAt', 'endedAt', 'lastJoinRequestId', 'lastStartRequestId'
+          'hostHeartbeatAt', 'startedAt', 'endedAt', 'lastJoinRequestId', 'lastStartRequestId',
+          'lastEarlyExitMemberUid', 'lastEarlyExitRequestId'
         ])
         && request.resource.data.hostId == request.auth.uid
         && request.resource.data.pin is string
@@ -415,6 +568,8 @@ service cloud.firestore {
         && request.resource.data.startedAt == null
         && request.resource.data.endedAt == null
         && request.resource.data.lastJoinRequestId == null
+        && request.resource.data.get('lastEarlyExitMemberUid', null) == null
+        && request.resource.data.get('lastEarlyExitRequestId', null) == null
         // Marker mới là tùy chọn để các bản app cũ vẫn tạo được phòng trong thời gian rollout.
         && request.resource.data.get('lastStartRequestId', null) == null
         && hasRoomCreateLinks(
@@ -433,7 +588,7 @@ service cloud.firestore {
           && request.resource.data.lastJoinRequestId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
           && hasRoomJoinLinks(roomId, request.auth.uid, resource.data.pin, request.resource.data.lastJoinRequestId)
         ) || (
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'startedAt', 'updatedAt', 'lastStartRequestId'])
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'startedAt', 'updatedAt', 'lastStartRequestId', 'activeMemberCount'])
           && request.resource.data.hostId == request.auth.uid
           && resource.data.status == 'WAITING'
           && resource.data.startedAt == null
@@ -442,12 +597,29 @@ service cloud.firestore {
           && request.resource.data.status == 'ACTIVE'
           && request.resource.data.startedAt == request.time
           && request.resource.data.updatedAt == request.time
+          // App cũ vẫn start được; chỉ build mới khởi tạo voter count cho SL-019.
+          && (request.resource.data.get('activeMemberCount', null) == null
+            || request.resource.data.activeMemberCount == resource.data.participantCount)
           && request.resource.data.lastStartRequestId is string
           && request.resource.data.lastStartRequestId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
           && exists(hostMemberPath(roomId, request.auth.uid))
           && get(hostMemberPath(roomId, request.auth.uid)).data.role == 'HOST'
           && get(hostMemberPath(roomId, request.auth.uid)).data.status == 'ACTIVE'
-        )
+        ) || (
+          request.resource.data.status == 'CANCELLED'
+          && request.resource.data.endedAt == request.time
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'endedAt', 'updatedAt'])
+          && resource.data.status == 'ACTIVE'
+          && get(terminationVotePath(roomId)).data.status == 'OPEN'
+          && get(terminationVotePath(roomId)).data.openedAt is timestamp
+          && request.time < get(terminationVotePath(roomId)).data.openedAt + duration.value(30, 's')
+          && getAfter(terminationVotePath(roomId)).data.status == 'CANCELLED'
+          && getAfter(terminationVotePath(roomId)).data.closedAt == request.time
+          && getAfter(terminationVotePath(roomId)).data.yesVoteCount == getAfter(terminationVotePath(roomId)).data.eligibleVoterCount
+          && (existsAfter(terminationBallotPath(roomId, request.auth.uid))
+            || getAfter(roomPath(roomId)).data.get('lastEarlyExitMemberUid', null) is string)
+        ) || validEarlyExitRoomUpdate(roomId)
       );
       allow list, delete: if false;
 
@@ -501,6 +673,20 @@ service cloud.firestore {
         allow update: if validEarlyExitRequest(roomId, memberUid, request.resource.data, true)
           || validEarlyExitDecision(roomId, memberUid);
         allow delete: if false;
+      }
+
+      match /terminationVotes/{voteId} {
+        allow get, list: if roomParticipant(roomId, request.auth.uid);
+        allow create: if voteId == 'current' && validOpenTerminationVote(roomId, false);
+        allow update: if voteId == 'current'
+          && (validOpenTerminationVote(roomId, true) || validTerminationVoteUpdate(roomId));
+        allow delete: if false;
+
+        match /ballots/{uid} {
+          allow get, list: if roomParticipant(roomId, request.auth.uid);
+          allow create, update: if voteId == 'current' && validTerminationBallot(roomId, uid);
+          allow delete: if false;
+        }
       }
 
       match /violations/{eventId} {

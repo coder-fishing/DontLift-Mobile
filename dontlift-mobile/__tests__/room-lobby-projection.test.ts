@@ -1,4 +1,4 @@
-import { persistEarlyExitProjection, persistRoomLobbyProjection, restoreCachedActiveRoom } from '../src/features/rooms/room-lobby-projection';
+import { persistEarlyExitProjection, persistRoomLobbyProjection, persistTerminalRoomProjection, restoreCachedActiveRoom } from '../src/features/rooms/room-lobby-projection';
 import type { RoomLobbySnapshot } from '../src/features/rooms/room-listener';
 
 describe('room lobby SQLite projection', () => {
@@ -66,6 +66,23 @@ describe('room lobby SQLite projection', () => {
     ]);
     expect(statements[0].sql).toContain("status = 'COMPLETED'");
     expect(statements[1].sql).toContain("status = 'EARLY_EXIT'");
+  });
+
+  it('projects unanimous termination as a terminal cancelled room without settlement writes', async () => {
+    const statements: Array<{ sql: string; params: unknown[] }> = [];
+    const database = {
+      withExclusiveTransactionAsync: async (operation: (transaction: { runAsync: (sql: string, ...params: unknown[]) => Promise<void> }) => Promise<void>) => {
+        await operation({ runAsync: async (sql, ...params) => { statements.push({ sql, params }); } });
+      },
+    };
+    const endedAtUtcMs = 20_000;
+    await persistTerminalRoomProjection(Promise.resolve(database as never), {
+      roomId: 'room-1', userId: 'member', status: 'CANCELLED', endedAtUtcMs,
+    });
+    expect(statements).toEqual([
+      expect.objectContaining({ params: ['CANCELLED', 'room-1'] }),
+      expect.objectContaining({ params: ['CANCELLED', new Date(endedAtUtcMs).toISOString(), 'room-1', 'member'] }),
+    ]);
   });
 
   it('restores the latest locally cached active membership after app relaunch', async () => {

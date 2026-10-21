@@ -81,7 +81,7 @@
 | `CREATED` | `WAITING` | Room doc written to Firestore | Firestore | Lobby live; QR Code rendered; Members can join. |
 | `WAITING` | `ACTIVE` | Host taps "Start Session" | Authenticated Firestore transaction guarded by Security Rules (ADR-013) | Canonical room state changes once; active tracking is handled by SL-017. |
 | `ACTIVE` | `COMPLETED` | Host taps "End Session" | Cloud Function | Final Penalty Scores frozen; Host navigated to Total Bill entry (`US-13`). |
-| `ACTIVE` | `CANCELLED` | 100% consensus on Early Termination Vote | Cloud Function | Session terminated early; Penalty calculation and Bill Settlement bypassed (`US-11`). |
+| `ACTIVE` | `CANCELLED` | All currently ACTIVE room members vote YES within 30 seconds | Spark Firestore transaction + Rules (ADR-016) | Session terminated early; Bill Settlement bypassed (`US-11`). |
 | `ACTIVE` | `ABORTED` | Host offline timeout / drop > 15m | Cloud Function Cron | Room marked stale; participant stats saved locally. |
 
 ---
@@ -121,10 +121,10 @@
    - On Host Denial: Member remains `ACTIVE`.
 6. **Early Termination Vote (`US-11`):**  
    - Any active member taps "Initiate Termination Vote".  
-   - Cloud Function creates `rooms/{roomId}/terminationVote` with a 30-second deadline.  
+   - Spark transaction creates/reads `rooms/{roomId}/terminationVotes/current`; `openedAt` is server time and Rules enforce the 30-second deadline.
    - All active members receive interactive modal.  
-   - If 100% of active members vote "Yes" within 30s $\rightarrow$ Cloud Function transitions room to `CANCELLED`. Session ends without bill settlement.  
-   - If 30s elapses without 100% consensus $\rightarrow$ Cloud Function deletes vote document; modal dismissed; session continues uninterrupted.
+   - If every eligible member votes "Yes" within 30s, the same transaction changes vote and room to `CANCELLED`; session ends without bill settlement.
+   - A "No" or timeout leaves the room `ACTIVE`; the expired vote is inert and may be replaced by a later vote. Host-approved early exit removes that member from the voter denominator atomically.
 7. **Host Session End (`US-12`):** Host taps "End Session". Cloud Function sets room to `COMPLETED`, computes final authoritative Penalty Scores, and navigates Host to Bill Settlement.
 
 ### 4.3 Bill Settlement & VietQR (`US-13` – `US-15`, `FR-05`)

@@ -17,8 +17,9 @@ export type RoomLobbyMember = {
 export type RoomLobbySnapshot = {
   roomId: string;
   hostUid: string;
-  status: 'WAITING' | 'ACTIVE' | 'COMPLETED' | 'ABORTED';
+  status: 'WAITING' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'ABORTED';
   participantCount: number;
+  activeMemberCount?: number | null;
   startedAtUtcMs: number | null;
   endedAtUtcMs?: number | null;
   pin: string;
@@ -86,6 +87,7 @@ export function listenToRoomLobby(
       hostUid: String(data.hostId ?? ''),
       status: data.status,
       participantCount: Number(data.participantCount ?? 0),
+      activeMemberCount: Number.isInteger(data.activeMemberCount) ? Number(data.activeMemberCount) : null,
       startedAtUtcMs: startedAt instanceof Timestamp ? startedAt.toMillis() : null,
       endedAtUtcMs: endedAt instanceof Timestamp ? endedAt.toMillis() : null,
       pin: String(data.pin ?? ''),
