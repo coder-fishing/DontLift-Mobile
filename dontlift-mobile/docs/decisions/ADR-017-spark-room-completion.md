@@ -18,7 +18,7 @@ Firestore Rules cannot inspect a participant's SQLite outbox. On Spark, an ackno
 - An acknowledgment transaction writes the member's `syncedThroughAt = room.endedAt`, server `syncAcknowledgedAt`, and its request ID while decrementing `pendingMemberCount` in the same transaction. Rules require a fresh member acknowledgment linked to the room update. Duplicate delivery observes the already-acknowledged member and does not decrement again.
 - When the last member acknowledges, the same transaction sets `reconciliationStatus = FINALIZED`, `finalizationReason = ALL_SYNCED`, `finalizedAt = request.time`, and `finalizedBy` to the acknowledging UID. Rules reject further violation writes after acknowledgment or finalization. Existing member aggregates are the canonical score projection and become immutable at finalization.
 - `pendingMemberUids` is derived from the room-scoped member listener, not returned by a transaction. Members may read only their room roster under existing Rules; outsiders remain denied.
-- SL-020 does not implement `HOST_OVERRIDE`, settlement, bill calculation, or a timeout. A room with members who never return remains `PENDING`; SL-021/settlement slices own later policy changes.
+- SL-020 does not implement `HOST_OVERRIDE`, settlement, bill calculation, or a timeout. A room with members who never return remains `PENDING` until the Host uses the separate Spark override defined by [ADR-018](ADR-018-spark-host-finalization-override.md), or the members ACK.
 
 ## Consequences
 
