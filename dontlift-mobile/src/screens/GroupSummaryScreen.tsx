@@ -16,12 +16,13 @@ type Props = {
   overrideErrorMessage?: string;
   onSyncAndAcknowledge: () => void;
   onFinalizeWithOverride: (unsyncedMemberUids: string[]) => void;
+  onOpenSettlementDetails: () => void;
   onReturnToGroupHome: () => void;
 };
 
 export function GroupSummaryScreen({ snapshot, actorUid, isOnline, isSyncing, errorMessage,
   isFinalizingOverride, overrideErrorMessage, onSyncAndAcknowledge, onFinalizeWithOverride,
-  onReturnToGroupHome }: Props) {
+  onOpenSettlementDetails, onReturnToGroupHome }: Props) {
   const ownMember = snapshot.members.find(member => member.uid === actorUid);
   const acknowledged = ownMember?.syncAcknowledgedAtUtcMs != null;
   const pendingMembers = snapshot.members.filter(member => member.syncAcknowledgedAtUtcMs == null);
@@ -150,6 +151,16 @@ export function GroupSummaryScreen({ snapshot, actorUid, isOnline, isSyncing, er
       {finalized ? <Text style={styles.finalNote}>{hostOverrideFinalized
         ? 'The Host finalized the scores before every member synced. Late eligible lifts stay in history and do not change these scores or payment.'
         : 'The room scores are final. Bill settlement is handled in a later slice.'}</Text> : null}
+      {finalized && ownMember ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={isHost ? 'Enter or update payment details' : 'View Host payment details'}
+          onPress={onOpenSettlementDetails}
+          style={({ pressed }) => [styles.settlementButton, pressed && styles.pressed]}
+        >
+          <Text style={styles.settlementButtonText}>{isHost ? 'Enter payment details' : 'View Host payment details'}</Text>
+        </Pressable>
+      ) : null}
       {finalized ? (
         <Pressable accessibilityRole="button" onPress={onReturnToGroupHome} style={({ pressed }) => [styles.homeButton, pressed && styles.pressed]}>
           <Text style={styles.homeButtonText}>Return to group home</Text>
@@ -187,6 +198,9 @@ const styles = StyleSheet.create({
   scoreDetails: { flex: 1, gap: 3 },
   score: { color: Colors.light.text, fontSize: 14, fontWeight: '900' },
   finalNote: { paddingHorizontal: 4, color: Colors.light.textSecondary, fontSize: 13, lineHeight: 19 },
+  settlementButton: { minHeight: 48, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16,
+    borderRadius: 12, backgroundColor: Colors.light.primary },
+  settlementButtonText: { color: Colors.light.onPrimary, fontWeight: '800' },
   homeButton: { minHeight: 48, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16,
     borderRadius: 12, borderWidth: 1, borderColor: Colors.light.border },
   homeButtonText: { color: Colors.light.text, fontWeight: '800' },

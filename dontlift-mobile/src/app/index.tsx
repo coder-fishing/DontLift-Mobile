@@ -34,6 +34,7 @@ import { GroupActiveScreen } from '../screens/GroupActiveScreen';
 import { GroupSummaryScreen } from '../screens/GroupSummaryScreen';
 import { BillAllocationScreen } from '../screens/BillAllocationScreen';
 import { VietQRSettlementScreen } from '../screens/VietQRSettlementScreen';
+import { SettlementDetailsScreen } from '../screens/SettlementDetailsScreen';
 import { ActivationScreen } from '../screens/ActivationScreen';
 import { HardwareDiagnosticsScreen } from '../screens/HardwareDiagnosticsScreen';
 import { useAuthSession } from '../features/auth/auth-session';
@@ -62,6 +63,8 @@ import { createEarlyExitRepository, EarlyExitError, type EarlyExitDecision, type
 import { listenToOpenEarlyExitRequests } from '../features/rooms/early-exit-listener';
 import { createTerminationVoteRepository, TerminationVoteError, type TerminationChoice } from '../features/rooms/termination-vote-repository';
 import { createRoomCompletionRepository, RoomCompletionError } from '../features/rooms/room-completion-repository';
+import { createSettlementDetailsRepository, type SettlementDetails } from '../features/settlement/settlement-details-repository';
+import { createBankDirectoryRepository } from '../features/settlement/bank-directory';
 import {
   createRoomLivenessRepository, HOST_HEARTBEAT_INTERVAL_MS, HOST_STALE_AFTER_MS, STALE_ROOM_RETRY_MS,
   RoomLivenessError,
@@ -187,6 +190,11 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     firestore: roomRuntime.firestore,
     auth: roomRuntime.auth,
   }), [roomRuntime]);
+  const settlementDetailsRepository = useMemo(() => createSettlementDetailsRepository({
+    firestore: roomRuntime.firestore,
+    auth: roomRuntime.auth,
+  }), [roomRuntime]);
+  const settlementBankDirectory = useMemo(() => createBankDirectoryRepository(), []);
   // Navigation & Drawer
   const [currentScreen, setCurrentScreen] = useState<ScreenId>('02-solo-select');
   const [drawerVisible, setDrawerVisible] = useState<boolean>(false);
@@ -991,6 +999,20 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const groupRoomSnapshot = candidateGroupRoom?.status === 'ACTIVE'
     && candidateGroupRoom.startedAtUtcMs !== null ? candidateGroupRoom : null;
   const groupSummarySnapshot = candidateGroupRoom?.status === 'COMPLETED' ? candidateGroupRoom : null;
+  const [settlementDetailsMode, setSettlementDetailsMode] = useState<'host' | 'member'>('member');
+  const [settlementDetails, setSettlementDetails] = useState<SettlementDetails | null>(null);
+  useEffect(() => {
+    if (currentScreen !== '08-vietqr-settlement') return undefined;
+    setSettlementDetails(null);
+    if (!lobbyRoom) return undefined;
+    let active = true;
+    void settlementDetailsRepository.read(lobbyRoom.roomId).then(value => {
+      if (active) setSettlementDetails(value);
+    }).catch(() => {
+      if (active) setSettlementDetails(null);
+    });
+    return () => { active = false; };
+  }, [currentScreen, lobbyRoom?.roomId, settlementDetailsRepository]);
   const ownGroupRoomMember = groupRoomSnapshot?.members.find(member => member.uid === profile.uid);
   const groupCaptureRoomSnapshot = ownGroupRoomMember?.status === 'ACTIVE' ? groupRoomSnapshot : null;
 
@@ -1677,11 +1699,29 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       setCurrentScreen('13-group-summary');
       return;
     }
-    if (screen === '07-bill-allocation' && candidateGroupRoom
-      && (candidateGroupRoom.status !== 'COMPLETED' || candidateGroupRoom.reconciliationStatus !== 'FINALIZED')) {
-      setCurrentScreen(candidateGroupRoom.status === 'COMPLETED' ? '13-group-summary'
-        : candidateGroupRoom.status === 'ACTIVE' ? '06-group-active' : '05-group-lobby');
-      return;
+    if (screen === '07-bill-allocation') {
+      const ownMember = candidateGroupRoom?.members.find(member => member.uid === profile.uid);
+      if (!candidateGroupRoom || candidateGroupRoom.status !== 'COMPLETED'
+        || candidateGroupRoom.reconciliationStatus !== 'FINALIZED' || ownMember?.role !== 'HOST') {
+        setCurrentScreen(candidateGroupRoom?.status === 'COMPLETED' ? '13-group-summary'
+          : candidateGroupRoom?.status === 'ACTIVE' ? '06-group-active' : '05-group-lobby');
+        return;
+      }
+    }
+    if (screen === '08-vietqr-settlement') {
+      const ownMember = groupSummarySnapshot?.members.find(member => member.uid === profile.uid);
+      if (!groupSummarySnapshot || groupSummarySnapshot.reconciliationStatus !== 'FINALIZED' || !ownMember) {
+        setCurrentScreen(groupSummarySnapshot ? '13-group-summary' : '05-group-lobby');
+        return;
+      }
+    }
+    if (screen === '14-settlement-details') {
+      const ownMember = groupSummarySnapshot?.members.find(member => member.uid === profile.uid);
+      if (!groupSummarySnapshot || groupSummarySnapshot.reconciliationStatus !== 'FINALIZED' || !ownMember) {
+        setCurrentScreen(groupSummarySnapshot ? '13-group-summary' : '05-group-lobby');
+        return;
+      }
+      setSettlementDetailsMode(ownMember.role === 'HOST' ? 'host' : 'member');
     }
     setCurrentScreen(screen);
   };
@@ -1844,6 +1884,12 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
                 overrideErrorMessage={roomOverrideError}
                 onSyncAndAcknowledge={() => { void handleAcknowledgeRoomSync(); }}
                 onFinalizeWithOverride={uids => { void handleFinalizeRoomOverride(uids); }}
+                onOpenSettlementDetails={() => {
+                  const ownMember = groupSummarySnapshot.members.find(member => member.uid === profile.uid);
+                  if (!ownMember) return;
+                  setSettlementDetailsMode(ownMember.role === 'HOST' ? 'host' : 'member');
+                  setCurrentScreen('14-settlement-details');
+                }}
                 onReturnToGroupHome={() => {
                   setCreatedRoom(null);
                   setJoinedRoom(null);
@@ -1851,6 +1897,21 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
                 }} />
             : <Text accessibilityRole="alert">Waiting for the completed room and reconciliation state…</Text>
         )}
+
+        {currentScreen === '14-settlement-details' && groupSummarySnapshot
+          && groupSummarySnapshot.reconciliationStatus === 'FINALIZED' ? (
+          <SettlementDetailsScreen
+            roomId={groupSummarySnapshot.roomId}
+            mode={settlementDetailsMode}
+            repository={settlementDetailsRepository}
+            bankDirectory={settlementBankDirectory}
+            onSaved={details => {
+              setSettlementDetails(details);
+              setCurrentScreen('07-bill-allocation');
+            }}
+            onBack={() => setCurrentScreen('13-group-summary')}
+          />
+        ) : null}
 
         {currentScreen === '07-bill-allocation' && (
           <BillAllocationScreen
@@ -1864,7 +1925,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
         )}
 
         {currentScreen === '08-vietqr-settlement' && (
-          <VietQRSettlementScreen billBreakdown={billBreakdown} />
+          <VietQRSettlementScreen billBreakdown={billBreakdown} settlementDetails={settlementDetails} />
         )}
 
         {currentScreen === '09-activation' && <ActivationScreen />}

@@ -14,6 +14,8 @@
 
 > Room-completion update 2026-10-21: [ADR-017](decisions/ADR-017-spark-room-completion.md) replaces the `completeRoom` and `acknowledgeMemberSync` callables with narrowly scoped Firestore client transactions on Spark. ACK is a client attestation after draining the local outbox; Rules cannot inspect SQLite.
 
+> Settlement update 2026-10-21: [ADR-020](decisions/ADR-020-spark-settlement-details.md) adds a Host-only settlement-details transaction and member-scoped expiring read on Spark, with no Functions or billing.
+
 > **Owner:** Software architecture package  
 > **Status:** APPROVED  
 > **Wire version:** `1`  
@@ -238,15 +240,21 @@ After `HOST_OVERRIDE`, eligible late violations are written to room history with
 
 ## 7. Bill and settlement callables
 
-### 6.1 `setSettlementDetails`
+### 6.1 `setSettlementDetails` — Spark transaction
 
-**Request:** common request plus required `roomId: UUID`, `bankId: non-empty string`, `accountNumber: non-empty string`, `accountName: non-empty string`.
+This approved SL-023 exception uses the authenticated Firebase client and Firestore Security Rules; it does not call a Cloud Function, require Blaze billing, or use a command receipt.
 
-**Response:** common response plus `roomId`, `updatedAtUtcMs`, `expiresAtUtcMs`.
+**Input:** `roomId`, `bankId`, `accountNumber`, `accountName`. The client trims surrounding whitespace. `bankId` must contain 1–32 characters, `accountNumber` 1–64 characters, and `accountName` 1–100 characters. The Host may select a bank from VietQR's public bank directory; when selected, `bankId` stores that bank's six-digit BIN for future QR generation. Manual bank identifiers remain accepted for compatibility.
 
-**Errors:** `unauthenticated`, `permission-denied` for non-Host, `invalid-argument` for malformed fields, `not-found`, `failed-precondition` unless room is `COMPLETED`, `unavailable`, `already-exists`.
+**Write:** The Host may upsert `rooms/{roomId}/settlementDetails/current` only when the room is `COMPLETED`, reconciliation is `FINALIZED`, and the caller has the active `HOST` membership. Rules require the exact field allowlist, valid bounds, `updatedAt == request.time`, and `expiresAt == room.endedAt + 30 days`. Repeating the same input safely overwrites the same document. There is no separate receipt.
 
-**Transaction outputs:** upsert `settlementDetails/current` with expiry at `room.completedAt + 30 days` and store command receipt. Bank fields are redacted from logs and analytics.
+**Read:** Existing room members may read the document while `expiresAt > request.time`; outsiders and cross-room users are denied. A missing document can be read as empty by a room member. Collection listing and client delete remain denied.
+
+**Response:** `version: 1`, `roomId`, and `expiresAtUtcMs`. The client reports success only after the transaction commits. Bank details are never logged, copied to SQLite, or sent to analytics.
+
+**Errors:** `unauthenticated`; `permission-denied` for non-Host writes or non-member reads; `invalid-argument` for malformed fields; `not-found` for a missing room; `failed-precondition` unless the room is `COMPLETED/FINALIZED` or lacks a valid `endedAt`; `unavailable` for transport failure. No offline queue is used.
+
+Expired documents are hidden by Rules but not physically deleted in this slice. Retention/purge is deferred to SL-033 and must not be represented as automatic cleanup here.
 
 ### 6.2 `calculateBillShares`
 

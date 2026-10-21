@@ -2,19 +2,19 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use the qskill-executing-plans skill to implement this plan task-by-task. Steps use checkbox tracking.
 > Kế hoạch chỉ mô tả file, unit, hành vi, quy tắc, đầu ra và test cases; không có implementation code hoặc signatures. Đọc source thật trước mỗi task.
-> **Gate:** Không execute kế hoạch khi trạng thái còn DRAFT hoặc khi blocker/dependency chưa giải quyết. Việc tạo file này không phê duyệt backlog hay P6.2.
+> **Gate:** Đã được human duyệt triển khai trên Firebase Spark ngày 2026-10-21 theo ADR-020. Việc duyệt này chỉ áp dụng SL-023, không phê duyệt backlog hay P6.2.
 
-**Mục tiêu:** Host nhập thông tin nhận tiền: Room-scoped details có expiresAt sau completion 30 ngày.
+**Mục tiêu:** Host nhập thông tin nhận tiền: Room-scoped details có `expiresAt` sau `endedAt` 30 ngày.
 
 **Slice:** SL-023. **Ưu tiên đề xuất:** P1. **Release:** MVP + activation/Premium; post-MVP deferred. SL-036 chỉ được tính release sau D6.
 
-**Trạng thái kế hoạch:** DRAFT — chưa được human duyệt.
-**Trạng thái implementation quan sát:** Bank account trên UI hardcoded. Chưa có evidence nghiệm thu slice.
+**Trạng thái kế hoạch:** APPROVED FOR EXECUTION — Spark client transaction/Rules; không Functions, billing hoặc scheduled cleanup.
+**Trạng thái implementation:** Code đã được triển khai; TypeScript PASS. Rules Emulator Suite chưa chạy do thiếu Java; Expo Go và Cloud Rules chưa được kiểm tra/deploy trong lượt này.
 **Baseline khảo sát:** docs/p6.0-implementation-slices tại 57ca1eb28a2952c66d01f89b9b89bf755ab4812a.
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Plan slug:** `2026-10-13-sl-023-settlement-details`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-023-settlement-details]`.
-**Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13, chưa được phê duyệt. User đã yêu cầu ghi draft P6.1 cho cả 37 slice; không suy thành approval thực thi.
-**Traceability:** US-15; API §6.1; ADR-005; V08.
+**Đầu vào phạm vi:** SL-023 được human duyệt riêng ngày 2026-10-21 với ngoại lệ Spark ở ADR-020; approval không áp dụng các slice khác.
+**Traceability:** US-15; API §6.1; ADR-005; ADR-020; V08.
 **Phụ thuộc bắt buộc:** [SL-020](./2026-10-13-sl-020-room-completion.md)
 **Ưu tiên mềm:** Theo thứ tự đề xuất trong [mục lục](../../implementation-plan.md); thứ tự không tạo thêm hard dependency.
 
@@ -26,15 +26,19 @@ V01–V10 chỉ các màn tương ứng tại `design/concepts/concept-final/scr
 
 **Kiến trúc:** setSettlementDetails sở hữu hành vi của slice. Presentation đọc kết quả qua controller/repository; không tự trở thành nguồn authoritative. Units và đường dẫn mới bên dưới là đề xuất, chưa tồn tại trên baseline; nếu prerequisite đã tạo cùng trách nhiệm thì reuse, không thêm convention thứ hai.
 
-**Stack:** Expo SDK 57 / React Native / TypeScript. SQLite cho local-first khi slice có persistence; React Native Firebase Auth/Firestore Standard/Functions cho boundary có Firebase. Không bắt slice thuần local phải có network.
+**Stack:** Expo SDK 57 / React Native / TypeScript / Firebase JS SDK. SL-023 uses authenticated Firestore client transactions and Rules on Firebase Spark; no Cloud Functions, billing upgrade, scheduler, or local bank-detail persistence.
+
+**Danh mục ngân hàng:** form Host có thể tải danh sách ngân hàng công khai của VietQR, bao gồm BIN, để lưu BIN cùng settlement details. Dữ liệu này là nền cho bước tạo VietQR sau; không tra cứu chủ tài khoản hoặc gọi API có credential trong slice này.
 
 **Không gồm:** Money transfer, globally reusable bank account book, automatic bank validation.
 
-## 2. Blocker, risk và quyết định cần duyệt
+## 2. Quyết định đã duyệt và giới hạn
 
-- Không có blocker riêng được xác nhận trong draft; dependency và quyền/runtime vẫn phải đạt gate trước thực thi.
+- Firebase Spark được duyệt ngày 2026-10-21: Host ghi bằng Firestore transaction + Rules sau khi room COMPLETED/FINALIZED; thành viên đọc trước expiry; không receipt riêng; retry upsert cùng path/dữ liệu.
+- `expiresAt = room.endedAt + 30 ngày`; Rules chặn đọc sau expiry. Slice này không xóa vật lý; cleanup/retention được deferred tới SL-033.
+- Field bounds: `bankId` 1–32, `accountNumber` 1–64, `accountName` 1–100 ký tự sau trim. Chọn ngân hàng từ danh mục công khai sẽ lưu BIN vào `bankId`; không tra cứu chủ tài khoản trong slice này.
 
-**Rủi ro cụ thể:** Field bounds và expired-read policy cần rõ; cleanup thuộc 033.
+**Rủi ro cụ thể:** Rules phải cho phép member đọc một document chưa tồn tại để hiển thị trạng thái chưa nhập; Emulator Suite xác nhận hành vi get thiếu document. Hết hạn chỉ bị ẩn đến khi SL-033 xác định purge phù hợp với Spark.
 
 Nếu một contract chỉ có responsibility mà chưa có schema, task đầu là trình bày missing decision với nguồn; không tự tạo endpoint/field mới. Các hành vi test bên dưới mô tả outcome cần đạt, không thay thế wire approval. Ngưỡng/range/default chưa được spec xác định phải có quyết định ghi lại trước khi implement.
 
@@ -44,39 +48,39 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 | File dự kiến | Trách nhiệm |
 |---|---|
-| `firestore.emulator.rules` | SL-023 mở membership-scoped read cho `rooms/{roomId}/settlementDetails/current`; chỉ callable/server được ghi. |
+| `firestore.rules` | Host-only create/update sau COMPLETED/FINALIZED; member get trước expiry; deny list/delete/outsider. |
 | `functions/tests/settlement-details-rules.emulator.test.cjs` | Client-SDK Emulator Suite tests cho member allowed read, anonymous/outsider/cross-room denial và client write denial. |
-| `src/features/settlement/settlement-details-controller.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
+| `src/features/settlement/settlement-details-repository.ts` | Spark transaction, server-confirmed read và field validation; không lưu SQLite. |
 | `src/screens/SettlementDetailsScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
 | `src/app/index.tsx` | Đăng ký render state/route cho SettlementDetailsScreen theo điều hướng hiện có. |
 | `src/types.ts` | Thêm ScreenId cho SettlementDetails. |
 | `src/constants.ts` | Thêm screen title vào map hiện có. |
 | `src/screens/GroupSummaryScreen.tsx` | Thêm Host entry sau khi kết quả room được finalized/reconciled; không cho Member submit. |
-| `functions/src/set-settlement-details.cjs` | Backend boundary của slice; server identity/validation/transaction. |
-| `functions/index.js` | Đăng ký callable settlement-details trong Functions exports hiện có; reuse bootstrap SL-003. |
+| `docs/decisions/ADR-020-spark-settlement-details.md` | Ghi lại ngoại lệ Spark được duyệt và giới hạn retention. |
 | `__tests__/settlement-details.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
 | `__tests__/settlement-details-navigation.test.ts` | Kiểm thử GroupSummary-to-details route, Host-only entry và tiếp tục sang bill allocation sau lưu thành công. |
 | `functions/tests/settlement-details.test.cjs` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
 
 **Unit:** setSettlementDetails.
-**Nhận:** Host, completed room, bankId/accountNumber/accountName và common envelope.
-**Trả:** Room-scoped details có expiresAt sau completion 30 ngày.
+**Nhận:** Host, COMPLETED/FINALIZED room, bankId/accountNumber/accountName.
+**Trả:** Room-scoped details có expiresAt từ `endedAt` + 30 ngày.
 **Đầu vào từ dependency:** capabilities/records/commands đã nghiệm thu theo các plan liên kết; chưa có dependency output thì không giả coi integration có thật.
 **Đầu ra cho slice sau:** outcome và invariants trong mục tiêu/nghiệm thu dưới đây; tên internal unit là đề xuất, wire names chỉ dùng theo API/ADR đã duyệt.
 
-### Contract dữ liệu đã có
+### Contract SL-023 đã được duyệt
 
-Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema mới. Common response giữ version/requestId/serverTimeUtcMs khi contract yêu cầu; full required fields/errors/transaction outputs vẫn theo API section được tham chiếu.
+Bảng dưới là contract đã duyệt cho ngoại lệ Spark này; nó không dùng common callable request/receipt envelope.
 
 | Field | Bắt buộc / hướng | Quy tắc |
 |---|---|---|
-| version | Bắt buộc | 1, theo common envelope. |
-| requestId | Bắt buộc | UUID; cùng actor/payload replay trả prior outcome, payload khác bị collision. |
+| version | Response | 1. |
+| requestId | Không dùng trong ngoại lệ Spark đã duyệt | Không có command receipt riêng; retry upsert cùng path. |
 | roomId | Bắt buộc | UUID completed room. |
-| bankId | Bắt buộc | Non-empty string; exact bounds cần accepted validation. |
-| accountNumber | Bắt buộc | Non-empty string; không log đầy đủ. |
-| accountName | Bắt buộc | Non-empty string. |
-| expiresAtUtcMs | Response | Server completion timestamp cộng 30 ngày. |
+| bankId | Bắt buộc | 1–32 ký tự sau trim; không xác minh ngân hàng. |
+| accountNumber | Bắt buộc | 1–64 ký tự sau trim; không log hoặc lưu local. |
+| accountName | Bắt buộc | 1–100 ký tự sau trim. |
+| updatedAt | Ghi | Firestore `request.time`. |
+| expiresAt | Ghi/đọc | `room.endedAt + 30 ngày`, Rules chặn đọc khi đã hết hạn. |
 
 ## 4. Ràng buộc xuyên suốt
 
@@ -84,44 +88,44 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - Không sao chép Firebase token vào SQLite, AsyncStorage hoặc SecureStore; SDK quản lý session.
 - Event offline-capable dùng SQLite domain record và sync_outbox trong một transaction; syncEvents là ingestion authority.
 - Command lifecycle/vote/bill/payment không queue để replay muộn. Firestore cache không thay thế outbox.
-- Membership authority là rooms/{roomId}/members/{uid}. Functions derive actor từ Auth và tự authorization; Admin SDK bypass Rules.
+- Membership authority là rooms/{roomId}/members/{uid}. Spark transaction derives actor từ Firebase Auth; Firestore Rules xác nhận lifecycle, role, schema và server timestamps.
 - Giữ 3-Second Grace Period ở cả foreground/background theo ADR-008.
 - Local Premium không cấp server quota/capacity; chỉ verified Server Premium cấp server benefits.
 - Bill dùng integer VND, deterministic residual và tổng exact theo ADR-005; VietQR non-custodial, không bank polling.
 - UI dùng semantic tokens và accepted Liquid Acrylic; loading/empty/error/offline/syncing, labels, safe areas và touch targets được kiểm chứng khi phù hợp.
 - Không thêm social login, analytics dashboards, kiosk, wallet, chat, AI coaching hoặc camera-based detection vào MVP.
-- Không install/provision/deploy/publish trong lượt authoring plan này; mọi check bên dưới là hướng dẫn execution sau approval.
+- Không deploy Rules hoặc publish trong lượt này; Emulator Suite kiểm tra policy. Cloud deploy cần được người dùng yêu cầu riêng.
 
 ## 5. Các task thực hiện sau approval
 
 ### Task 0 — Rules cho settlement details trước client read
 
-**Files:** `firestore.emulator.rules`, `functions/tests/settlement-details-rules.emulator.test.cjs`. Reuse room membership Rules SL-016 và Rules harness/emulator SL-002/003.
+**Files:** `firestore.rules`, `functions/tests/settlement-details-rules.emulator.test.cjs`. Reuse room membership Rules SL-016 và Rules harness/emulator SL-002/003.
 
 - [ ] Chỉ thành viên của room đọc được `settlementDetails/current`; kiểm tra cả Host/member, anonymous, outsider và user room khác bằng client SDK.
-- [ ] Chặn mọi direct client create/update/delete; `setSettlementDetails` callable tiếp tục là write authority.
+- [ ] Cho phép chỉ transaction Host hợp lệ create/update; chặn member/outsider writes, list và delete.
 - [ ] Kiểm tra expiry/read path theo contract, không log hoặc trả bank details ngoài room; Admin SDK chỉ dùng seed fixture.
 - [ ] Chạy regression room/member Rules và ghi evidence; SL-037 sẽ re-test canonical policy.
 
 ### Task 1 — Boundary và quy tắc của Host nhập thông tin nhận tiền
 
-**Files:** Dùng units/config/backend/repositories trong bảng mục 3; khi test source đã được chỉ định, đặt cases thuộc boundary vào đúng app/backend target. Không thay presentation chưa cần cho task này.
+**Files:** Spark repository và Rules; test boundary trong Emulator Suite. Không dùng callable/backend Functions.
 
-**Nhận/trả:** Nhận Host, completed room, bankId/accountNumber/accountName và common envelope; trả Room-scoped details có expiresAt sau completion 30 ngày. Với contract đang bị chặn, chưa có quyền thêm schema dù test outcome đã được nêu.
+**Nhận/trả:** Nhận Host, COMPLETED/FINALIZED room, bankId/accountNumber/accountName; trả Room-scoped details hết hạn sau 30 ngày tính từ `endedAt`.
 
 - [ ] Đọc lại source/spec và xác nhận tất cả blocker cùng dependency cho task đã được giải quyết; nếu chưa, dừng execution và báo đúng blocker.
-- [ ] Viết focused failing cases sau đây; runner không tìm thấy hoặc thiếu dependency không được tính là red nghiệp vụ.
+- [ ] Viết focused Rules cases; runner không tìm thấy hoặc thiếu dependency không được tính là red nghiệp vụ.
 
 - [ ] Member submit → permission-denied.
 - [ ] Room chưa COMPLETED → failed-precondition.
-- [ ] Field rỗng → invalid-argument.
+- [ ] Field rỗng/quá dài → invalid-argument ở client, Rules từ chối ghi ngoài schema.
 
 - [ ] Chạy focused command trong mục 7; xác nhận failure đúng behavior đang thiếu, không từ toolchain lỗi.
 - [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
 
-1. Host-only trên COMPLETED; validate non-empty và bounds theo contract được duyệt.
-2. Upsert details/receipt atomically; derives room identity và expiry từ server.
-3. Membership Rules giới hạn read; logs/analytics không chứa account details.
+1. Active Host-only trên COMPLETED/FINALIZED; validate non-empty và bounds theo contract.
+2. Upsert document duy nhất; derive room end-time và expiry từ Firestore snapshot; Rules buộc timestamp cập nhật là request.time.
+3. Membership/expiry Rules giới hạn read; không receipt/SQLite/logs/analytics chứa account details.
 
 - [ ] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
 - [ ] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-023-settlement-details]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-023-settlement-details.md` và `Task: 1`.
@@ -134,9 +138,9 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 
 - [ ] Viết các failing cases về integration/recovery sau; không viết tests chỉ mirror implementation.
 
-- [ ] Replay cùng request → safe outcome.
+- [ ] Retry cùng payload → cùng document được upsert, không tạo bản ghi/receipt phụ.
 - [ ] Non-member read → deny.
-- [ ] Expiry → completedAt cộng 30 ngày, không từ device time.
+- [ ] Expiry → endedAt cộng 30 ngày, không từ device time.
 - [ ] Thành viên cùng room đọc details → allowed; anonymous/outsider/cross-room → denied; direct client writes → denied trên Emulator Suite.
 - [ ] Navigation test: summary pending chặn form; Host từ summary finalized mở được form; lưu thành công tiếp tục sang bill allocation; lỗi giữ form và dữ liệu nhập.
 
@@ -157,25 +161,34 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - [ ] Member submit → permission-denied.
 - [ ] Room chưa COMPLETED → failed-precondition.
 - [ ] Field rỗng → invalid-argument.
-- [ ] Replay cùng request → safe outcome.
+- [ ] Retry cùng payload → upsert cùng document; không tạo receipt bổ sung.
 - [ ] Non-member read → deny.
-- [ ] Expiry → completedAt cộng 30 ngày, không từ device time.
+- [ ] Expiry → endedAt cộng 30 ngày, không từ device time.
 - [ ] Host nhập, Member authorized thấy details; outsider không thấy.
 - [ ] Error logging review → không có bank account/full payload.
 - [ ] GroupSummary của room pending → không mở form; summary finalized/reconciled cho Host → mở form; Member không có submit entry.
 - [ ] Lưu thành công → tiếp tục tới bill allocation; lỗi lưu → ở form, giữ dữ liệu và không báo thành công.
 
-Mỗi case phải có actual result. Unit cases dùng controlled fixtures để chứng minh domain; Firebase boundary cần Rules/Functions emulator tests cho allowed/denied/replay/concurrency khi áp dụng. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.
+Mỗi case phải có actual result. Firebase boundary cần Rules Emulator Suite tests bằng client SDK cho allowed/denied/retry/lifecycle. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.
 
 **Failure recovery bắt buộc:** không hiển thị successful save/transition khi commit/request chưa thành công; giữ dữ liệu/retry context theo hành vi cụ thể trong tasks. Không log email đầy đủ, token, activation code hoặc bank details. Case không áp dụng cho slice phải ghi lý do trong evidence, không bỏ im lặng.
 
 ## 7. Verification và ghi nhận evidence
 
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/settlement-details.test.ts` và `pnpm test --runTestsByPath __tests__/settlement-details-navigation.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/settlement-details.test.cjs`; Rules Suite: `node --test functions/tests/settlement-details-rules.emulator.test.cjs`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
+Rules Suite: `pnpm --dir functions exec firebase emulators:exec --config ../firebase.emulator.json --project demo-dontlift-expo-go --only firestore "node --test tests/settlement-details-rules.emulator.test.cjs"`. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 
-Ghi trong kết quả execution: baseline/commit mới, command, exit status, số cases, emulator/device/runtime version, date, actual outcomes và remaining gaps. Các checklist hiện đều chưa chạy.
+### Execution evidence — 2026-10-21
+
+- `pnpm exec tsc --noEmit` — PASS (exit 0).
+- `node --check tests/settlement-details-rules.emulator.test.cjs` (từ `dontlift-mobile/functions/`) — PASS (exit 0; chỉ kiểm tra cú pháp test).
+- Rules Emulator Suite — UNVERIFIED: Firebase CLI không khởi chạy được Firestore Emulator vì `java -version` không chạy trên máy (`Could not spawn java -version`).
+- Lint — UNVERIFIED: repo chưa có ESLint config/dependency; `expo lint` yêu cầu cài ESLint trong khi môi trường tắt network nên không hoàn tất.
+- Expo Go visual/device flow — UNVERIFIED; chưa thao tác trên thiết bị ở lượt này.
+- Cloud Rules deploy / Firebase project tier — chưa deploy/đọc lại trạng thái cloud trong lượt này; không bật billing.
+
+Chỉ đánh dấu các acceptance item có actual evidence sau khi emulator hoặc thiết bị chạy thành công.
 
 ## 8. Human review và bàn giao P6.2
 
