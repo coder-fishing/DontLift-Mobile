@@ -56,7 +56,7 @@ P0 là nền tảng/critical journey trước; P1 là cần hoàn tất MVP; P2 
 | SL-019 | [Vote kết thúc sớm](./superpowers/plans/2026-10-13-sl-019-termination-vote.md) | P1 | SL-017, SL-018 | Resolved: Spark transactions and Rules per ADR-016 (2026-10-21) |
 | SL-020 | [Host complete và ALL_SYNCED reconciliation](./superpowers/plans/2026-10-13-sl-020-room-completion.md) | P0 | SL-017, SL-018 | D3 |
 | SL-021 | [Host override khi còn Member chưa sync](./superpowers/plans/2026-10-13-sl-021-host-finalization-override.md) | P1 | SL-020 | Resolved: Spark transaction/Rules và audit Host-observed theo ADR-018 (2026-10-21) |
-| SL-022 | [Stale room chuyển ABORTED](./superpowers/plans/2026-10-13-sl-022-stale-room-abort.md) | P1 | SL-017 | D3 |
+| SL-022 | [Stale room chuyển ABORTED](./superpowers/plans/2026-10-13-sl-022-stale-room-abort.md) | P1 | SL-017 | Resolved for Spark by ADR-019; no scheduled guarantee while all clients are offline |
 | SL-023 | [Host nhập thông tin nhận tiền](./superpowers/plans/2026-10-13-sl-023-settlement-details.md) | P1 | SL-020 | Không xác nhận riêng |
 | SL-024 | [Nhập bill và tính shares mặc định](./superpowers/plans/2026-10-13-sl-024-default-bill.md) | P0 | SL-018, SL-020, SL-023 | D3, D9 |
 | SL-025 | [Host override bill shares](./superpowers/plans/2026-10-13-sl-025-bill-overrides.md) | P1 | SL-024 | D8 |
@@ -81,7 +81,7 @@ SL-037 phụ thuộc bắt buộc SL-001–SL-036 vì phạm vi đã chọn gồ
 |---|---|
 | D1 | Thống nhất tiếp nhận quyết định emulator/dev từ feature/registration-login; xác nhận environment/config và production vẫn riêng. Không provision/deploy khi chưa được cấp quyền. |
 | D2 | Đã giải quyết cho SL-003: ADR-009 (human approved 2026-10-06) và API `completeRegistrationProfile` §8 đã được đưa vào tài liệu canonical. Không yêu cầu duyệt lại behavior đã chấp thuận; nếu thay đổi behavior thì cần quyết định mới. |
-| D3 | Chốt wire/schema/error/concurrency cho start/early-exit/vote/heartbeat nếu slice dùng chúng; chốt syncEvents cho violation đang kéo dài; chốt early-exit cutoff/eligible events với room-completion pending set và ACK. Không đoán payload từ responsibility table. |
+| D3 | Chốt wire/schema/error/concurrency cho start/early-exit/vote/heartbeat nếu slice dùng chúng; chốt syncEvents cho violation đang kéo dài; chốt early-exit cutoff/eligible events với room-completion pending set và ACK. SL-022 heartbeat/abort và local-only cutoff policy được resolved riêng bằng ADR-019; phần D3 của slice khác vẫn mở. |
 | D4 | Duyệt local completion/cutoff trigger, recovery/schema/identity và destination/projection/query/retention cho history nhóm và GROUP_SESSION_LOCAL_SUMMARY; local summary không tự complete room. |
 | D5 | Duyệt checksum cụ thể, test vectors, nguồn code hợp lệ và operational contract cấp code. Website/email mua Premium là external prerequisite, không tự implement. |
 | D6 | Duyệt theme catalog/default/downgrade và behavior advanced leaderboard; analytics nâng cao vẫn deferred. D6 tiếp tục chặn nghiệm thu SL-034/036 và downstream SL-037 cho tới khi các hành vi liên quan được chốt. |
@@ -142,7 +142,7 @@ Shared ownership: 001 sở hữu test harness/root lockfile changes; 002 native 
 |---|---|---|
 | `users/{uid}` | 003 sở hữu owner-only read Rules + Emulator Suite trước profile fetch; 004 kiểm chứng login/restore client flow; 029 chỉ sở hữu allowlisted profile-edit Rules + Emulator Suite | Chỉ owner đọc; chỉ field profile allowlist được phép sửa theo plan 029; entitlement/server fields server-only. |
 | `users/{uid}/sessions/{sessionId}` | 012 Solo-history Rules | Owner đọc; client không ghi summary authoritative. |
-| `rooms/{roomId}` và `rooms/{roomId}/members/{uid}` | 016 room/member Rules; 022 regression-checks client heartbeat writes and server authorization | Thành viên cùng room đọc; outsider/anonymous/cross-room bị từ chối; client không ghi lifecycle, heartbeat, score hay counters authoritative. |
+| `rooms/{roomId}` và `rooms/{roomId}/members/{uid}` | 016 room/member Rules; 022 ADR-019 heartbeat/abort exception | Thành viên cùng room đọc; outsider/anonymous/cross-room bị từ chối; chỉ Host được heartbeat qua Rules transaction; active room member chỉ được abort khi server xác nhận stale cutoff. |
 | `rooms/{roomId}/violations/{eventId}` | 017 Group-active Rules | Thành viên cùng room đọc; leaderboard hiện dùng room/member resources đã được SL-016 cấp read. Không thêm projection path nếu chưa có contract duyệt. |
 | Early-exit request resource (path theo contract được duyệt) | 018; sau khi D3 chốt path/schema | Host và requester/member theo policy đã duyệt đọc; client writes chỉ được mở nếu contract/ADR cho phép, mặc định giữ server boundary. |
 | Termination-vote resource (path theo contract được duyệt) | 019; sau khi D3 chốt path/schema | Active members đọc trong room; mở client writes chỉ theo contract được duyệt; expiry/finalization server-owned. |
@@ -192,6 +192,7 @@ Website mua Premium/code generation/email delivery là external operational prer
 - v0.10: SL-028 sở hữu local group-summary completion hook, schema/recorder/repository và atomic outbox enqueue, với rollback/restart/replay/reconnect coverage; D4 vẫn chặn trigger/schema chưa duyệt. SL-031 phụ thuộc SL-006 để giữ profile/session-before-entitlement migration acceptance. Không queue room completion command hoặc sửa canonical backlog.
 - v0.11: SL-018 sở hữu mở rộng syncEvents cho per-member cutoff và boundary/concurrency tests; D3 vẫn chặn policy chưa duyệt. SL-013 phụ thuộc SL-006 để room migration theo sau sessions migration, giữ version và dữ liệu cũ.
 - v0.12: SL-022 sở hữu authenticated server heartbeat write path, Functions export, authorization/client-denial Emulator Suite và discovery coverage sau khi D3 chốt contract. SL-019 phụ thuộc SL-018 và kiểm chứng early-exit Member vẫn retained nhưng không làm voter unanimity bất khả thi. Giữ nguyên D3, IDs và trạng thái draft.
+- v0.13: Human chọn Firebase free tier cho SL-022; ADR-019 thay scheduled Functions bằng foreground heartbeat và opportunistic Rules-checked stale abort. SL-022 D3 chỉ được resolved cho chính slice này.
 - v0.13: SL-020 phụ thuộc SL-018 và kiểm chứng completion/ACK khi early-exit events còn chờ; SL-033 gọi local purge ở app startup/resume, ghi receipt `expiresAt` và dùng native Firestore TTL do SL-037 deploy; SL-035 phụ thuộc SL-006 và theo placement FR-06, ghi xung đột Profile/Home dưới D7. Giữ nguyên 37 IDs, P6.0 draft và D10/D7 gates.
 
 **Changelog 2026-10-14:**
