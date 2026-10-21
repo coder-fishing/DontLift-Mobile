@@ -147,6 +147,40 @@ service cloud.firestore {
         && get(hostMemberPath(roomId, uid)).data.status in ['ACTIVE', 'EARLY_EXIT'];
     }
 
+    function roomLivenessAt(roomData) {
+      let heartbeatAt = roomData.get('hostHeartbeatAt', null);
+      let startedAt = roomData.get('startedAt', null);
+      return heartbeatAt is timestamp && startedAt is timestamp
+        ? (heartbeatAt > startedAt ? heartbeatAt : startedAt)
+        : (heartbeatAt is timestamp ? heartbeatAt : startedAt);
+    }
+
+    function validHostHeartbeat(roomId) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hostHeartbeatAt', 'updatedAt'])
+        && resource.data.status == 'ACTIVE'
+        && request.resource.data.status == 'ACTIVE'
+        && resource.data.hostId == request.auth.uid
+        && exists(hostMemberPath(roomId, request.auth.uid))
+        && get(hostMemberPath(roomId, request.auth.uid)).data.role == 'HOST'
+        && get(hostMemberPath(roomId, request.auth.uid)).data.status == 'ACTIVE'
+        && request.resource.data.hostHeartbeatAt == request.time
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    function validStaleRoomAbort(roomId) {
+      let livenessAt = roomLivenessAt(resource.data);
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'endedAt', 'updatedAt'])
+        && resource.data.status == 'ACTIVE'
+        && request.resource.data.status == 'ABORTED'
+        && resource.data.get('endedAt', null) == null
+        && resource.data.startedAt is timestamp
+        && livenessAt is timestamp
+        && request.time > livenessAt + duration.value(15, 'm')
+        && request.resource.data.endedAt == livenessAt + duration.value(15, 'm')
+        && request.resource.data.updatedAt == request.time
+        && activeRoomParticipant(roomId, request.auth.uid);
+    }
+
     function roomParticipant(roomId, uid) {
       return exists(roomPath(roomId))
         // Giữ roster đọc được cho member đang hoạt động để client dọn session sau khi room kết thúc.
@@ -801,7 +835,7 @@ service cloud.firestore {
       }
     }
 
-    // Ngoại lệ client Spark giới hạn cho create/join và Host start theo ADR-013.
+    // Ngoại lệ Spark chỉ mở các room transaction cụ thể đã được ADR-011/013/019 duyệt.
     match /rooms/{roomId} {
       allow get: if canReadRoom(roomId);
       allow create: if signedIn()
@@ -846,7 +880,7 @@ service cloud.firestore {
           && request.resource.data.lastJoinRequestId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
           && hasRoomJoinLinks(roomId, request.auth.uid, resource.data.pin, request.resource.data.lastJoinRequestId)
         ) || (
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'startedAt', 'updatedAt', 'lastStartRequestId', 'activeMemberCount'])
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'startedAt', 'updatedAt', 'lastStartRequestId', 'activeMemberCount', 'hostHeartbeatAt'])
           && request.resource.data.hostId == request.auth.uid
           && resource.data.status == 'WAITING'
           && resource.data.startedAt == null
@@ -855,6 +889,9 @@ service cloud.firestore {
           && request.resource.data.status == 'ACTIVE'
           && request.resource.data.startedAt == request.time
           && request.resource.data.updatedAt == request.time
+          // Client mới làm mới liveness khi start; bản cũ vẫn được start và dùng startedAt làm mốc.
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['hostHeartbeatAt'])
+            || request.resource.data.hostHeartbeatAt == request.time)
           // App cũ vẫn start được; chỉ build mới khởi tạo voter count cho SL-019.
           && (request.resource.data.get('activeMemberCount', null) == null
             || request.resource.data.activeMemberCount == resource.data.participantCount)
@@ -881,7 +918,9 @@ service cloud.firestore {
           && getAfter(terminationBallotPath(roomId, request.auth.uid)).data.choice == 'YES'
           && (!exists(terminationBallotPath(roomId, request.auth.uid))
             || get(terminationBallotPath(roomId, request.auth.uid)).data.voteId != get(terminationVotePath(roomId)).data.voteId)
-        ) || validEarlyExitRoomUpdate(roomId)
+        ) || validHostHeartbeat(roomId)
+        || validStaleRoomAbort(roomId)
+        || validEarlyExitRoomUpdate(roomId)
         || validRoomCompletion(roomId)
         || validRoomSyncAcknowledgment(roomId)
         || validHostScoreOverride(roomId)
