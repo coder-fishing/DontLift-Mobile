@@ -8,12 +8,13 @@ import { getLocalDatabase } from '../local/database';
 
 type Dependencies = { firestore: Firestore; auth: Auth; database?: () => Promise<SQLite.SQLiteDatabase>; createId?: () => string };
 type PendingRow = { event_id: string; room_id: string; user_id: string; started_at: string; ended_at: string; duration_seconds: number };
-type OpenViolationRow = {
+type FinalizableViolationRow = {
   event_id: string;
   room_id: string;
   user_id: string;
   started_at: string;
   confirmed_at: string;
+  ended_at: string | null;
   created_at: string;
 };
 
@@ -119,13 +120,18 @@ export function createGroupViolationRepository(dependencies: Dependencies) {
       if (!Number.isFinite(input.endedAtUtcMs)) throw new GroupViolationError('invalid-argument');
       const db = await database();
       let finalized = 0;
+      const cutoffIso = new Date(input.endedAtUtcMs).toISOString();
       await db.withExclusiveTransactionAsync(async tx => {
-        const openRows = await tx.getAllAsync<OpenViolationRow>(
-          `SELECT event_id, room_id, user_id, started_at, confirmed_at, created_at FROM violation_logs
-           WHERE room_id = ? AND user_id = ? AND ended_at IS NULL AND confirmed_at IS NOT NULL`,
-          input.roomId, actor.uid,
+        const pendingRows = await tx.getAllAsync<FinalizableViolationRow>(
+          `SELECT v.event_id, v.room_id, v.user_id, v.started_at, v.confirmed_at, v.ended_at, v.created_at
+           FROM violation_logs v
+           JOIN sync_outbox o ON o.event_id = v.event_id AND o.actor_uid = v.user_id
+           WHERE v.room_id = ? AND v.user_id = ? AND v.confirmed_at IS NOT NULL
+             AND v.sync_status IN ('PENDING', 'FAILED') AND o.sync_status IN ('PENDING', 'FAILED')
+             AND (v.ended_at IS NULL OR v.ended_at > ?)` ,
+          input.roomId, actor.uid, cutoffIso,
         );
-        for (const row of openRows) {
+        for (const row of pendingRows) {
           const startedAtUtcMs = Date.parse(row.started_at);
           const confirmedAtUtcMs = Date.parse(row.confirmed_at);
           if (!Number.isFinite(startedAtUtcMs) || !Number.isFinite(confirmedAtUtcMs)) continue;
@@ -133,23 +139,26 @@ export function createGroupViolationRepository(dependencies: Dependencies) {
             || Math.floor((input.endedAtUtcMs - startedAtUtcMs) / 1_000) < 3) {
             // Grace chưa xong tại cutoff server: event chưa đủ điều kiện nên bỏ local log và outbox.
             await tx.runAsync(
-              'DELETE FROM sync_outbox WHERE event_id = ? AND actor_uid = ? AND sync_status = \'PENDING\'',
+              `DELETE FROM sync_outbox WHERE event_id = ? AND actor_uid = ? AND sync_status IN ('PENDING', 'FAILED')`,
               row.event_id, actor.uid,
             );
             await tx.runAsync(
-              'DELETE FROM violation_logs WHERE event_id = ? AND user_id = ? AND ended_at IS NULL',
+              `DELETE FROM violation_logs WHERE event_id = ? AND user_id = ? AND sync_status IN ('PENDING', 'FAILED')`,
               row.event_id, actor.uid,
             );
             continue;
           }
-          const endedAtUtcMs = Math.max(startedAtUtcMs, input.endedAtUtcMs);
+          const existingEndedAtUtcMs = row.ended_at === null ? input.endedAtUtcMs : Date.parse(row.ended_at);
+          if (!Number.isFinite(existingEndedAtUtcMs)) continue;
+          const endedAtUtcMs = Math.min(existingEndedAtUtcMs, input.endedAtUtcMs);
           const durationSeconds = Math.floor((endedAtUtcMs - startedAtUtcMs) / 1_000);
           const result = await tx.runAsync(
-            `UPDATE violation_logs SET ended_at = ?, duration_seconds = ?
-             WHERE event_id = ? AND user_id = ? AND ended_at IS NULL`,
+            `UPDATE violation_logs SET ended_at = ?, duration_seconds = ?, sync_status = 'PENDING', synced_at = NULL
+             WHERE event_id = ? AND user_id = ? AND sync_status IN ('PENDING', 'FAILED')`,
             new Date(endedAtUtcMs).toISOString(), durationSeconds, row.event_id, actor.uid,
           );
           if (result.changes !== 1) continue;
+          // Closed event sau cutoff cũng được cắt lại và mở retry nếu lần sync trước đã bị Rules từ chối.
           await persistRoomViolationOutbox(tx, {
             eventId: row.event_id, roomId: row.room_id, userId: actor.uid,
             startedAtUtcMs, endedAtUtcMs, durationSeconds, createdAt: row.created_at,
