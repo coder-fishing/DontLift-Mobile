@@ -12,7 +12,8 @@ export type ScreenId =
   | '11-solo-history'
   | '12-join-room'
   | '13-group-summary'
-  | '14-settlement-details';
+  | '14-settlement-details'
+  | '15-group-history';
 
 export type FocusModeType = 'countdown' | 'stopwatch';
 

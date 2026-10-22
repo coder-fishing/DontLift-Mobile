@@ -59,6 +59,7 @@ export const SCREEN_TITLES: Record<ScreenId, string> = {
   '12-join-room': 'Join Room',
   '13-group-summary': 'Group Session Summary',
   '14-settlement-details': 'Room Payment Details',
+  '15-group-history': 'Group History',
 };
 
 export function formatTime(totalSecs: number): string {
