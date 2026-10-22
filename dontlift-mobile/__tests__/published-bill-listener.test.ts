@@ -35,6 +35,15 @@ describe('published bill listener status', () => {
     });
   });
 
+  it('does not label a locally pending room publication as confirmed', () => {
+    const onState = jest.fn();
+    const stop = listenToPublishedBill({} as never, 'room', onState);
+    subscriptions[0].next({ ...roomSnapshot(), metadata: { fromCache: false, hasPendingWrites: true } });
+    expect(onState.mock.calls.at(-1)?.[0].kind).toBe('cached');
+    expect(subscriptions).toHaveLength(1);
+    stop();
+  });
+
   it.each([0, 1])('keeps an error from stream %s visible until a new subscription is attached', streamIndex => {
     const onState = jest.fn();
     const stop = listenToPublishedBill({} as never, 'room', onState);
