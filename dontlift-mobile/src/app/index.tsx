@@ -306,6 +306,9 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     startedAtUtcMs: number;
     historySnapshot?: RoomLobbySnapshot;
   }) => {
+    // Abort có thể backdate trước earlyExitAt; mọi caller dùng cùng mốc sớm nhất.
+    const terminalEnd = input.historySnapshot?.endedAtUtcMs;
+    input = { ...input, cutoffUtcMs: terminalEnd == null ? input.cutoffUtcMs : Math.min(input.cutoffUtcMs, terminalEnd) };
     const existingTask = earlyExitCutoffCleanupTasks.current.get(input.roomId);
     if (existingTask) return existingTask;
 
@@ -559,7 +562,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
           if (earlyExitCutoffUtcMs != null && startedAtUtcMs != null) {
             // Nếu đây là snapshot đầu tiên sau khi Host duyệt, áp cutoff trước giờ kết thúc phòng.
             await runEarlyExitCutoffCleanup({
-              roomId, userId: profile.uid, cutoffUtcMs: earlyExitCutoffUtcMs, startedAtUtcMs, historySnapshot: snapshot,
+              roomId, userId: profile.uid, cutoffUtcMs: Math.min(earlyExitCutoffUtcMs, snapshot.endedAtUtcMs!), startedAtUtcMs, historySnapshot: snapshot,
             });
           }
           // Chốt violation đã xác nhận theo mốc kết thúc server, giữ outbox pending cho SL-020 reconciliation.

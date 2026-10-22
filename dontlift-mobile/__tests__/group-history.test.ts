@@ -43,7 +43,7 @@ beforeEach(async () => {
   }; db = wrapper as never; await migrateLocalDatabase(db);
 });
 afterEach(() => native.close());
-const repo = () => createGroupHistoryRepository({ firestore: {} as never, auth: { currentUser: { uid: 'member' } } as never, database: Promise.resolve(db) });
+const repo = () => createGroupHistoryRepository({ firestore: {} as never, auth: { currentUser: { uid: 'member' } } as never, database: Promise.resolve(db), readAuthority: async () => ({ status: 'COMPLETED', roomStatus: 'COMPLETED', cutoffUtcMs: 11000, startedAtUtcMs: 1000, terminal: true, earlyExitAtUtcMs: null }) });
 
 test('summary/outbox rollback together and repeated completion reuses one event', async () => {
   await seed(); failOutbox = true; await expect(record()).rejects.toThrow('disk-full');
@@ -54,7 +54,7 @@ test('summary/outbox rollback together and repeated completion reuses one event'
 });
 test('v9 upgrade preserves recordings; startup recovers missing durable summary', async () => {
   await seed(); native.exec('DROP TABLE group_history; PRAGMA user_version = 9'); await migrateLocalDatabase(db); await recoverGroupSummaries(db, 'member');
-  expect(await db.getFirstAsync('PRAGMA user_version')).toMatchObject({ user_version: 10 });
+  expect(await db.getFirstAsync('PRAGMA user_version')).toMatchObject({ user_version: 11 });
   expect(await db.getFirstAsync('SELECT COUNT(*) AS n FROM sessions')).toMatchObject({ n: 1 });
   expect(await db.getFirstAsync('SELECT COUNT(*) AS n FROM group_history')).toMatchObject({ n: 1 });
 });
@@ -105,7 +105,7 @@ test('records eligible closed intervals and leaves unconfirmed or post-cutoff lo
   }
   await record();
   const row = await db.getFirstAsync<{ summary_json: string }>('SELECT summary_json FROM group_history');
-  expect(JSON.parse(row!.summary_json)).toMatchObject({ liftCount: 1, violationDurationSeconds: 5, penaltyScore: 15 });
+  expect(JSON.parse(row!.summary_json)).toMatchObject({ liftCount: 2, violationDurationSeconds: 12, penaltyScore: 32 });
 });
 test('local Premium does not expose expired cloud-only cache; pending local remains visible', async () => {
   await seed(); await record();
@@ -173,4 +173,80 @@ test('completion roster cache is account-scoped and finalized points are not dow
   expect(result).toMatchObject({ reconciliation: 'FINALIZED', members: [{ score: 13 }] });
   expect(JSON.stringify(result)).not.toContain('accountNumber');
   expect(await repo().cachedDetail('other', room)).toBeNull();
+});
+
+
+test('mixed CANCELLED/ACTIVE snapshot is corrected from authoritative EARLY_EXIT before upload', async () => {
+  await seed();
+  await db.withExclusiveTransactionAsync(tx => recordGroupSummary(tx, { roomId: room, userId: 'member', status: 'CANCELLED', cutoffUtcMs: 11000 }));
+  const set = jest.fn();
+  api.runTransaction.mockImplementation(async (_: unknown, fn: (tx: unknown) => Promise<void>) => fn({ get: async () => ({ exists: () => false }), set }));
+  const repository = createGroupHistoryRepository({ firestore: {} as never, auth: { currentUser: { uid: 'member' } } as never,
+    database: Promise.resolve(db), readAuthority: async () => ({ status: 'EARLY_EXIT', roomStatus: 'CANCELLED', terminal: true,
+      cutoffUtcMs: 9000, startedAtUtcMs: 1000, earlyExitAtUtcMs: 9000 }) });
+  await repository.syncPending('member');
+  expect(set.mock.calls[0][1]).toMatchObject({ eventId: event, status: 'EARLY_EXIT', completedAtUtcMs: 9000 });
+  expect(await db.getFirstAsync('SELECT sync_status, terminal_confirmed FROM group_history')).toMatchObject({ sync_status: 'SYNCED', terminal_confirmed: 1 });
+});
+
+test('already uploaded early exit rechecks terminal authority and repairs a backdated abort', async () => {
+  await seed();
+  await db.withExclusiveTransactionAsync(tx => recordGroupSummary(tx, { roomId: room, userId: 'member', status: 'EARLY_EXIT', cutoffUtcMs: 11000 }));
+  let terminal = false; let remote: unknown; const update = jest.fn((_ref, value) => { remote = value; });
+  api.runTransaction.mockImplementation(async (_: unknown, fn: (tx: unknown) => Promise<void>) => fn({
+    get: async () => ({ exists: () => remote != null, data: () => remote }), set: (_ref: unknown, value: unknown) => { remote = value; }, update,
+  }));
+  const repository = createGroupHistoryRepository({ firestore: {} as never, auth: { currentUser: { uid: 'member' } } as never,
+    database: Promise.resolve(db), readAuthority: async () => ({ status: 'EARLY_EXIT', roomStatus: terminal ? 'ABORTED' : 'ACTIVE', terminal,
+      cutoffUtcMs: terminal ? 8000 : 11000, startedAtUtcMs: 1000, earlyExitAtUtcMs: 11000 }) });
+  await repository.syncPending('member'); terminal = true; await repository.syncPending('member');
+  expect(update).toHaveBeenCalledTimes(1);
+  expect(remote).toMatchObject({ eventId: event, status: 'EARLY_EXIT', completedAtUtcMs: 8000 });
+  expect(await db.getFirstAsync('SELECT COUNT(*) AS n FROM sync_outbox')).toMatchObject({ n: 1 });
+  expect(await db.getFirstAsync('SELECT completed_at FROM sessions')).toMatchObject({ completed_at: new Date(8000).toISOString() });
+});
+
+test('a stale upload acknowledgment cannot mark a rewritten local payload synced', async () => {
+  await seed(); await record();
+  api.runTransaction.mockImplementation(async (_: unknown, fn: (tx: unknown) => Promise<void>) => {
+    await fn({ get: async () => ({ exists: () => false }), set: jest.fn() });
+    await db.withExclusiveTransactionAsync(tx => recordGroupSummary(tx, { roomId: room, userId: 'member', status: 'EARLY_EXIT', cutoffUtcMs: 8000 }));
+  });
+  await repo().syncPending('member');
+  expect(await db.getFirstAsync('SELECT sync_status FROM group_history')).toMatchObject({ sync_status: 'PENDING' });
+  expect(await db.getFirstAsync('SELECT sync_status FROM sync_outbox')).toMatchObject({ sync_status: 'PENDING' });
+});
+
+test('authoritative room and membership are read in one transaction', async () => {
+  const { readGroupHistoryAuthority } = require('../src/features/history/group-history-authority');
+  const timestamp = (n: number) => Object.assign(new api.Timestamp(), { toMillis: () => n });
+  const get = jest.fn(async (ref: { path: string }) => ({ exists: () => true, data: () => ref.path.includes('/members/')
+    ? { status: 'EARLY_EXIT', earlyExitAt: timestamp(11000) }
+    : { status: 'ABORTED', startedAt: timestamp(1000), endedAt: timestamp(8000) } }));
+  api.runTransaction.mockImplementation(async (_: unknown, fn: (tx: unknown) => Promise<void>) => fn({ get }));
+  expect(await readGroupHistoryAuthority({ firestore: {}, auth: { currentUser: { uid: 'member' } } }, 'member', room))
+    .toMatchObject({ status: 'EARLY_EXIT', cutoffUtcMs: 8000, terminal: true });
+  expect(api.runTransaction).toHaveBeenCalledTimes(1); expect(get).toHaveBeenCalledTimes(2);
+});
+
+
+test('v10 upgrade retains an uploaded exit for later terminal verification', async () => {
+  await seed(); await record();
+  await db.runAsync("UPDATE group_history SET sync_status='SYNCED'");
+  native.exec('ALTER TABLE group_history DROP COLUMN terminal_confirmed; PRAGMA user_version=10');
+  await migrateLocalDatabase(db);
+  expect(await db.getFirstAsync('SELECT sync_status, terminal_confirmed FROM group_history')).toMatchObject({ sync_status: 'SYNCED', terminal_confirmed: 0 });
+  expect(await db.getFirstAsync('SELECT COUNT(*) AS n FROM sync_outbox')).toMatchObject({ n: 1 });
+});
+
+test('earlier cutoff trims confirmed closed intervals and removes under-grace intervals', async () => {
+  await seed();
+  for (const [id, start, confirmed] of [['a', 1000, 4000], ['b', 6000, 9000]] as const) {
+    await db.runAsync(`INSERT INTO violation_logs (event_id,session_id,room_id,user_id,started_at,confirmed_at,ended_at,duration_seconds,sync_status,created_at)
+      VALUES (?,?,?,'member',?,?,?,?, 'SYNCED',?)`, id, room, room, new Date(start).toISOString(), new Date(confirmed).toISOString(), new Date(11000).toISOString(), (11000-start)/1000, new Date(confirmed).toISOString());
+  }
+  await record();
+  await db.withExclusiveTransactionAsync(tx => recordGroupSummary(tx, { roomId: room, userId: 'member', status: 'EARLY_EXIT', cutoffUtcMs: 8000 }));
+  const entry = await repo().readEntry('member', room);
+  expect(entry?.summary).toMatchObject({ eventId: event, status: 'EARLY_EXIT', completedAtUtcMs: 8000, liftCount: 1, violationDurationSeconds: 7, penaltyScore: 17 });
 });

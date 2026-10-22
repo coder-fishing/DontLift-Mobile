@@ -29,7 +29,12 @@ export function summaryCursor(entry: GroupHistoryEntry): GroupHistoryCursor {
 }
 export function mergeGroupHistory(local: GroupHistoryEntry[], cloud: GroupHistoryEntry[]): GroupHistoryEntry[] {
   const map = new Map<string, GroupHistoryEntry>();
-  for (const item of [...cloud, ...local]) map.set(`${item.summary.actorUid}/${item.summary.roomId}`, item);
+  for (const item of local) map.set(`${item.summary.actorUid}/${item.summary.roomId}`, item);
+  for (const item of cloud) {
+    const key = `${item.summary.actorUid}/${item.summary.roomId}`;
+    // Bản server đã sửa cutoff được ưu tiên khi local không còn pending.
+    if (!map.has(key) || map.get(key)!.syncStatus === 'SYNCED') map.set(key, item);
+  }
   return [...map.values()].sort((a, b) => b.summary.completedAtUtcMs - a.summary.completedAtUtcMs
     || (a.summary.roomId < b.summary.roomId ? 1 : a.summary.roomId > b.summary.roomId ? -1 : 0));
 }

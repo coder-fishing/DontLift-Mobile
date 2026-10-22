@@ -334,6 +334,15 @@ const migrations: LocalMigration[] = [
       `);
     },
   },
+  {
+    version: 11,
+    async migrate(database) {
+      const columns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(group_history)');
+      if (!columns.some(column => column.name === 'terminal_confirmed')) {
+        await database.execAsync('ALTER TABLE group_history ADD COLUMN terminal_confirmed INTEGER NOT NULL DEFAULT 0');
+      }
+    },
+  },
 ];
 
 const latestSchemaVersion = migrations.at(-1)?.version ?? 0;

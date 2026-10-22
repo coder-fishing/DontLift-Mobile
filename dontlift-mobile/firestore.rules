@@ -1402,7 +1402,19 @@ service cloud.firestore {
       match /groupHistory/{roomId} {
         allow get, list: if isOwner(uid);
         allow create: if validGroupHistory(uid, roomId, request.resource.data);
-        allow update, delete: if false;
+        // Sửa hẹp theo membership/cutoff server; không cho thay identity hay tăng điểm.
+        allow update: if validGroupHistory(uid, roomId, request.resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'completedAtUtcMs', 'liftCount', 'violationDurationSeconds', 'penaltyScore', 'uploadedAt'])
+          && request.resource.data.completedAtUtcMs <= resource.data.completedAtUtcMs
+          && (request.resource.data.completedAtUtcMs < resource.data.completedAtUtcMs
+            || (resource.data.status != 'EARLY_EXIT' && request.resource.data.status == 'EARLY_EXIT'))
+          && request.resource.data.liftCount <= resource.data.liftCount
+          && request.resource.data.violationDurationSeconds <= resource.data.violationDurationSeconds
+          && (request.resource.data.completedAtUtcMs < resource.data.completedAtUtcMs
+            || (request.resource.data.liftCount == resource.data.liftCount
+              && request.resource.data.violationDurationSeconds == resource.data.violationDurationSeconds));
+        allow delete: if false;
       }
       // Solo summary được ghi bởi syncEvents; owner chỉ đọc history của chính mình.
       match /sessions/{sessionId} {

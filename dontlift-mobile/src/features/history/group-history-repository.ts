@@ -3,7 +3,8 @@ import { collection, doc, documentId, getDocFromServer, getDocsFromServer, limit
 import type * as SQLite from 'expo-sqlite';
 import type { Auth } from 'firebase/auth';
 import { getLocalDatabase } from '../local/database';
-import { recoverGroupSummaries } from './group-summary-repository';
+import { readGroupHistoryAuthority, type GroupHistoryAuthority } from './group-history-authority';
+import { recordGroupSummary, recoverGroupSummaries } from './group-summary-repository';
 import { GROUP_HISTORY_PAGE_SIZE, GROUP_HISTORY_WINDOW_MS, mergeGroupHistory, readGroupSummary, summaryCursor,
   type GroupHistoryCursor, type GroupHistoryEntry, type GroupLocalSummary } from './group-history-model';
 import { createBillRepository, type PublishedBill } from '../settlement/bill-repository';
@@ -22,8 +23,19 @@ export type GroupHistoryPage = { items: GroupHistoryEntry[]; cursor: GroupHistor
 export function sameGroupSummary(a: GroupLocalSummary, b: GroupLocalSummary): boolean {
   return Object.keys(a).filter(key => key !== 'uploadedAt').every(key => a[key as keyof GroupLocalSummary] === b[key as keyof GroupLocalSummary]);
 }
+// Chỉ sửa identity cũ khi server xác nhận EARLY_EXIT hoặc cutoff sớm hơn.
+export function canCorrectGroupSummary(before: GroupLocalSummary, after: GroupLocalSummary): boolean {
+  return ['version', 'eventId', 'actorUid', 'roomId', 'startedAtUtcMs'].every(
+    key => before[key as keyof GroupLocalSummary] === after[key as keyof GroupLocalSummary])
+    && after.completedAtUtcMs <= before.completedAtUtcMs
+    && (after.completedAtUtcMs < before.completedAtUtcMs || (before.status !== 'EARLY_EXIT' && after.status === 'EARLY_EXIT'))
+    && after.liftCount <= before.liftCount && after.violationDurationSeconds <= before.violationDurationSeconds
+    && (after.completedAtUtcMs < before.completedAtUtcMs
+      || (after.liftCount === before.liftCount && after.violationDurationSeconds === before.violationDurationSeconds));
+}
 export function createGroupHistoryRepository(dependencies: {
   firestore: Firestore; auth: Auth; database?: Promise<SQLite.SQLiteDatabase>;
+  readAuthority?: (uid: string, roomId: string) => Promise<GroupHistoryAuthority>;
 }) {
   const database = () => dependencies.database ?? getLocalDatabase();
   const isActor = (uid: string) => dependencies.auth.currentUser?.uid === uid;
@@ -46,15 +58,29 @@ export function createGroupHistoryRepository(dependencies: {
         for (;;) {
           if (!isActor(uid)) return;
           const rows = await db.getAllAsync<{ event_id: string; aggregate_id: string; payload_json: string }>(
-            `SELECT event_id, aggregate_id, payload_json FROM sync_outbox
-             WHERE actor_uid = ? AND event_type = 'GROUP_SESSION_LOCAL_SUMMARY'
-               AND (sync_status = 'PENDING' OR (? = 1 AND sync_status = 'FAILED')) AND event_id > ?
-             ORDER BY event_id LIMIT 20`, uid, retryFailed ? 1 : 0, afterId);
+            `SELECT o.event_id, o.aggregate_id, o.payload_json FROM sync_outbox o
+             JOIN group_history h ON h.actor_uid = o.actor_uid AND h.room_id = o.aggregate_id
+             WHERE o.actor_uid = ? AND event_type = 'GROUP_SESSION_LOCAL_SUMMARY'
+               AND (o.sync_status = 'PENDING' OR (? = 1 AND o.sync_status = 'FAILED')
+                 OR (o.sync_status = 'SYNCED' AND h.terminal_confirmed = 0)) AND o.event_id > ?
+             ORDER BY o.event_id LIMIT 20`, uid, retryFailed ? 1 : 0, afterId);
           if (!rows.length) break;
           for (const row of rows) {
             afterId = row.event_id;
             if (!isActor(uid)) return;
             try {
+              const authority = await (dependencies.readAuthority
+                ? dependencies.readAuthority(uid, row.aggregate_id)
+                : readGroupHistoryAuthority(dependencies, uid, row.aggregate_id));
+              if (!isActor(uid)) return;
+              await db.withExclusiveTransactionAsync(tx => recordGroupSummary(tx, {
+                roomId: row.aggregate_id, userId: uid, status: authority.status,
+                cutoffUtcMs: authority.cutoffUtcMs, startedAtUtcMs: authority.startedAtUtcMs, terminalConfirmed: authority.terminal,
+              }));
+              const refreshed = await db.getFirstAsync<{ payload_json: string }>(
+                'SELECT payload_json FROM sync_outbox WHERE event_id = ? AND actor_uid = ?', row.event_id, uid);
+              if (!refreshed) continue;
+              row.payload_json = refreshed.payload_json;
               const summary = decodeSummary(row.payload_json, uid, row.aggregate_id);
               if (!summary || summary.eventId !== row.event_id) throw new Error('invalid-argument');
               const ref = doc(dependencies.firestore, 'users', uid, 'groupHistory', summary.roomId);
@@ -63,14 +89,19 @@ export function createGroupHistoryRepository(dependencies: {
                 const saved = await tx.get(ref);
                 if (saved.exists()) {
                   const previous = readGroupSummary(saved.data(), uid, summary.roomId);
-                  if (!previous || !sameGroupSummary(summary, previous)) throw new Error('already-exists');
+                  if (!previous) throw new Error('already-exists');
+                  if (!sameGroupSummary(summary, previous)) {
+                    if (!canCorrectGroupSummary(previous, summary)) throw new Error('already-exists');
+                    tx.update(ref, { ...summary, uploadedAt: serverTimestamp() });
+                  }
                   return;
                 }
                 tx.set(ref, { ...summary, uploadedAt: serverTimestamp() });
               });
               await db.withExclusiveTransactionAsync(async tx => {
-                await tx.runAsync("UPDATE sync_outbox SET sync_status = 'SYNCED', synced_at = ?, last_error_code = NULL WHERE event_id = ? AND actor_uid = ? AND event_type = 'GROUP_SESSION_LOCAL_SUMMARY'",
-                  new Date().toISOString(), row.event_id, uid);
+                const updated = await tx.runAsync("UPDATE sync_outbox SET sync_status = 'SYNCED', synced_at = ?, last_error_code = NULL WHERE event_id = ? AND actor_uid = ? AND event_type = 'GROUP_SESSION_LOCAL_SUMMARY' AND payload_json = ?",
+                  new Date().toISOString(), row.event_id, uid, row.payload_json);
+                if (!updated.changes) return;
                 await tx.runAsync("UPDATE group_history SET sync_status = 'SYNCED' WHERE actor_uid = ? AND room_id = ?", uid, row.aggregate_id);
               });
             } catch (error) {
@@ -78,9 +109,10 @@ export function createGroupHistoryRepository(dependencies: {
               if (code === 'account-changed' || !isActor(uid)) return;
               const permanent = ['permission-denied', 'invalid-argument', 'already-exists'].includes(code);
               await db.withExclusiveTransactionAsync(async tx => {
-                await tx.runAsync(`UPDATE sync_outbox SET sync_status = ?, attempt_count = attempt_count + 1, last_error_code = ?
-                  WHERE event_id = ? AND actor_uid = ? AND event_type = 'GROUP_SESSION_LOCAL_SUMMARY'`,
-                  permanent ? 'FAILED' : 'PENDING', code, row.event_id, uid);
+                const updated = await tx.runAsync(`UPDATE sync_outbox SET sync_status = ?, attempt_count = attempt_count + 1, last_error_code = ?
+                  WHERE event_id = ? AND actor_uid = ? AND event_type = 'GROUP_SESSION_LOCAL_SUMMARY' AND payload_json = ?`,
+                  permanent ? 'FAILED' : 'PENDING', code, row.event_id, uid, row.payload_json);
+                if (!updated.changes) return;
                 await tx.runAsync('UPDATE group_history SET sync_status = ? WHERE actor_uid = ? AND room_id = ?',
                   permanent ? 'FAILED' : 'PENDING', uid, row.aggregate_id);
               });
@@ -124,7 +156,8 @@ export function createGroupHistoryRepository(dependencies: {
           await db.withExclusiveTransactionAsync(async tx => {
             for (const entry of cloud) await tx.runAsync(`INSERT INTO group_history
               (actor_uid, room_id, completed_at_utc_ms, summary_json, sync_status, source) VALUES (?, ?, ?, ?, 'SYNCED', 'CLOUD')
-              ON CONFLICT(actor_uid, room_id) DO NOTHING`, uid, entry.summary.roomId, entry.summary.completedAtUtcMs, JSON.stringify(entry.summary));
+              ON CONFLICT(actor_uid, room_id) DO UPDATE SET summary_json=excluded.summary_json, completed_at_utc_ms=excluded.completed_at_utc_ms
+              WHERE group_history.source = 'CLOUD'`, uid, entry.summary.roomId, entry.summary.completedAtUtcMs, JSON.stringify(entry.summary));
           });
         } catch { cloudError = true; }
       }

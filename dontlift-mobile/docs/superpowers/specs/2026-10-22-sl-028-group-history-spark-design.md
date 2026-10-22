@@ -50,3 +50,7 @@ Human answered Duyệt phương án Spark (Khuyến nghị) on 2026-10-22, appro
 ## Human-approved extension — reopen payment from history
 
 2026-10-22: human asked for an unpaid bill in history to reopen payment QR and then said làm đi. Show Pay my share only for the signed-in user's positive share not marked paid. A cached history value is only a navigation hint: an isolated subscription must confirm actual room, membership, publication/revision/paid counter and bank-detail expiry from Firebase before QR rendering. New publication, paid confirmation, cached snapshots, lost connectivity or revoked membership invalidates the old QR. Reuse the SL-026/027 QR screen; no payment writes or self-confirmation, no bank/QR persistence, no change to the current active room. Return to the same history detail. This supersedes the original read-only navigation exclusion, while keeping canonical payment authority unchanged.
+
+## Review follow-up: terminal snapshot consistency
+
+Apply ADR-024 narrow correction: confirm room + own membership together before history upload, preserve the same outbox event ID, and normalize EARLY_EXIT to min(earlyExitAt, terminal endedAt). Recheck uploaded exits until terminal authority is known. Permit only server-bound status/cutoff corrections with non-increasing stats; guard local ACK/failure by payload. Cover mixed CANCELLED/ACTIVE listener ordering, later backdated abort, identity protection, migration 11 and stale ACK regression.

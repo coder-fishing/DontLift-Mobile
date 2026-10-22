@@ -46,6 +46,20 @@ test('SL028 owner history and immutable receipt', async t => {
       await assertFails(setDoc(ref, payload()));
       await assertSucceeds(setDoc(ref, payload({ status: 'EARLY_EXIT', completedAtUtcMs: end - 1000 })));
     });
+    await t.test('repairs mixed terminal status and later earlier cutoff without changing identity', async () => {
+      await env.clearFirestore(); await seed(env, { status: 'CANCELLED' });
+      const db = env.authenticatedContext('member').firestore();
+      const ref = doc(db, `users/member/groupHistory/${roomId}`);
+      await assertSucceeds(setDoc(ref, payload({ status: 'CANCELLED' })));
+      await seed(env, { status: 'CANCELLED' }, { status: 'EARLY_EXIT', earlyExitAt: Timestamp.fromMillis(end) });
+      await assertFails(updateDoc(ref, { status: 'EARLY_EXIT', liftCount: 2, penaltyScore: 23, uploadedAt: serverTimestamp() }));
+      await assertSucceeds(updateDoc(ref, { status: 'EARLY_EXIT', uploadedAt: serverTimestamp() }));
+      await seed(env, { status: 'ABORTED', endedAt: Timestamp.fromMillis(end - 2000) }, { status: 'EARLY_EXIT', earlyExitAt: Timestamp.fromMillis(end) });
+      await assertFails(updateDoc(ref, { completedAtUtcMs: end - 2000, eventId: '30000000-0000-4000-8000-000000000028', uploadedAt: serverTimestamp() }));
+      await assertSucceeds(updateDoc(ref, { completedAtUtcMs: end - 2000, violationDurationSeconds: 2, penaltyScore: 12, uploadedAt: serverTimestamp() }));
+      await assertFails(updateDoc(ref, { completedAtUtcMs: end, uploadedAt: serverTimestamp() }));
+      await assertFails(updateDoc(ref, { penaltyScore: 11, violationDurationSeconds: 1, uploadedAt: serverTimestamp() }));
+    });
     await t.test('active room cannot be completed by a history write', async () => {
       await env.clearFirestore(); await seed(env, { status: 'ACTIVE', endedAt: null });
       await assertFails(setDoc(doc(env.authenticatedContext('member').firestore(), `users/member/groupHistory/${roomId}`), payload()));

@@ -60,3 +60,7 @@ Nguồn: product requirements US-16, product design, architecture §6–8, API �
 - [x] Chỉ dùng server-confirmed room/member/bill/details; đối chiếu pointer/revision/paid count trước QR.
 - [x] Offline, cached, revoked, expired, paid/zero và revision change không hiển thị QR cũ; không thêm write/Rules/bank cache.
 - [x] Kiểm tra service và navigation reuse VietQR; physical Expo Go vẫn cần nghiệm thu.
+
+## Review follow-up: terminal snapshot consistency
+
+Apply ADR-024 narrow correction: confirm room + own membership together before history upload, preserve the same outbox event ID, and normalize EARLY_EXIT to min(earlyExitAt, terminal endedAt). Recheck uploaded exits until terminal authority is known. Permit only server-bound status/cutoff corrections with non-increasing stats; guard local ACK/failure by payload. Cover mixed CANCELLED/ACTIVE listener ordering, later backdated abort, identity protection, migration 11 and stale ACK regression.
