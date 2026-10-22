@@ -5,7 +5,7 @@ import {
 import { GlassCard } from '../components/GlassCard';
 import { Colors } from '../constants/theme';
 import { formatVND } from '../constants';
-import { calculateDefaultBillShares } from '../features/settlement/bill-allocation';
+import { calculateBillSharesWithOverrides, calculateDefaultBillShares, type BillShareOverride } from '../features/settlement/bill-allocation';
 import type { BillShare } from '../features/settlement/bill-repository';
 import type { PublishedBillState } from '../features/settlement/published-bill-listener';
 
@@ -19,10 +19,15 @@ type Props = {
   isOnline: boolean;
   isPublishing: boolean;
   pendingTotalVnd?: number;
+  isApplyingOverride?: boolean;
+  hasPendingOverride?: boolean;
   publishError?: string;
+  overrideError?: string;
   onPublish: (totalBillVnd: number) => void;
+  onApplyOverrides?: (overrides: BillShareOverride[], expectedRevision: number) => void;
   onRetry: () => void;
   onRetryPublish: () => void;
+  onRetryOverride?: () => void;
   onBack: () => void;
 };
 
@@ -30,13 +35,75 @@ function shareLabel(member: BillAllocationMember | undefined): string {
   return member?.displayName.trim() || 'Participant';
 }
 
+type OverrideDraft = { type: BillShareOverride['type']; value: string };
+
+function OverrideMemberEditor({
+  member, currentShareVnd, draft, colors, disabled, onDraftChange,
+}: {
+  member: BillAllocationMember;
+  currentShareVnd: number;
+  draft?: OverrideDraft;
+  colors: typeof Colors.light | typeof Colors.dark;
+  disabled: boolean;
+  onDraftChange: (value: OverrideDraft | null) => void;
+}) {
+  const name = shareLabel(member);
+  return (
+    <View style={[styles.overrideRow, { borderTopColor: colors.border }]}>
+      <View style={styles.overrideRowHeading}>
+        <View style={styles.memberInfo}>
+          <Text style={[styles.memberName, { color: colors.text }]} numberOfLines={2}>{name}</Text>
+          <Text style={[styles.helper, { color: colors.textSecondary }]}>Current share · {formatVND(currentShareVnd)} VND</Text>
+        </View>
+        <Pressable accessibilityRole="button" accessibilityLabel={`${draft ? 'Remove custom amount for' : 'Set custom amount for'} ${name}`}
+          accessibilityState={{ checked: Boolean(draft), disabled }} disabled={disabled}
+          onPress={() => onDraftChange(draft ? null : { type: 'FIXED_VND', value: '' })}
+          style={({ pressed }) => [styles.rowToggle, { borderColor: colors.border }, pressed && styles.pressed, disabled && styles.disabled]}>
+          <Text style={[styles.rowToggleText, { color: colors.primary }]}>{draft ? 'Use default' : 'Customize'}</Text>
+        </Pressable>
+      </View>
+      {draft ? (
+        <View style={styles.overrideInputs}>
+          <View style={styles.overrideTypes}>
+            {(['FIXED_VND', 'PERCENT_BPS'] as const).map(type => (
+              <Pressable key={type} accessibilityRole="button" accessibilityState={{ selected: draft.type === type, disabled }}
+                accessibilityLabel={type === 'FIXED_VND' ? `Set fixed VND for ${name}` : `Set percentage for ${name}`}
+                disabled={disabled} onPress={() => onDraftChange({ ...draft, type })}
+                style={({ pressed }) => [styles.typeButton,
+                  { backgroundColor: draft.type === type ? colors.primary : colors.inputSurface,
+                    borderColor: draft.type === type ? colors.primary : colors.border }, pressed && styles.pressed, disabled && styles.disabled]}>
+                <Text style={[styles.typeButtonText, { color: draft.type === type ? colors.onPrimary : colors.textSecondary }]}>
+                  {type === 'FIXED_VND' ? 'Fixed VND' : 'Percent'}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          <View style={[styles.inputWrap, { borderColor: colors.border, backgroundColor: colors.inputSurface }]}>
+            <Text accessibilityElementsHidden style={[styles.currency, { color: colors.textSecondary }]}>{draft.type === 'FIXED_VND' ? '₫' : '%'}</Text>
+            <TextInput accessibilityLabel={`${draft.type === 'FIXED_VND' ? 'Fixed VND amount' : 'Bill percentage'} for ${name}`}
+              accessibilityHint={draft.type === 'FIXED_VND' ? 'Whole Vietnamese dong.' : 'Zero to one hundred percent, up to two decimal places.'}
+              editable={!disabled} keyboardType={draft.type === 'FIXED_VND' ? 'number-pad' : 'decimal-pad'}
+              returnKeyType="done" value={draft.value}
+              onChangeText={value => onDraftChange({ ...draft, value: value.replace(draft.type === 'FIXED_VND' ? /[^\d]/g : /[^\d.]/g, '') })}
+              onSubmitEditing={Keyboard.dismiss} placeholder={draft.type === 'FIXED_VND' ? 'e.g. 150000' : 'e.g. 25.00'}
+              placeholderTextColor={colors.textSecondary} style={[styles.input, { color: colors.text }]} />
+          </View>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 export function BillAllocationScreen({
-  roomId, mode, members, state, isOnline, isPublishing, pendingTotalVnd, publishError,
-  onPublish, onRetry, onRetryPublish, onBack,
+  roomId, mode, members, state, isOnline, isPublishing, pendingTotalVnd,
+  isApplyingOverride = false, hasPendingOverride = false, publishError, overrideError,
+  onPublish, onApplyOverrides = () => undefined, onRetry, onRetryPublish, onRetryOverride = () => undefined, onBack,
 }: Props) {
   const colors = useColorScheme() === 'dark' ? Colors.dark : Colors.light;
   const [billInput, setBillInput] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [isEditingOverrides, setIsEditingOverrides] = useState(false);
+  const [overrideDrafts, setOverrideDrafts] = useState<Record<string, { type: BillShareOverride['type']; value: string }>>({});
   const host = mode === 'host';
   const parsedTotal = pendingTotalVnd ?? (billInput ? Number(billInput.replace(/\D/g, '')) : 0);
   const validTotal = Number.isSafeInteger(parsedTotal) && parsedTotal >= 1_000;
@@ -49,7 +116,40 @@ export function BillAllocationScreen({
     }
   }, [host, validTotal, parsedTotal, members]);
   const confirmedBill = state.bill ?? null;
-  const displayedShares: readonly BillShare[] = confirmedBill?.shares ?? preview?.shares ?? [];
+  const paidLocked = (confirmedBill?.billPaidCount ?? 0) > 0;
+  const canOverride = host && confirmedBill != null && !paidLocked && state.kind === 'published';
+  const parsedOverrides = useMemo(() => {
+    const overrides: BillShareOverride[] = [];
+    for (const [uid, draft] of Object.entries(overrideDrafts)) {
+      const raw = draft.value.trim();
+      if (!raw) return { entries: null, message: 'Enter a value for each custom amount.' };
+      let value: number;
+      if (draft.type === 'PERCENT_BPS') {
+        if (!/^\d{1,3}(?:\.\d{1,2})?$/.test(raw)) return { entries: null, message: 'Use a percentage from 0 to 100, with up to two decimal places.' };
+        value = Math.round(Number(raw) * 100);
+        if (value > 10_000) return { entries: null, message: 'A member percentage cannot be greater than 100%.' };
+      } else {
+        if (!/^\d+$/.test(raw)) return { entries: null, message: 'Enter a whole VND amount.' };
+        value = Number(raw);
+        if (!Number.isSafeInteger(value)) return { entries: null, message: 'The VND amount is too large.' };
+      }
+      overrides.push({ uid, type: draft.type, value });
+    }
+    return { entries: overrides, message: undefined };
+  }, [overrideDrafts]);
+  const overridePreview = useMemo(() => {
+    if (!canOverride || !isEditingOverrides || parsedOverrides.entries === null) return null;
+    if (parsedOverrides.entries.length === 0) return confirmedBill;
+    try {
+      return calculateBillSharesWithOverrides(confirmedBill.totalBillVnd, members, parsedOverrides.entries);
+    } catch {
+      return null;
+    }
+  }, [canOverride, confirmedBill, isEditingOverrides, members, parsedOverrides]);
+  const overrideTotalMismatch = Boolean(isEditingOverrides && parsedOverrides.entries?.length
+    && !overridePreview && !parsedOverrides.message);
+  const displayedShares: readonly BillShare[] = canOverride && isEditingOverrides && overridePreview
+    ? overridePreview.shares : confirmedBill?.shares ?? preview?.shares ?? [];
   const membersByUid = useMemo(() => new Map(members.map(member => [member.uid, member])), [members]);
 
   const requestPublish = () => {
@@ -61,6 +161,20 @@ export function BillAllocationScreen({
       [
         { text: 'Review again', style: 'cancel' },
         { text: 'Publish once', onPress: () => onPublish(preview.totalBillVnd) },
+      ],
+    );
+  };
+
+  const requestOverride = () => {
+    if (!confirmedBill || !overridePreview || !parsedOverrides.entries?.length || paidLocked
+      || !isOnline || isApplyingOverride) return;
+    Keyboard.dismiss();
+    Alert.alert(
+      'Replace the room split?',
+      `This publishes a new ${formatVND(confirmedBill.totalBillVnd)} VND breakdown for ${members.length} members. All members will see it together. You can revise it again until anyone is marked paid.`,
+      [
+        { text: 'Keep reviewing', style: 'cancel' },
+        { text: 'Publish replacement', onPress: () => onApplyOverrides(parsedOverrides.entries!, confirmedBill.billRevision ?? 0) },
       ],
     );
   };
@@ -89,10 +203,10 @@ export function BillAllocationScreen({
 
           <GlassCard style={[styles.hero, { backgroundColor: colors.authFormSurface, borderColor: colors.glassBorder, shadowColor: colors.glassShadow }]}>
             <Text style={[styles.eyebrow, { color: colors.primary }]}>ROOM SETTLEMENT</Text>
-            <Text style={[styles.title, { color: colors.text }]}>{confirmedBill ? 'Published shares' : host ? 'Split the room bill' : 'Bill breakdown'}</Text>
+            <Text style={[styles.title, { color: colors.text }]}>{confirmedBill ? canOverride && isEditingOverrides ? 'Adjust the split' : 'Published shares' : host ? 'Split the room bill' : 'Bill breakdown'}</Text>
             <Text style={[styles.description, { color: colors.textSecondary }]}>
               {host
-                ? 'Review each member’s amount before publishing. The Host device calculates from the finalized room scores.'
+                ? confirmedBill ? 'Adjust selected raw shares. Other members keep their default amount; the complete bill total must still match exactly.' : 'Review each member’s amount before publishing. The Host device calculates from the finalized room scores.'
                 : 'These are the final amounts published by the Host for this room.'}
             </Text>
             {confirmedBill ? (
@@ -102,6 +216,13 @@ export function BillAllocationScreen({
               </View>
             ) : null}
           </GlassCard>
+
+          {host && confirmedBill && paidLocked ? (
+            <GlassCard style={[styles.lockCard, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Split locked</Text>
+              <Text style={[styles.helper, { color: colors.textSecondary }]}>At least one member has been marked as paid. The room split can no longer be changed.</Text>
+            </GlassCard>
+          ) : null}
 
           {host && !confirmedBill ? (
             <GlassCard style={[styles.entryCard, { backgroundColor: colors.authFormSurface, borderColor: colors.glassBorder, shadowColor: colors.glassShadow }]}>
@@ -155,9 +276,48 @@ export function BillAllocationScreen({
             </View>
           ) : confirmedBill ? (
             <View style={styles.previewHeading}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Final amounts</Text>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>{canOverride && isEditingOverrides ? 'Adjusted preview' : 'Final amounts'}</Text>
               <Text style={[styles.memberCount, { color: colors.textSecondary }]}>{confirmedBill.shares.length} {confirmedBill.shares.length === 1 ? 'member' : 'members'}</Text>
             </View>
+          ) : null}
+
+          {canOverride && !isEditingOverrides ? (
+            <Pressable accessibilityRole="button" accessibilityLabel="Adjust bill shares before first payment"
+              accessibilityState={{ disabled: !isOnline || isApplyingOverride || hasPendingOverride }}
+              disabled={!isOnline || isApplyingOverride || hasPendingOverride}
+              onPress={() => { setOverrideDrafts({}); setIsEditingOverrides(true); }}
+              style={({ pressed }) => [styles.secondaryButton, { borderColor: colors.border }, pressed && styles.pressed,
+                (!isOnline || isApplyingOverride || hasPendingOverride) && styles.disabled]}>
+              <Text style={[styles.secondaryButtonText, { color: colors.primary }]}>Adjust shares</Text>
+            </Pressable>
+          ) : null}
+
+          {canOverride && isEditingOverrides ? (
+            <GlassCard style={[styles.overrideCard, { backgroundColor: colors.authFormSurface, borderColor: colors.glassBorder }]}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Custom amounts</Text>
+              <Text style={[styles.helper, { color: colors.textSecondary }]}>Unchanged members keep their default raw amount. The full total must equal {formatVND(confirmedBill.totalBillVnd)} VND exactly.</Text>
+              {parsedOverrides.message ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.error }]}>{parsedOverrides.message}</Text> : null}
+              {overrideTotalMismatch ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.error }]}>These amounts do not add up to the full bill. Adjust the custom values before publishing.</Text> : null}
+              {overrideError ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.error }]}>{overrideError}</Text> : null}
+              {hasPendingOverride ? <Text style={[styles.helper, { color: colors.textSecondary }]}>A publish response is pending. Retry the same request to check whether it committed.</Text> : null}
+              {!isOnline ? <Text style={[styles.helper, { color: colors.textSecondary }]}>Connect to the internet before publishing a replacement.</Text> : null}
+              <View style={styles.overrideActions}>
+                <Pressable accessibilityRole="button" accessibilityLabel="Cancel editing bill shares" disabled={isApplyingOverride || hasPendingOverride}
+                  onPress={() => setIsEditingOverrides(false)} style={({ pressed }) => [styles.cancelButton, { borderColor: colors.border }, pressed && styles.pressed]}>
+                  <Text style={[styles.secondaryButtonText, { color: colors.textSecondary }]}>Cancel</Text>
+                </Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel={hasPendingOverride ? 'Retry publishing the same bill override' : 'Publish replacement bill shares'}
+                  accessibilityState={{ disabled: !overridePreview || !parsedOverrides.entries?.length || !isOnline || isApplyingOverride }}
+                  disabled={!overridePreview || !parsedOverrides.entries?.length || !isOnline || isApplyingOverride}
+                  onPress={hasPendingOverride ? onRetryOverride : requestOverride}
+                  style={({ pressed }) => [styles.publishButton, pressed && styles.pressed,
+                    (!overridePreview || !parsedOverrides.entries?.length || !isOnline || isApplyingOverride) && styles.disabled]}>
+                  {isApplyingOverride ? <ActivityIndicator color={colors.onPrimary} /> : null}
+                  <Text style={[styles.publishText, { color: colors.onPrimary }]}>{isApplyingOverride ? 'Publishing…' : hasPendingOverride ? 'Retry publish' : 'Publish replacement'}</Text>
+                </Pressable>
+              </View>
+              {overridePreview ? <Text style={[styles.previewTotal, { color: colors.textSecondary }]}>Preview total · {formatVND(overridePreview.sumShareVnd)} VND</Text> : null}
+            </GlassCard>
           ) : null}
 
           {host && !confirmedBill && preview ? (
@@ -168,13 +328,25 @@ export function BillAllocationScreen({
       renderItem={({ item, index }) => {
         const member = membersByUid.get(item.uid);
         return (
-          <View style={[styles.shareRow, { borderBottomColor: colors.border }]}>
-            <View style={[styles.rowIndex, { backgroundColor: colors.backgroundElement }]}><Text style={[styles.rowIndexText, { color: colors.textSecondary }]}>{String(index + 1).padStart(2, '0')}</Text></View>
-            <View style={styles.memberInfo}>
-              <Text style={[styles.memberName, { color: colors.text }]} numberOfLines={2}>{shareLabel(member)}</Text>
+          <View>
+            <View style={[styles.shareRow, { borderBottomColor: colors.border }]}>
+              <View style={[styles.rowIndex, { backgroundColor: colors.backgroundElement }]}><Text style={[styles.rowIndexText, { color: colors.textSecondary }]}>{String(index + 1).padStart(2, '0')}</Text></View>
+              <View style={styles.memberInfo}>
+                <Text style={[styles.memberName, { color: colors.text }]} numberOfLines={2}>{shareLabel(member)}</Text>
+              </View>
+              <Text accessibilityLabel={`${shareLabel(member)} pays ${formatVND(item.shareVnd)} Vietnamese dong`}
+                style={[styles.shareAmount, { color: colors.text }]}>{formatVND(item.shareVnd)} VND</Text>
             </View>
-            <Text accessibilityLabel={`${shareLabel(member)} pays ${formatVND(item.shareVnd)} Vietnamese dong`}
-              style={[styles.shareAmount, { color: colors.text }]}>{formatVND(item.shareVnd)} VND</Text>
+            {canOverride && isEditingOverrides && member ? (
+              <OverrideMemberEditor member={member} currentShareVnd={item.shareVnd} draft={overrideDrafts[item.uid]}
+                colors={colors} disabled={isApplyingOverride || hasPendingOverride}
+                onDraftChange={value => setOverrideDrafts(current => {
+                  const next = { ...current };
+                  if (value) next[item.uid] = value;
+                  else delete next[item.uid];
+                  return next;
+                })} />
+            ) : null}
           </View>
         );
       }}
@@ -188,7 +360,7 @@ export function BillAllocationScreen({
               <Text style={[styles.publishedTitle, { color: colors.primary }]}>{state.kind === 'published' ? 'Published to this room' : 'Saved copy'}</Text>
               <Text style={[styles.helper, { color: colors.textSecondary }]}>
                 {state.kind === 'published'
-                  ? 'The Host calculated this breakdown on their device from the room’s finalized scores. Members can review it until payment details expire.'
+                  ? 'The Host calculated this breakdown on their device from the finalized scores. Members can review it until payment details expire.'
                   : 'These amounts were confirmed earlier. Reconnect or retry to check the current room bill.'}
               </Text>
             </GlassCard>
@@ -209,7 +381,7 @@ export function BillAllocationScreen({
                 {isPublishing ? <ActivityIndicator color={colors.onPrimary} /> : null}
                 <Text style={[styles.publishText, { color: colors.onPrimary }]}>{isPublishing ? 'Publishing…' : pendingTotalVnd == null ? 'Publish shares once' : 'Retry publish'}</Text>
               </Pressable>
-              <Text style={[styles.oneTimeNote, { color: colors.textSecondary }]}>Check the preview before publishing. Published shares cannot be changed in this slice.</Text>
+              <Text style={[styles.oneTimeNote, { color: colors.textSecondary }]}>Check the preview before publishing. The Host can adjust the split until the first payment is marked.</Text>
             </>
           ) : null}
           {host && !confirmedBill ? <Text style={[styles.authorityNote, { color: colors.textSecondary }]}>Rules authorize the Host and room state. They do not verify the calculation or prove that every member was included.</Text> : null}
@@ -236,6 +408,20 @@ const styles = StyleSheet.create({
   totalLabel: { color: Colors.light.textSecondary, fontSize: 13, fontWeight: '600' },
   totalValue: { color: Colors.light.text, fontSize: 24, lineHeight: 30, fontWeight: '800', fontVariant: ['tabular-nums'] },
   entryCard: { gap: 8, padding: 18, borderRadius: 20 },
+  lockCard: { gap: 6, padding: 16, borderRadius: 18, borderWidth: 1 },
+  overrideCard: { gap: 12, padding: 18, borderRadius: 20 },
+  overrideRow: { gap: 10, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },
+  overrideRowHeading: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  rowToggle: { minHeight: 48, minWidth: 92, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, borderWidth: 1, borderRadius: 12 },
+  rowToggleText: { fontSize: 13, fontWeight: '700' },
+  overrideInputs: { gap: 8, paddingBottom: 8 },
+  overrideTypes: { flexDirection: 'row', gap: 8 },
+  typeButton: { minWidth: 64, minHeight: 48, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, borderWidth: 1, borderRadius: 12 },
+  typeButtonText: { fontSize: 13, fontWeight: '800' },
+  overrideActions: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 },
+  secondaryButton: { minHeight: 50, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, borderWidth: 1, borderRadius: 14 },
+  secondaryButtonText: { fontSize: 15, fontWeight: '800' },
+  cancelButton: { minHeight: 50, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, borderWidth: 1, borderRadius: 14 },
   sectionTitle: { color: Colors.light.text, fontSize: 17, fontWeight: '800' },
   helper: { color: Colors.light.textSecondary, fontSize: 13, lineHeight: 19 },
   inputWrap: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14,
