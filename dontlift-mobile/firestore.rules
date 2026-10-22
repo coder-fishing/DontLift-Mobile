@@ -49,6 +49,18 @@ service cloud.firestore {
       return /databases/$(database)/documents/rooms/$(roomId)/billPreparations/current;
     }
 
+    function billOverridePath(roomId, requestId) {
+      return /databases/$(database)/documents/rooms/$(roomId)/billOverrides/$(requestId);
+    }
+
+    function billOverrideCommandPath(roomId, requestId) {
+      return /databases/$(database)/documents/rooms/$(roomId)/billOverrideCommands/$(requestId);
+    }
+
+    function billOverrideSharePath(roomId, requestId, uid) {
+      return /databases/$(database)/documents/rooms/$(roomId)/billOverrides/$(requestId)/shares/$(uid);
+    }
+
     function validBillPrepareRoom(roomId) {
       let before = resource.data;
       let after = request.resource.data;
@@ -80,7 +92,8 @@ service cloud.firestore {
         && getAfter(preparationPath).data.hostUid == request.auth.uid
         && getAfter(preparationPath).data.requestId == after.billRequestId
         && getAfter(preparationPath).data.totalBillVnd == after.totalBillVnd
-        && getAfter(preparationPath).data.shareCount == after.billShareCount;
+        && getAfter(preparationPath).data.shareCount == after.billShareCount
+        && getAfter(preparationPath).data.sumShareVnd == after.totalBillVnd;
     }
 
     function validBillPublishRoom(roomId) {
@@ -156,6 +169,8 @@ service cloud.firestore {
         && get(roomRef).data.hostId == request.auth.uid
         && get(roomRef).data.get('calculationVersion', null) == null
         && get(roomRef).data.get('billRequestId', null) == null
+        && get(roomRef).data.get('billRevision', 0) == 0
+        && get(roomRef).data.get('billPaidCount', 0) == 0
         && data.shareCount == get(roomRef).data.participantCount
         && exists(settlementDetailsPath(roomId))
         && get(settlementDetailsPath(roomId)).data.expiresAt is timestamp
@@ -163,7 +178,9 @@ service cloud.firestore {
         && existsAfter(roomRef)
         && getAfter(roomRef).data.billRequestId == data.requestId
         && getAfter(roomRef).data.totalBillVnd == data.totalBillVnd
-        && getAfter(roomRef).data.billShareCount == data.shareCount;
+        && getAfter(roomRef).data.billShareCount == data.shareCount
+        && getAfter(roomRef).data.get('billRevision', 0) == 0
+        && getAfter(roomRef).data.get('billPaidCount', 0) == 0;
     }
 
     function validBillPreparationPublish(roomId) {
@@ -240,6 +257,7 @@ service cloud.firestore {
       let room = get(roomPath(roomId)).data;
       return room.calculationVersion == 1
         && room.reconciliationStatus == 'FINALIZED'
+        && room.get('billOverrideRequestId', null) == null
         && room.billRequestId is string
         && exists(billCommandPath(roomId, room.billRequestId))
         && exists(settlementDetailsPath(roomId))
@@ -304,6 +322,204 @@ service cloud.firestore {
         && uid in get(preparationPath).data.shareUids
         && exists(settlementDetailsPath(roomId))
         && get(settlementDetailsPath(roomId)).data.expiresAt > request.time;
+    }
+
+    function billHost(roomId) {
+      let hostPath = hostMemberPath(roomId, request.auth.uid);
+      return signedIn()
+        && exists(hostPath)
+        && get(hostPath).data.role == 'HOST'
+        && get(hostPath).data.status == 'ACTIVE';
+    }
+
+    function billRoomReady(roomId) {
+      let room = get(roomPath(roomId)).data;
+      return room.status == 'COMPLETED'
+        && room.reconciliationStatus == 'FINALIZED'
+        && room.calculationVersion == 1
+        && room.hostId == request.auth.uid
+        && exists(settlementDetailsPath(roomId))
+        && get(settlementDetailsPath(roomId)).data.expiresAt is timestamp
+        && get(settlementDetailsPath(roomId)).data.expiresAt > request.time;
+    }
+
+    function validBillOverridePreparationCreate(roomId, requestId) {
+      let data = request.resource.data;
+      let room = get(roomPath(roomId)).data;
+      let manifestPath = billOverridePath(roomId, requestId);
+      return billHost(roomId)
+        && requestId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
+        && data.keys().hasAll([
+          'version', 'requestId', 'roomId', 'hostUid', 'expectedRevision', 'billRevision',
+          'totalBillVnd', 'calculationVersion', 'shareCount', 'shareUids', 'sumShareVnd',
+          'overrides', 'status', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'version', 'requestId', 'roomId', 'hostUid', 'expectedRevision', 'billRevision',
+          'totalBillVnd', 'calculationVersion', 'shareCount', 'shareUids', 'sumShareVnd',
+          'overrides', 'status', 'createdAt'
+        ])
+        && data.version == 1
+        && data.requestId == requestId
+        && data.roomId == roomId
+        && data.hostUid == request.auth.uid
+        && data.expectedRevision is int && data.expectedRevision >= 0
+        && data.billRevision == data.expectedRevision + 1
+        && data.totalBillVnd is int && data.totalBillVnd >= 1000
+        && data.calculationVersion == 1
+        && data.shareCount is int && data.shareCount > 0 && data.shareCount <= 498
+        && data.shareCount == room.participantCount
+        && data.shareUids is list && data.shareUids.size() == data.shareCount
+        && request.auth.uid in data.shareUids
+        && data.sumShareVnd == data.totalBillVnd
+        && data.overrides is list && data.overrides.size() > 0 && data.overrides.size() <= data.shareCount
+        && data.status == 'PREPARING'
+        && data.createdAt == request.time
+        && billRoomReady(roomId)
+        && room.calculationVersion == 1
+        && room.get('billRevision', 0) == data.expectedRevision
+        && room.get('billPaidCount', 0) == 0
+        && room.totalBillVnd == data.totalBillVnd
+        && room.billShareCount == data.shareCount
+        && !exists(billOverrideCommandPath(roomId, requestId))
+        && !exists(manifestPath);
+    }
+
+    function validBillOverrideShareCreate(roomId, requestId, uid) {
+      let data = request.resource.data;
+      let room = get(roomPath(roomId)).data;
+      let memberPath = hostMemberPath(roomId, uid);
+      let manifestPath = billOverridePath(roomId, requestId);
+      return billHost(roomId)
+        && uid == data.uid
+        && data.keys().hasAll(['uid', 'shareVnd', 'requestId', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'shareVnd', 'requestId', 'updatedAt'])
+        && data.shareVnd is int && data.shareVnd >= 0
+        && data.requestId == requestId
+        && data.updatedAt == request.time
+        && exists(memberPath)
+        && get(memberPath).data.status in ['ACTIVE', 'EARLY_EXIT']
+        && exists(manifestPath)
+        && get(manifestPath).data.status == 'PREPARING'
+        && get(manifestPath).data.hostUid == request.auth.uid
+        && get(manifestPath).data.requestId == requestId
+        && get(manifestPath).data.expectedRevision == room.get('billRevision', 0)
+        && uid in get(manifestPath).data.shareUids
+        && billRoomReady(roomId)
+        && room.get('billPaidCount', 0) == 0;
+    }
+
+    function validBillOverrideRoomPublish(roomId) {
+      let before = resource.data;
+      let after = request.resource.data;
+      let requestId = after.get('billOverrideRequestId', '');
+      let manifestPath = billOverridePath(roomId, requestId);
+      let receiptPath = billOverrideCommandPath(roomId, requestId);
+      return billHost(roomId)
+        && billRoomReady(roomId)
+        && before.status == 'COMPLETED'
+        && before.reconciliationStatus == 'FINALIZED'
+        && before.calculationVersion == 1
+        && before.hostId == request.auth.uid
+        && before.get('billPaidCount', 0) == 0
+        && before.get('billRevision', 0) is int
+        && after.diff(before).affectedKeys().hasOnly(['billOverrideRequestId', 'billRevision', 'billLastOverrideAt'])
+        && requestId is string
+        && after.billOverrideRequestId != before.get('billOverrideRequestId', null)
+        && after.billRevision == before.get('billRevision', 0) + 1
+        && after.billLastOverrideAt == request.time
+        && exists(manifestPath)
+        && get(manifestPath).data.status == 'PREPARING'
+        && get(manifestPath).data.hostUid == request.auth.uid
+        && get(manifestPath).data.expectedRevision == before.get('billRevision', 0)
+        && get(manifestPath).data.billRevision == after.billRevision
+        && existsAfter(manifestPath)
+        && getAfter(manifestPath).data.status == 'PUBLISHED'
+        && existsAfter(receiptPath)
+        && getAfter(receiptPath).data.requestId == requestId
+        && getAfter(receiptPath).data.hostUid == request.auth.uid
+        && getAfter(receiptPath).data.billRevision == after.billRevision
+        && getAfter(receiptPath).data.sumShareVnd == before.totalBillVnd;
+    }
+
+    function validBillOverrideManifestPublish(roomId, requestId) {
+      let before = resource.data;
+      let after = request.resource.data;
+      let roomRef = roomPath(roomId);
+      let receiptPath = billOverrideCommandPath(roomId, requestId);
+      return billHost(roomId)
+        && before.status == 'PREPARING'
+        && before.hostUid == request.auth.uid
+        && after.diff(before).affectedKeys().hasOnly(['status', 'publishedAt'])
+        && after.status == 'PUBLISHED'
+        && after.publishedAt == request.time
+        && existsAfter(roomRef)
+        && getAfter(roomRef).data.billOverrideRequestId == requestId
+        && getAfter(roomRef).data.billRevision == before.billRevision
+        && existsAfter(receiptPath)
+        && getAfter(receiptPath).data.shareUids == before.shareUids
+        && getAfter(receiptPath).data.overrides == before.overrides;
+    }
+
+    function validBillOverrideReceiptCreate(roomId, requestId) {
+      let data = request.resource.data;
+      let roomRef = roomPath(roomId);
+      let manifestPath = billOverridePath(roomId, requestId);
+      return billHost(roomId)
+        && requestId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
+        && data.keys().hasAll([
+          'version', 'requestId', 'roomId', 'hostUid', 'expectedRevision', 'billRevision',
+          'totalBillVnd', 'calculationVersion', 'shareCount', 'shareUids', 'sumShareVnd',
+          'overrides', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'version', 'requestId', 'roomId', 'hostUid', 'expectedRevision', 'billRevision',
+          'totalBillVnd', 'calculationVersion', 'shareCount', 'shareUids', 'sumShareVnd',
+          'overrides', 'createdAt'
+        ])
+        && data.version == 1
+        && data.requestId == requestId
+        && data.roomId == roomId
+        && data.hostUid == request.auth.uid
+        && data.expectedRevision is int
+        && data.billRevision == data.expectedRevision + 1
+        && data.totalBillVnd is int && data.totalBillVnd >= 1000
+        && data.calculationVersion == 1
+        && data.shareCount is int && data.shareCount > 0 && data.shareCount <= 498
+        && data.shareUids is list && data.shareUids.size() == data.shareCount
+        && request.auth.uid in data.shareUids
+        && data.sumShareVnd == data.totalBillVnd
+        && data.overrides is list && data.overrides.size() > 0 && data.overrides.size() <= data.shareCount
+        && data.createdAt == request.time
+        && existsAfter(roomRef)
+        && getAfter(roomRef).data.billOverrideRequestId == requestId
+        && getAfter(roomRef).data.billRevision == data.billRevision
+        && getAfter(roomRef).data.get('billPaidCount', 0) == 0
+        && existsAfter(manifestPath)
+        && getAfter(manifestPath).data.status == 'PUBLISHED'
+        && getAfter(manifestPath).data.hostUid == request.auth.uid
+        && getAfter(manifestPath).data.shareUids == data.shareUids
+        && getAfter(manifestPath).data.overrides == data.overrides;
+    }
+
+    function publishedBillOverrideReadable(roomId, requestId) {
+      let room = get(roomPath(roomId)).data;
+      return room.calculationVersion == 1
+        && room.reconciliationStatus == 'FINALIZED'
+        && room.billOverrideRequestId == requestId
+        && exists(billOverridePath(roomId, requestId))
+        && get(billOverridePath(roomId, requestId)).data.status == 'PUBLISHED'
+        && exists(billOverrideCommandPath(roomId, requestId))
+        && exists(settlementDetailsPath(roomId))
+        && get(settlementDetailsPath(roomId)).data.expiresAt is timestamp
+        && get(settlementDetailsPath(roomId)).data.expiresAt > request.time;
+    }
+
+    function hostCanReadBillOverride(roomId, requestId) {
+      let manifestPath = billOverridePath(roomId, requestId);
+      return billHost(roomId)
+        && exists(manifestPath)
+        && get(manifestPath).data.hostUid == request.auth.uid;
     }
 
     function validSettlementDetails(roomId) {
@@ -1220,6 +1436,7 @@ service cloud.firestore {
         || validHostScoreOverride(roomId)
         || validBillPublishRoom(roomId)
         || validBillPrepareRoom(roomId)
+        || validBillOverrideRoomPublish(roomId)
       );
       allow list, delete: if false;
 
@@ -1312,6 +1529,29 @@ service cloud.firestore {
           || hostCanReadBillPreparation(roomId);
         allow list: if roomParticipant(roomId, request.auth.uid) && publishedBillReadable(roomId);
         allow create: if validBillShareCreate(roomId, uid);
+        allow update, delete: if false;
+      }
+
+      match /billOverrides/{requestId} {
+        allow get: if billHost(roomId) && get(roomPath(roomId)).data.hostId == request.auth.uid;
+        allow list: if false;
+        allow create: if validBillOverridePreparationCreate(roomId, requestId);
+        allow update: if validBillOverrideManifestPublish(roomId, requestId);
+        allow delete: if false;
+
+        match /shares/{uid} {
+          allow get, list: if (roomParticipant(roomId, request.auth.uid)
+            && publishedBillOverrideReadable(roomId, requestId))
+            || hostCanReadBillOverride(roomId, requestId);
+          allow create: if validBillOverrideShareCreate(roomId, requestId, uid);
+          allow update, delete: if false;
+        }
+      }
+
+      match /billOverrideCommands/{requestId} {
+        allow get: if billHost(roomId) && get(roomPath(roomId)).data.hostId == request.auth.uid;
+        allow list: if false;
+        allow create: if validBillOverrideReceiptCreate(roomId, requestId);
         allow update, delete: if false;
       }
 

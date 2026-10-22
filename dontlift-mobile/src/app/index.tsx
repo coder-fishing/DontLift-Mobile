@@ -64,7 +64,8 @@ import { createTerminationVoteRepository, TerminationVoteError, type Termination
 import { createRoomCompletionRepository, RoomCompletionError } from '../features/rooms/room-completion-repository';
 import { createSettlementDetailsRepository, type SettlementDetails } from '../features/settlement/settlement-details-repository';
 import { createBankDirectoryRepository } from '../features/settlement/bank-directory';
-import { createBillRepository, BillRepositoryError, type CalculateBillCommand, type PublishedBill } from '../features/settlement/bill-repository';
+import { createBillRepository, BillRepositoryError, type ApplyBillOverridesCommand, type CalculateBillCommand, type PublishedBill } from '../features/settlement/bill-repository';
+import type { BillShareOverride } from '../features/settlement/bill-allocation';
 import { listenToPublishedBill, type PublishedBillState } from '../features/settlement/published-bill-listener';
 import { billPublicationKey, shouldOpenPublishedBillForMember } from '../features/settlement/published-bill-navigation';
 import { selectPublishedBillState } from '../features/settlement/published-bill-state';
@@ -1026,16 +1027,22 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const [committedBill, setCommittedBill] = useState<PublishedBill | null>(null);
   const [isPublishingBill, setIsPublishingBill] = useState(false);
   const [billPublishError, setBillPublishError] = useState<string>();
+  const [isApplyingBillOverride, setIsApplyingBillOverride] = useState(false);
+  const [billOverrideError, setBillOverrideError] = useState<string>();
   const pendingBillCommand = useRef<{ command: CalculateBillCommand; rosterMemberUids: string[] } | null>(null);
+  const pendingBillOverride = useRef<{ command: ApplyBillOverridesCommand; rosterMemberUids: string[] } | null>(null);
   const activeBillRoomId = useRef<string | null>(null);
   const autoOpenedBillPublications = useRef(new Set<string>());
 
   useEffect(() => {
     activeBillRoomId.current = groupSummarySnapshot?.roomId ?? null;
     pendingBillCommand.current = null;
+    pendingBillOverride.current = null;
     setCommittedBill(null);
     setBillPublishError(undefined);
+    setBillOverrideError(undefined);
     setIsPublishingBill(false);
+    setIsApplyingBillOverride(false);
   }, [groupSummarySnapshot?.roomId]);
 
   useEffect(() => {
@@ -1060,6 +1067,15 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   useEffect(() => {
     if (publishedBillState.kind === 'published') setCommittedBill(publishedBillState.bill);
     if (publishedBillState.kind === 'published') pendingBillCommand.current = null;
+    if (publishedBillState.kind === 'published' && pendingBillOverride.current?.command.requestId === publishedBillState.bill.requestId) {
+      pendingBillOverride.current = null;
+      setBillOverrideError(undefined);
+    }
+    if (publishedBillState.kind === 'published' && (publishedBillState.bill.billPaidCount ?? 0) > 0) {
+      // Khi payment đã thắng revision race, request override chưa commit sẽ không còn được Rules chấp nhận.
+      pendingBillOverride.current = null;
+      setIsApplyingBillOverride(false);
+    }
   }, [publishedBillState]);
 
   const billScreenState = selectPublishedBillState(publishedBillState, committedBill, groupSummarySnapshot?.roomId);
@@ -1365,6 +1381,44 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     if (!groupSummarySnapshot) return;
     // Listener lỗi đã dừng; retry phải gắn subscription mới để tiếp tục nhận publication realtime.
     setBillListenerRevision(revision => revision + 1);
+  };
+
+  const handleApplyBillOverrides = async (overrides?: BillShareOverride[], expectedRevision?: number) => {
+    const snapshot = groupSummarySnapshot;
+    const ownMember = snapshot?.members.find(member => member.uid === profile.uid);
+    if (!snapshot || snapshot.reconciliationStatus !== 'FINALIZED' || ownMember?.role !== 'HOST'
+      || ownMember.status !== 'ACTIVE' || isApplyingBillOverride || !groupIsOnline) return;
+    let pending = pendingBillOverride.current;
+    if (!pending) {
+      if (!overrides?.length || expectedRevision == null) return;
+      pending = {
+        command: { version: 1, requestId: Crypto.randomUUID(), roomId: snapshot.roomId, expectedRevision, overrides },
+        rosterMemberUids: snapshot.members
+          .filter(member => member.status === 'ACTIVE' || member.status === 'EARLY_EXIT')
+          .map(member => member.uid),
+      };
+      pendingBillOverride.current = pending;
+    } else if (pending.command.roomId !== snapshot.roomId
+      || (expectedRevision != null && pending.command.expectedRevision !== expectedRevision)) return;
+
+    setIsApplyingBillOverride(true);
+    setBillOverrideError(undefined);
+    try {
+      const result = await billRepository.applyOverrides(pending.command, pending.rosterMemberUids);
+      if (activeBillRoomId.current === pending.command.roomId) {
+        pendingBillOverride.current = null;
+        setCommittedBill(result);
+        setPublishedBillState({ kind: 'published', bill: result });
+      }
+    } catch (error) {
+      if (activeBillRoomId.current === pending.command.roomId) setBillOverrideError(billPublishErrorMessage(error));
+      if (activeBillRoomId.current === pending.command.roomId
+        && error instanceof BillRepositoryError && error.code !== 'unavailable') {
+        pendingBillOverride.current = null;
+      }
+    } finally {
+      if (activeBillRoomId.current === pending.command.roomId) setIsApplyingBillOverride(false);
+    }
   };
 
   const createSoloLifecycle = (soloSession: SoloSession, initialState: typeof AppState.currentState) =>
@@ -1849,10 +1903,15 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
               isOnline={groupIsOnline}
               isPublishing={isPublishingBill}
               pendingTotalVnd={pendingBillCommand.current?.command.totalBillVnd}
+              isApplyingOverride={isApplyingBillOverride}
+              hasPendingOverride={pendingBillOverride.current != null}
               publishError={billPublishError}
+              overrideError={billOverrideError}
               onPublish={amount => { void handlePublishBill(amount); }}
+              onApplyOverrides={(overrides, revision) => { void handleApplyBillOverrides(overrides, revision); }}
               onRetry={() => { void handleRetryPublishedBill(); }}
               onRetryPublish={() => { void handlePublishBill(); }}
+              onRetryOverride={() => { void handleApplyBillOverrides(); }}
               onBack={() => setCurrentScreen('13-group-summary')}
             />
           ) : <Text accessibilityRole="alert">Waiting for finalized room scores…</Text>

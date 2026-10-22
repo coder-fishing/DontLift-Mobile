@@ -34,7 +34,9 @@ export function listenToPublishedBill(
       return;
     }
     const room = snapshot.data();
-    const requestId = room.billRequestId;
+    const defaultRequestId = room.billRequestId;
+    const overrideRequestId = typeof room.billOverrideRequestId === 'string' ? room.billOverrideRequestId : null;
+    const requestId = overrideRequestId ?? defaultRequestId;
     const published = room.calculationVersion === 1 && typeof requestId === 'string'
       && Number.isSafeInteger(room.totalBillVnd) && Number.isSafeInteger(room.billShareCount);
     if (!published) {
@@ -51,8 +53,11 @@ export function listenToPublishedBill(
 
     unsubscribeShares?.();
     const generation = ++shareGeneration;
+    const sharesPath = overrideRequestId
+      ? collection(firestore, 'rooms', roomId, 'billOverrides', overrideRequestId, 'shares')
+      : collection(firestore, 'rooms', roomId, 'billShares');
     unsubscribeShares = onSnapshot(
-      collection(firestore, 'rooms', roomId, 'billShares'),
+      sharesPath,
       { includeMetadataChanges: true },
       sharesSnapshot => {
         if (!active || failed || generation !== shareGeneration) return;
@@ -75,6 +80,8 @@ export function listenToPublishedBill(
           calculationVersion: 1,
           shares: shares.sort((a, b) => a.uid.localeCompare(b.uid)),
           sumShareVnd,
+          billRevision: Number.isSafeInteger(room.billRevision) ? room.billRevision : 0,
+          overrideApplied: overrideRequestId !== null,
         };
         if (sumShareVnd !== bill.totalBillVnd) {
           if (sharesSnapshot.metadata.fromCache) onState({ kind: 'cached', bill: null });
