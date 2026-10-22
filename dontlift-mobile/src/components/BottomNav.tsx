@@ -26,6 +26,7 @@ export function BottomNav({ currentScreen, onNavigate }: BottomNavProps) {
     currentScreen === '08-vietqr-settlement' ||
     currentScreen === '14-settlement-details' ||
     currentScreen === '15-group-history';
+  const isAccount = currentScreen === '16-profile';
 
   return (
     <View
@@ -84,13 +85,13 @@ export function BottomNav({ currentScreen, onNavigate }: BottomNavProps) {
 
       <TouchableOpacity
         activeOpacity={0.7}
-        onPress={() => onNavigate('01-login')}
-        style={[styles.navTab, currentScreen === '01-login' && styles.navTabActive]}
+        onPress={() => onNavigate('16-profile')}
+        style={[styles.navTab, isAccount && styles.navTabActive]}
       >
-        <Text style={[styles.navIcon, currentScreen === '01-login' && styles.navIconActive]}>
+        <Text style={[styles.navIcon, isAccount && styles.navIconActive]}>
           👤
         </Text>
-        <Text style={[styles.navLabel, currentScreen === '01-login' && styles.navLabelActive]}>
+        <Text style={[styles.navLabel, isAccount && styles.navLabelActive]}>
           Account
         </Text>
       </TouchableOpacity>

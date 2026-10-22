@@ -28,6 +28,7 @@ import { SoloTimerScreen } from '../screens/SoloTimerScreen';
 import { SoloSummaryScreen } from '../screens/SoloSummaryScreen';
 import { HistoryScreen } from '../screens/HistoryScreen';
 import { GroupHistoryScreen } from '../screens/GroupHistoryScreen';
+import { ProfileScreen } from '../screens/ProfileScreen';
 import { createGroupHistoryRepository } from '../features/history/group-history-repository';
 import { createSoloHistoryRepository } from '../features/history/solo-history-repository';
 import { GroupLobbyScreen } from '../screens/GroupLobbyScreen';
@@ -66,6 +67,7 @@ import { createTerminationVoteRepository, TerminationVoteError, type Termination
 import { createRoomCompletionRepository, RoomCompletionError } from '../features/rooms/room-completion-repository';
 import { createSettlementDetailsRepository, type SettlementDetailsState } from '../features/settlement/settlement-details-repository';
 import { createBankDirectoryRepository } from '../features/settlement/bank-directory';
+import { createProfileRepository } from '../features/profile/profile-repository';
 import { createBillRepository, BillRepositoryError, type ApplyBillOverridesCommand, type CalculateBillCommand, type PublishedBill } from '../features/settlement/bill-repository';
 import type { BillShareOverride } from '../features/settlement/bill-allocation';
 import { createPaymentStatusRepository, PaymentStatusError, type MarkPaymentCommand } from '../features/settlement/payment-status-repository';
@@ -185,6 +187,14 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     [profile.uid],
   );
   const roomRuntime = useMemo(() => getConfiguredFirebaseRuntime(Platform.OS, __DEV__), [profile.uid]);
+  const profileRepository = useMemo(() => createProfileRepository({
+    firestore: roomRuntime.firestore,
+    auth: roomRuntime.auth,
+  }), [roomRuntime]);
+  const acceptCanonicalProfile = session.acceptCanonicalProfile;
+  const handleProfileUpdated = useCallback((canonical: RegistrationProfile) => {
+    acceptCanonicalProfile(canonical);
+  }, [acceptCanonicalProfile]);
   const groupHistoryRepository = useMemo(() => createGroupHistoryRepository({
     firestore: roomRuntime.firestore, auth: roomRuntime.auth,
   }), [roomRuntime]);
@@ -1992,7 +2002,11 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       {/* Main Body */}
       <View style={styles.mainBody}>
         {currentScreen === '01-login' && <LoginScreenBackground />}
-        {currentScreen === '15-group-history' ? (
+        {currentScreen === '16-profile' ? (
+          <ProfileScreen key={profile.uid} profile={profile} repository={profileRepository}
+            onProfileUpdated={handleProfileUpdated} onSignOut={session.signOut}
+            onBack={() => navigateToScreen('02-solo-select')} />
+        ) : currentScreen === '15-group-history' ? (
           <GroupHistoryScreen key={profile.uid} userId={profile.uid} serverPremium={profile.isPremium}
             repository={groupHistoryRepository} onBack={() => navigateToScreen('05-group-lobby')} />
         ) : currentScreen === '11-solo-history' ? (

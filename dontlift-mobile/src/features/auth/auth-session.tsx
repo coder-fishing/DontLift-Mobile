@@ -4,11 +4,13 @@ import { Platform } from 'react-native';
 import { createFirebaseAuthSessionController, getConfiguredFirebaseRuntime } from './firebase-adapters';
 import type { AuthSessionResult, AuthSessionState } from './auth-session-controller';
 import type { RegistrationUser } from './auth-controller';
+import type { RegistrationProfile } from './auth-controller';
 
 interface AuthSessionContextValue {
   state: AuthSessionState;
   signIn(email: string, password: string): Promise<AuthSessionResult>;
   refreshProfile(): Promise<AuthSessionResult>;
+  acceptCanonicalProfile(profile: RegistrationProfile): boolean;
   signOut(): Promise<{ kind: 'signed-out' } | { kind: 'failed'; message: string }>;
 }
 
@@ -57,6 +59,7 @@ export function AuthSessionProvider({ children }: React.PropsWithChildren) {
     refreshProfile: () => controller
       ? controller.refreshProfile()
       : Promise.resolve({ kind: 'failed', message: unavailableMessage }),
+    acceptCanonicalProfile: profile => controller?.acceptCanonicalProfile(profile) ?? false,
     signOut: () => controller
       ? controller.signOut()
       : Promise.resolve({ kind: 'failed', message: unavailableMessage }),

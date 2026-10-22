@@ -44,10 +44,10 @@ test('profile Rules enforce owner-only reads and server-owned writes', async (t)
     await assertFails(setDoc(doc(owner, 'users/attacker'), { isPremium: true }));
   });
 
-  await t.test('clients cannot read or write command receipts', async () => {
+  await t.test('owners can read command receipts but cannot forge them', async () => {
     const owner = environment.authenticatedContext(uid).firestore();
     const receipt = doc(owner, `${userPath}/commandReceipts/receipt-1`);
-    await assertFails(getDoc(receipt));
+    await assertSucceeds(getDoc(receipt));
     await assertFails(setDoc(receipt, { payloadHash: 'client' }));
   });
 });
@@ -72,6 +72,15 @@ test('profile creation enforces owner identity, defaults, bounds, field whitelis
   await assertFails(setDoc(doc(owner, 'users/someone-else'), valid()));
   await assertFails(setDoc(doc(environment.unauthenticatedContext().firestore(), 'users/anonymous'), valid()));
   await assertSucceeds(setDoc(reference, valid()));
+  await assertSucceeds(updateDoc(reference, { displayName: 'Updated Owner', updatedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(reference, { displayName: '😀'.repeat(40), updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(reference, { displayName: '😀'.repeat(41), updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(reference, { email: 'changed@example.invalid', displayName: 'Changed', updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(reference, { isPremium: true, displayName: 'Changed', updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(reference, { displayName: 'a'.repeat(41), updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(doc(environment.authenticatedContext('other-user').firestore(), 'users/' + uid), {
+    displayName: 'Cross user', updatedAt: serverTimestamp(),
+  }));
   await assertFails(updateDoc(reference, { isPremium: true }));
   await assertFails(updateDoc(reference, { email: 'changed@example.invalid' }));
   await assertFails(updateDoc(reference, { displayName: 'Changed' }));

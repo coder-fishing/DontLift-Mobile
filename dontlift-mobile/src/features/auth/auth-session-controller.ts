@@ -179,6 +179,13 @@ export function createAuthSessionController(
       }
       return loadServerProfile(user, ++operation);
     },
+    acceptCanonicalProfile(profile: RegistrationProfile): boolean {
+      if (!isProfileForUser(profile, profile.uid) || auth.getCurrentUser()?.uid !== profile.uid) return false;
+      // Hủy kết quả restore cũ để tên Firestore vừa xác nhận không bị profile bootstrap ghi đè.
+      operation += 1;
+      publish({ kind: 'authenticated', profile, source: 'server' });
+      return true;
+    },
     async signOut(): Promise<{ kind: 'signed-out' } | { kind: 'failed'; message: string }> {
       const expectedOperation = ++operation;
       try {
