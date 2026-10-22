@@ -89,15 +89,57 @@ export function createBillRepository(dependencies: Dependencies) {
       const roomRef = doc(dependencies.firestore, 'rooms', command.roomId);
       const hostRef = doc(dependencies.firestore, 'rooms', command.roomId, 'members', actor.uid);
       const detailRef = doc(dependencies.firestore, 'rooms', command.roomId, 'settlementDetails', 'current');
-      const receiptRef = doc(dependencies.firestore, 'rooms', command.roomId, 'billCommands', command.requestId);
+      const receiptRef = (requestId: string) => doc(dependencies.firestore, 'rooms', command.roomId, 'billCommands', requestId);
+      const preparationRef = doc(dependencies.firestore, 'rooms', command.roomId, 'billPreparations', 'current');
       const memberRef = (uid: string) => doc(dependencies.firestore, 'rooms', command.roomId, 'members', uid);
       const shareRef = (uid: string) => doc(dependencies.firestore, 'rooms', command.roomId, 'billShares', uid);
 
+      const readCommittedBill = async (requestId: string, expectedTotal: number): Promise<PublishedBill> => {
+        const receipt = await getDocFromServer(receiptRef(requestId));
+        if (!receipt.exists()) throw new BillRepositoryError('failed-precondition');
+        const saved = receipt.data();
+        if (saved.requestId !== requestId || saved.hostUid !== actor.uid || saved.roomId !== command.roomId
+          || saved.totalBillVnd !== expectedTotal || saved.calculationVersion !== 1
+          || !Array.isArray(saved.shareUids) || saved.shareUids.length !== saved.shareCount
+          || new Set(saved.shareUids).size !== saved.shareCount
+          || saved.shareUids.some((uid: unknown) => typeof uid !== 'string')) {
+          throw new BillRepositoryError('failed-precondition');
+        }
+        const snapshot = await getDocsFromServer(collection(dependencies.firestore, 'rooms', command.roomId, 'billShares'));
+        if (snapshot.size !== saved.shareCount
+          || snapshot.docs.some(item => item.data().requestId !== requestId || item.data().uid !== item.id)
+          || snapshot.docs.some(item => !saved.shareUids.includes(item.id))
+          || saved.shareUids.some((uid: string) => !snapshot.docs.some(item => item.id === uid))) {
+          throw new BillRepositoryError('failed-precondition');
+        }
+        const savedShares = parseShares(snapshot.docs.map(item => item.data()));
+        if (savedShares.length !== saved.shareCount) throw new BillRepositoryError('failed-precondition');
+        return makeResult(command.roomId, requestId, expectedTotal, savedShares);
+      };
+
       try {
-        return await runTransaction(dependencies.firestore, async transaction => {
-          // Firestore yêu cầu đọc toàn bộ snapshot và receipt trước khi ghi bất kỳ share nào.
-          const [roomSnapshot, hostSnapshot, detailSnapshot, receiptSnapshot] = await Promise.all([
-            transaction.get(roomRef), transaction.get(hostRef), transaction.get(detailRef), transaction.get(receiptRef),
+        // Bỏ qua lần đọc roster khi replay đã publish để tiết kiệm read quota của Spark.
+        const frozenMembers: BillAllocationMember[] = [];
+        const currentRoom = await getDocFromServer(roomRef);
+        if (!currentRoom.exists()) throw new BillRepositoryError('not-found');
+        if (currentRoom.data().calculationVersion !== 1) {
+          // Room FINALIZED khóa điểm; đọc riêng từng member tránh transaction Rules access-call budget khi roster lớn.
+          for (let offset = 0; offset < rosterMemberUids.length; offset += 8) {
+            const uidBatch = rosterMemberUids.slice(offset, offset + 8);
+            const memberSnapshots = await Promise.all(uidBatch.map(uid => getDocFromServer(memberRef(uid))));
+            for (let index = 0; index < memberSnapshots.length; index += 1) {
+              const member = memberSnapshots[index];
+              if (!member.exists() || !['ACTIVE', 'EARLY_EXIT'].includes(member.data().status)) {
+                throw new BillRepositoryError('failed-precondition');
+              }
+              frozenMembers.push({ uid: uidBatch[index], penaltyScore: member.data().penaltyScore });
+            }
+          }
+        }
+
+        const prepared = await runTransaction(dependencies.firestore, async transaction => {
+          const [roomSnapshot, hostSnapshot, detailSnapshot, preparationSnapshot] = await Promise.all([
+            transaction.get(roomRef), transaction.get(hostRef), transaction.get(detailRef), transaction.get(preparationRef),
           ]);
           if (!roomSnapshot.exists()) throw new BillRepositoryError('not-found');
           if (!hostSnapshot.exists() || roomSnapshot.data().hostId !== actor.uid
@@ -106,26 +148,11 @@ export function createBillRepository(dependencies: Dependencies) {
           }
 
           const room = roomSnapshot.data();
-          if (receiptSnapshot.exists()) {
-            const receipt = receiptSnapshot.data();
-            if (receipt.requestId !== command.requestId || receipt.hostUid !== actor.uid
-              || receipt.totalBillVnd !== command.totalBillVnd || receipt.calculationVersion !== 1) {
+          if (room.calculationVersion === 1) {
+            if (room.billRequestId !== command.requestId || room.totalBillVnd !== command.totalBillVnd) {
               throw new BillRepositoryError('already-exists');
             }
-            if (room.calculationVersion !== 1 || room.billRequestId !== command.requestId
-              || room.totalBillVnd !== command.totalBillVnd) {
-              throw new BillRepositoryError('failed-precondition');
-            }
-            if (!Array.isArray(receipt.shareUids) || receipt.shareUids.length !== receipt.shareCount
-              || receipt.shareUids.some((uid: unknown) => typeof uid !== 'string')) {
-              throw new BillRepositoryError('failed-precondition');
-            }
-            const savedShareSnapshots = await Promise.all(receipt.shareUids.map((uid: string) => transaction.get(shareRef(uid))));
-            const savedShares = parseShares(savedShareSnapshots.map(snapshot => snapshot.data() ?? {}));
-            if (savedShares.length !== receipt.shareCount || savedShares.some((share, index) => !savedShareSnapshots[index].exists())) {
-              throw new BillRepositoryError('failed-precondition');
-            }
-            return makeResult(command.roomId, command.requestId, command.totalBillVnd, savedShares);
+            return { kind: 'published' as const, requestId: command.requestId };
           }
 
           if (room.status !== 'COMPLETED' || room.reconciliationStatus !== 'FINALIZED'
@@ -133,40 +160,46 @@ export function createBillRepository(dependencies: Dependencies) {
             || !(detailSnapshot.data().expiresAt instanceof Timestamp)) {
             throw new BillRepositoryError('failed-precondition');
           }
-          if (room.calculationVersion != null || room.billRequestId != null) {
-            throw new BillRepositoryError('failed-precondition');
-          }
           if (!Number.isSafeInteger(room.participantCount) || rosterMemberUids.length !== room.participantCount) {
             throw new BillRepositoryError('failed-precondition');
           }
 
-          const memberSnapshots = await Promise.all(rosterMemberUids.map(uid => transaction.get(memberRef(uid))));
-          const members: BillAllocationMember[] = memberSnapshots.map((member, index) => {
-            if (!member.exists() || !['ACTIVE', 'EARLY_EXIT'].includes(member.data().status)) {
-              throw new BillRepositoryError('failed-precondition');
-            }
-            return { uid: rosterMemberUids[index], penaltyScore: member.data().penaltyScore };
-          });
+          const members = frozenMembers;
           if (!members.some(member => member.uid === actor.uid)) throw new BillRepositoryError('permission-denied');
           const allocation = calculateDefaultBillShares(command.totalBillVnd, members);
           const result = makeResult(command.roomId, command.requestId, command.totalBillVnd, allocation.shares);
-
-          for (const share of result.shares) {
-            transaction.set(shareRef(share.uid), {
-              uid: share.uid,
-              shareVnd: share.shareVnd,
-              requestId: command.requestId,
-              updatedAt: serverTimestamp(),
-            });
+          const sortedUids = result.shares.map(share => share.uid).sort((a, b) => a.localeCompare(b));
+          const expectedUids = [...rosterMemberUids].sort((a, b) => a.localeCompare(b));
+          if (sortedUids.length !== expectedUids.length || sortedUids.some((uid, index) => uid !== expectedUids[index])) {
+            throw new BillRepositoryError('failed-precondition');
           }
+
+          if (preparationSnapshot.exists()) {
+            const preparation = preparationSnapshot.data();
+            if (preparation.status !== 'PREPARING' || preparation.hostUid !== actor.uid
+              || preparation.requestId !== room.billRequestId || preparation.totalBillVnd !== command.totalBillVnd
+              || preparation.roomId !== command.roomId || preparation.shareCount !== result.shares.length
+              || preparation.sumShareVnd !== result.sumShareVnd || !Array.isArray(preparation.shareUids)
+              || preparation.shareUids.length !== sortedUids.length
+              || preparation.shareUids.some((uid: unknown, index: number) => uid !== sortedUids[index])) {
+              throw new BillRepositoryError('failed-precondition');
+            }
+            return {
+              kind: 'preparing' as const,
+              requestId: preparation.requestId,
+              result: makeResult(command.roomId, preparation.requestId, command.totalBillVnd, allocation.shares),
+            };
+          }
+
+          if (room.calculationVersion != null || room.billRequestId != null || room.totalBillVnd != null
+            || room.billShareCount != null) throw new BillRepositoryError('failed-precondition');
           transaction.update(roomRef, {
             totalBillVnd: command.totalBillVnd,
-            calculationVersion: 1,
             billRequestId: command.requestId,
-            billPublishedAt: serverTimestamp(),
             billShareCount: result.shares.length,
+            billPreparationStartedAt: serverTimestamp(),
           });
-          transaction.set(receiptRef, {
+          transaction.set(preparationRef, {
             version: 1,
             requestId: command.requestId,
             roomId: command.roomId,
@@ -174,12 +207,109 @@ export function createBillRepository(dependencies: Dependencies) {
             totalBillVnd: command.totalBillVnd,
             calculationVersion: 1,
             shareCount: result.shares.length,
-            shareUids: result.shares.map(share => share.uid),
+            shareUids: sortedUids,
             sumShareVnd: result.sumShareVnd,
+            status: 'PREPARING',
             createdAt: serverTimestamp(),
           });
-          return result;
+          return { kind: 'preparing' as const, requestId: command.requestId, result };
         });
+
+        if (prepared.kind === 'published') return readCommittedBill(prepared.requestId, command.totalBillVnd);
+        const requestId = prepared.requestId;
+
+        for (let offset = 0; offset < prepared.result.shares.length; offset += 8) {
+          const chunk = prepared.result.shares.slice(offset, offset + 8);
+          await runTransaction(dependencies.firestore, async transaction => {
+            const [roomSnapshot, hostSnapshot, detailSnapshot, preparationSnapshot, savedSnapshots] = await Promise.all([
+              transaction.get(roomRef),
+              transaction.get(hostRef),
+              transaction.get(detailRef),
+              transaction.get(preparationRef),
+              Promise.all(chunk.map(share => transaction.get(shareRef(share.uid)))),
+            ]);
+            if (!roomSnapshot.exists() || !preparationSnapshot.exists() || !hostSnapshot.exists()
+              || !detailSnapshot.exists()) throw new BillRepositoryError('failed-precondition');
+            const room = roomSnapshot.data();
+            const preparation = preparationSnapshot.data();
+            if (room.status !== 'COMPLETED' || room.reconciliationStatus !== 'FINALIZED'
+              || room.hostId !== actor.uid || room.billRequestId !== requestId
+              || room.calculationVersion != null || preparation.status !== 'PREPARING'
+              || preparation.requestId !== requestId || preparation.hostUid !== actor.uid
+              || hostSnapshot.data().role !== 'HOST' || hostSnapshot.data().status !== 'ACTIVE'
+              || !(detailSnapshot.data().expiresAt instanceof Timestamp)) {
+              throw new BillRepositoryError('failed-precondition');
+            }
+            for (let index = 0; index < chunk.length; index += 1) {
+              const share = chunk[index];
+              const savedShare = savedSnapshots[index];
+              if (savedShare.exists()) {
+                const saved = savedShare.data();
+                if (saved.uid !== share.uid || saved.shareVnd !== share.shareVnd || saved.requestId !== requestId) {
+                  throw new BillRepositoryError('failed-precondition');
+                }
+              } else {
+                transaction.set(shareRef(share.uid), {
+                  uid: share.uid,
+                  shareVnd: share.shareVnd,
+                  requestId,
+                  updatedAt: serverTimestamp(),
+                });
+              }
+            }
+          });
+        }
+
+        const finalized = await runTransaction(dependencies.firestore, async transaction => {
+          const [roomSnapshot, hostSnapshot, detailSnapshot, preparationSnapshot, receiptSnapshot] = await Promise.all([
+            transaction.get(roomRef), transaction.get(hostRef), transaction.get(detailRef),
+              transaction.get(preparationRef), transaction.get(receiptRef(requestId)),
+          ]);
+          if (!roomSnapshot.exists() || !hostSnapshot.exists() || !detailSnapshot.exists()
+            || !preparationSnapshot.exists()) throw new BillRepositoryError('failed-precondition');
+          const room = roomSnapshot.data();
+          const preparation = preparationSnapshot.data();
+          if (room.calculationVersion === 1) {
+            if (room.billRequestId !== requestId || receiptSnapshot.id !== requestId) {
+              throw new BillRepositoryError('already-exists');
+            }
+            return { kind: 'published' as const, requestId };
+          }
+          if (room.status !== 'COMPLETED' || room.reconciliationStatus !== 'FINALIZED'
+            || room.hostId !== actor.uid || room.billRequestId !== requestId
+            || room.totalBillVnd !== command.totalBillVnd || room.billShareCount !== prepared.result.shares.length
+            || room.calculationVersion != null || preparation.status !== 'PREPARING'
+            || preparation.requestId !== requestId || preparation.hostUid !== actor.uid
+            || hostSnapshot.data().role !== 'HOST' || hostSnapshot.data().status !== 'ACTIVE'
+            || !(detailSnapshot.data().expiresAt instanceof Timestamp)) {
+            throw new BillRepositoryError('failed-precondition');
+          }
+          if (receiptSnapshot.exists()) throw new BillRepositoryError('already-exists');
+          transaction.update(roomRef, {
+            calculationVersion: 1,
+            billPublishedAt: serverTimestamp(),
+          });
+          transaction.update(preparationRef, {
+            status: 'PUBLISHED',
+            publishedAt: serverTimestamp(),
+          });
+          transaction.set(receiptRef(requestId), {
+            version: 1,
+            requestId,
+            roomId: command.roomId,
+            hostUid: actor.uid,
+            totalBillVnd: command.totalBillVnd,
+            calculationVersion: 1,
+            shareCount: prepared.result.shares.length,
+            shareUids: prepared.result.shares.map(share => share.uid).sort((a, b) => a.localeCompare(b)),
+            sumShareVnd: prepared.result.sumShareVnd,
+            createdAt: serverTimestamp(),
+          });
+          return { kind: 'result' as const, result: prepared.result };
+        });
+        return finalized.kind === 'published'
+          ? readCommittedBill(finalized.requestId, command.totalBillVnd)
+          : finalized.result;
       } catch (error) { throw mapError(error); }
     },
 

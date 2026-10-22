@@ -13,7 +13,7 @@ SL-024 still needs a canonical breakdown stored in Firestore so room Members can
 ## Decision
 
 - For SL-024, the authenticated Host client computes default shares from the finalized Firestore score snapshot using the integer algorithm and deterministic rounding in ADR-005 and the Feature Specification.
-- The Host submits the bill total, the complete calculated breakdown, and the room calculation metadata in one online Firestore transaction. A successful transaction is the publication boundary; no optimistic or locally cached preview is represented as published.
+- The Host records a preparation manifest and locks the room, stages recipient shares in sequential transactions of at most eight, then atomically publishes the room metadata, manifest status, and immutable receipt. Staged shares are Host-readable for recovery but remain hidden from Members until the final transaction succeeds; that transaction is the publication boundary. No optimistic or locally cached preview is represented as published.
 - Firestore Rules authorize writes only by the room Host while the room is `COMPLETED/FINALIZED` and settlement details exist. Rules validate ownership, lifecycle and data shape, and deny client writes by other members and outsiders. They do not prove the Host used the correct score snapshot, included every member, or calculated the shares correctly.
 - The Host-submitted breakdown is the canonical published result for this Spark deployment. A modified or faulty Host client can publish an incorrect or incomplete result. Eliminating that trust requires a trusted backend and is outside this decision.
 - Room Members in the same room may read the published breakdown. Outsiders and cross-room members may not read it. Members cannot write, recalculate, or publish shares.
@@ -29,7 +29,7 @@ SL-024 still needs a canonical breakdown stored in Firestore so room Members can
 ### Positive
 
 - SL-024 can publish and read room bill breakdowns while the Firebase project stays on Spark.
-- The app uses the same deterministic integer allocation algorithm and atomically publishes the full result.
+- The app uses the same deterministic integer allocation algorithm and publishes the full result through bounded writes with one atomic visibility boundary.
 - Host-only writes and member-scoped reads remain enforced by Rules.
 
 ### Negative

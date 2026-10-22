@@ -47,10 +47,10 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 | File dự kiến | Trách nhiệm |
 |---|---|
-| `firestore.rules` | Membership-scoped read cho `rooms/{roomId}/billShares/{uid}`; chỉ Host được ghi một lần khi room FINALIZED và settlement details tồn tại; Rules không xác minh phép tính hoặc roster completeness. |
+| `firestore.rules` | Membership-scoped read cho `rooms/{roomId}/billShares/{uid}` sau publication; Host chuẩn bị manifest, ghi tối đa 8 shares mỗi transaction và mở đọc trong transaction cuối. Rules không xác minh phép tính hoặc roster completeness. |
 | `functions/tests/bill-shares-rules.emulator.test.cjs` | Client-SDK Emulator Suite tests cho member breakdown reads, outsider/cross-room denial và direct share/payment write denial. SL-025–027 reuse suite/policy. |
 | `src/features/settlement/bill-allocation.ts` | Pure integer allocation, deterministic rounding và exact-sum residual distribution. |
-| `src/features/settlement/bill-repository.ts` | Host-authenticated online transaction, finalized member-score reads, atomic publication và receipt replay. |
+| `src/features/settlement/bill-repository.ts` | Host-authenticated resumable publish: manifest, bounded share staging, atomic visibility boundary và receipt replay. |
 | `src/features/settlement/published-bill-navigation.ts` | Điều kiện chuyển Member tới breakdown khi nhận bill state live. |
 | `src/features/settlement/published-bill-state.ts` | Giữ breakdown đã xác nhận của đúng room cùng trạng thái loading/cache/error hiện tại. |
 | `src/screens/BillAllocationScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
@@ -58,7 +58,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | `src/screens/GroupSummaryScreen.tsx` | Giữ Member ở summary khi chưa có bill; chuyển sang breakdown khi nhận shares đã công bố. |
 | `src/app/index.tsx` | Nối trạng thái room/member với luồng Member từ Group Summary tới Bill Allocation. |
 | `src/features/settlement/bill-allocation.ts` | Pure integer calculation for default shares; deterministic residual algorithm and pre-rounding base semantics. |
-| `src/features/settlement/bill-repository.ts` | Host-authenticated online transaction, finalized snapshot read, atomic share publication, and receipt replay. |
+| `src/features/settlement/bill-repository.ts` | Host-authenticated resumable publication, finalized snapshot read, bounded share staging, and receipt replay. |
 | `__tests__/default-bill.test.ts` | Kiểm thử allocation và exact-sum invariants. |
 | `__tests__/published-bill-navigation.test.ts` | Kiểm chứng Member chờ tại Group Summary, tự chuyển khi Host publish, và chỉ thấy breakdown read-only. |
 | `__tests__/published-bill-state.test.ts`, `__tests__/published-bill-listener.test.ts`, `__tests__/bill-allocation-screen.test.tsx` | Hồi quy trạng thái cache/lỗi, callback cũ, retry listener và hiển thị saved breakdown cho Host/Member. |
@@ -105,6 +105,10 @@ Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema
 - [ ] Members cùng room được đọc share breakdown/status theo đúng query/listener; anonymous, outsider và cross-room members bị deny bằng client SDK.
 - [ ] Deny member/outsider create/update/delete shares, calculation metadata and payment status. Allow only the authenticated Host transaction for a FINALIZED room with settlement details; explicitly document that Rules do not verify the complete calculation or roster.
 - [ ] Kiểm chứng query thực tế cho whole-room breakdown không vượt room membership; giữ `billShares/{uid}` làm path từ Feature Spec.
+
+### SL-024 large-roster publication follow-up (2026-10-22)
+
+The original single-transaction write approach is superseded by [ADR-021](../../decisions/ADR-021-spark-default-bill.md) and the chunked publication plan. Each share remains individually authorized against its target membership. The Host locks a preparation manifest, stages no more than eight shares per transaction, and reveals the full breakdown only when the room, manifest, and immutable receipt are committed together. Retries resume the saved request and staged data; Members cannot read partial results. This stays on Spark and uses no Cloud Functions or billing.
 - [ ] Chạy lại root room/member Rules regression; SL-025–027 tái dùng policy/tests, không tạo quyền song song; SL-037 re-test canonical policy.
 
 ### Task 1 — Boundary và quy tắc của Nhập bill và tính shares mặc định
