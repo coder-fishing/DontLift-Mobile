@@ -144,8 +144,10 @@ DontLift is designed to solve phone distraction in focus and social contexts thr
 
 ### 6.3 VietQR Generation & Memo Format
 - Member taps "Pay Share". App displays scannable NAPAS-compliant VietQR image string:  
-  `https://img.vietqr.io/image/<BANK_ID>-<ACCOUNT_NO>-compact2.png?amount=<SHARE_VND>&addInfo=DL%20<ROOM_PIN>%20<MEMBER_NAME>`
-- **Structured Memo:** `DL [RoomCode] [MemberName]` (e.g. `DL 8821 MINH`).
+  `https://img.vietqr.io/image/<BANK_BIN>-<ACCOUNT_NO>-qr_only.svg?amount=<SHARE_VND>&addInfo=<ENCODED_MEMO>&accountName=<ENCODED_ACCOUNT_NAME>`
+- **Structured Memo:** `DL [RoomCode] [MemberName]` (e.g. `DL 12345678 MINH`).
+- SL-026 uses the current eight-digit room PIN. Normalize Vietnamese accents and Đ to ASCII, uppercase, remove special characters, collapse spaces, and cap the complete memo at 50 characters by shortening only the name. Show the exact submitted memo. Zero share means no transfer/QR; unavailable or expired details and unconfirmed bill versions never display a payment QR.
+- Use a white square QR surface inside the accepted Liquid Acrylic layout. Show amount, Host-provided account holder, account number, bank BIN, and selectable memo; 48dp actions return to breakdown or retry a failed image. Render SVG with `expo-image`, retain its quiet zone, and replace the image when publication or recipient changes. Actual Android/iOS bank scanning remains an acceptance check.
 - Non-custodial operation: DontLift never holds, transfers, or escrows funds.
 
 ### 6.4 Payment Status Tracking

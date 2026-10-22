@@ -134,8 +134,9 @@
 4. **Breakdown Display (`US-14`):** Real-time snapshot updates members' UI with exact individual share, violation count, and penalty breakdown. Final shares always sum exactly to the entered total.
 5. **VietQR Code Generation (`US-15`):**  
    - Member taps "Pay Share".  
-   - Client generates NAPAS/VietQR compliant payload string:  
-     `https://img.vietqr.io/image/<BANK_ID>-<ACCOUNT_NO>-compact2.png?amount=<SHARE_VND>&addInfo=DL%20<ROOM_PIN>%20<MEMBER_NAME>`  
+   - Client builds the VietQR Quick Link image request from the current server-confirmed bill version and authorized Host payment details:
+     `https://img.vietqr.io/image/<BANK_BIN>-<ACCOUNT_NO>-qr_only.svg?amount=<SHARE_VND>&addInfo=<ENCODED_MEMO>&accountName=<ENCODED_ACCOUNT_NAME>`
+   - Follow API §6.5 for provider limits, memo normalization, expiry, zero-share handling, and invalidation on bill/account updates. Account name is Host-provided display text, not a verified bank-account lookup. No new Firestore write or paid backend is needed.
    - Member scans QR using banking app to complete payment.
 6. **Payment Status Tracking (`US-15`):** Payment state defaults to `UNPAID`. Host manually toggles member state to `MARKED_AS_PAID` upon receiving bank notification. DontLift does NOT execute custodial transfers or bank API polling.
 

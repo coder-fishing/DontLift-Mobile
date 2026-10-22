@@ -300,6 +300,18 @@ The authenticated Host client runs the online, in-session retryable command unde
 
 **Transaction outputs:** perform the one-way payment-status transition and store command receipt. SL-027 must also increment `rooms/{roomId}.billPaidCount` in the same Rules-authorized transaction. This room-level counter is the lock authority for SL-025 and must serialize with a bill revision switch; missing counter on legacy rooms is zero. No bank API or automatic verification is called.
 
+### 6.5 VietQR Quick Link — read-only client integration (SL-026)
+
+**Provider:** `https://img.vietqr.io/image/{bankBin}-{accountNumber}-qr_only.svg?amount={shareVnd}&addInfo={encodedMemo}&accountName={encodedAccountName}`. Use the existing `expo-image` SVG renderer; no API key, Functions, billing, or payment write is added. Provider documentation: [Quick Link](https://www.vietqr.io/qr-dong), [October 2026 SVG transition](https://www.vietqr.io/thong-bao-cap-nhat), checked 2026-10-22. External service availability is not guaranteed by Firebase Spark.
+
+**Inputs:** authenticated user's ACTIVE/EARLY_EXIT membership in this finalized room, its eight-digit PIN, display name, current `published` bill revision, and server-confirmed `settlementDetails/current`. Cached/pending-write/error/unpublished states are insufficient. A room/account/publication change immediately invalidates the displayed QR. Read bank-detail changes in realtime with existing membership/expiry Rules; refresh reconnects failed subscriptions. Do not persist bank details or QR URLs locally or log them.
+
+**Validation:** share must belong to the current user, be a nonnegative safe integer, and come from a unique-UID vector whose exact sum matches the integer room bill. Zero share returns a no-transfer state without a provider request. Positive amounts are at most 13 digits. Require a six-digit bank BIN and 1–19 ASCII letters/digits in the account number; legacy manually entered bank IDs remain stored but require Host correction before QR generation. Details for another room, expired details, missing payee/name, and unsupported names return unavailable rather than mock values.
+
+**Memo:** `DL {roomPin} {memberName}`. Strip Vietnamese combining accents, map Đ/đ to D, uppercase, replace non-ASCII alphanumeric characters with spaces, collapse whitespace, and trim. Limit the full memo to 50 ASCII characters by shortening only the name. An empty normalized name returns unavailable. Percent-encode memo and account name separately; preserve leading zeros in the account number. Account name affects provider display only and is not proof of the recipient's identity.
+
+**Presentation:** loading, provider timeout/error with manual retry, expired/unavailable, offline, and zero-share states. Hide the QR when leaving foreground or when either input ceases to be current. The device expiry check is a display safeguard; Firestore Rules still authorize data reads. Selected text supports native copying; no simulated clipboard or payment confirmation. Bank-app scan validation on five actual apps is still required before claiming compatibility. SL-027 alone owns manual paid status.
+
 ## 8. Activation callable
 
 ### 7.1 `redeemActivationCode`
