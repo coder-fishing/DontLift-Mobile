@@ -8,8 +8,8 @@
 
 **Slice:** SL-029. **Ưu tiên đề xuất:** P1. **Release:** MVP + activation/Premium; post-MVP deferred. SL-036 chỉ được tính release sau D6.
 
-**Trạng thái kế hoạch:** DRAFT — chưa được human duyệt.
-**Trạng thái implementation quan sát:** Chưa có profile screen/name update. Chưa có evidence nghiệm thu slice.
+**Trạng thái kế hoạch:** APPROVED — human duyệt phạm vi và online-only save ngày 2026-10-23.
+**Trạng thái implementation quan sát (2026-10-23):** Đã thêm repository/UI/navigation và Rules allowlist; unit, typecheck và profile Rules Emulator tests đã chạy qua. Cần kiểm tra trực tiếp trên Expo Go để nghiệm thu UI và thao tác online/offline.
 **Baseline khảo sát:** docs/p6.0-implementation-slices tại 57ca1eb28a2952c66d01f89b9b89bf755ab4812a.
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Plan slug:** `2026-10-13-sl-029-profile-edit`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-029-profile-edit]`.
@@ -34,6 +34,8 @@ V01–V10 chỉ các màn tương ứng tại `design/concepts/concept-final/scr
 
 - Không có blocker riêng được xác nhận trong draft; dependency và quyền/runtime vẫn phải đạt gate trước thực thi.
 
+**Quyết định đã duyệt (2026-10-23):** Edit `displayName` dài 1–40 Unicode code points sau khi trim. Firestore `users/{uid}` là nguồn chuẩn; `email` và `isPremium` chỉ đọc. Khi offline, giữ input, báo chưa lưu và cho thử lại khi có mạng; không queue write. Mọi cập nhật phải owner-only và chỉ đổi `displayName` cùng server `updatedAt`. Account tab mở ProfileScreen.
+
 **Rủi ro cụ thể:** Offline-edit behavior và Auth/Firestore name consistency cần review.
 
 Nếu một contract chỉ có responsibility mà chưa có schema, task đầu là trình bày missing decision với nguồn; không tự tạo endpoint/field mới. Các hành vi test bên dưới mô tả outcome cần đạt, không thay thế wire approval. Ngưỡng/range/default chưa được spec xác định phải có quyết định ghi lại trước khi implement.
@@ -52,7 +54,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | `src/types.ts` | Bổ sung định danh màn Profile vào ScreenId dùng chung. |
 | `src/constants.ts` | Bổ sung tiêu đề màn Profile theo ScreenId. |
 | `src/components/BottomNav.tsx` | Điều hướng tab Account tới Profile thay vì Login. |
-| `firestore.emulator.rules` | SL-029 mở rộng profile read/edit allowlist trên Rules đã có; canonical firestore.rules được SL-037 tiếp nhận sau D1/E2. |
+| `firestore.rules` | Rules đang được `firebase.json` và `firebase.emulator.json` sử dụng; SL-029 thêm profile owner update allowlist trực tiếp vào nguồn đang cấu hình. Không deploy Cloud trong slice này. |
 | `src/features/auth/auth-session.tsx` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `__tests__/profile-edit.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
 | `functions/tests/profile-edit.test.cjs` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
@@ -83,10 +85,10 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 SL-029 không là nền tảng Rules cho lobby. Dùng local Rules/config từ SL-002, harness SL-003 và các resource Rules đã có trên baseline lúc execution; chỉ thêm profile owner read/displayName allowlisted edit. Giữ room/member và history Rules, không replace file bằng policy chỉ cho profile.
 
-- [ ] Owner đọc profile/sửa displayName được; user khác/anonymous bị deny.
-- [ ] Create/update parity và field allowlist chặn client tự sửa isPremium/email/server timestamps.
-- [ ] Chạy profile Rules client tests cùng resource regression trong Emulator Suite; Admin fixtures không thay client assertions.
-- [ ] Canonical firestore.rules chưa provisioned vẫn deferred, được SL-037 tiếp nhận đúng nội dung đã test.
+- [x] Owner đọc profile/sửa displayName được; user khác/anonymous bị deny (Firestore Emulator client assertions).
+- [x] Create/update parity và field allowlist chặn client tự sửa isPremium/email/server timestamps.
+- [x] Chạy profile Rules client tests cùng resource regression trong Emulator Suite; Admin fixtures không thay client assertions.
+- [x] Xác nhận emulator và firebase.json cùng đọc canonical `firestore.rules`; chưa deploy lên Firebase Cloud.
 
 ### Task 1 — Boundary và quy tắc của Xem và sửa profile
 
@@ -97,10 +99,10 @@ SL-029 không là nền tảng Rules cho lobby. Dùng local Rules/config từ SL
 - [ ] Đọc lại source/spec và xác nhận tất cả blocker cùng dependency cho task đã được giải quyết; nếu chưa, dừng execution và báo đúng blocker.
 - [ ] Viết focused failing cases sau đây; runner không tìm thấy hoặc thiếu dependency không được tính là red nghiệp vụ.
 
-- [ ] Name hợp lệ → displayName thay đổi.
-- [ ] Chọn tab Account → mở ProfileScreen; màn profile có đường quay lại luồng chính.
-- [ ] Tên rỗng/quá limit đã duyệt → field error.
-- [ ] Client đổi isPremium/email → deny.
+- [x] Name hợp lệ → displayName thay đổi (repository unit test).
+- [x] Chọn tab Account → mở ProfileScreen; màn profile có đường quay lại luồng chính (navigation wired; device verification pending).
+- [x] Tên rỗng/quá limit đã duyệt → field error (1–40 Unicode code points).
+- [x] Client đổi isPremium/email → deny (Firestore Emulator).
 
 - [ ] Chạy focused command trong mục 7; xác nhận failure đúng behavior đang thiếu, không từ toolchain lỗi.
 - [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
@@ -109,7 +111,7 @@ SL-029 không là nền tảng Rules cho lobby. Dùng local Rules/config từ SL
 2. Validate theo name rule được human tiếp nhận; update allowlist và Rules create/update parity.
 3. Canonical Firestore name là authority; không để Auth stale name/bootstrap overwrite edit.
 
-- [ ] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
+- [x] Chạy lại các cases và đối chiếu output/invariants; unit mock không được tính là native/integration pass.
 - [ ] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-029-profile-edit]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-029-profile-edit.md` và `Task: 1`.
 
 ### Task 2 — Journey tích hợp và recovery
@@ -120,17 +122,17 @@ SL-029 không là nền tảng Rules cho lobby. Dùng local Rules/config từ SL
 
 - [ ] Viết các failing cases về integration/recovery sau; không viết tests chỉ mirror implementation.
 
-- [ ] User B sửa profile A → deny.
-- [ ] Restore sau edit → không khôi phục tên Auth cũ.
-- [ ] Write fail → input còn, không false success.
+- [x] User B sửa profile A → deny (Firestore Emulator).
+- [x] Restore sau edit → không khôi phục tên Auth cũ (Firestore listener updates session; device verification pending).
+- [x] Write fail → input còn, không false success (component giữ state nhập khi lỗi; device verification pending).
 
-- [ ] Chạy focused checks, xác nhận failure đúng behavior; giữ fixtures tách khỏi device evidence.
+- [x] Chạy focused unit và Rules Emulator checks; giữ fixtures tách khỏi device evidence.
 - [ ] Tích hợp theo thứ tự:
 
 1. Form loading/save/error/retry giữ input; successful snapshot cập nhật UI ngay.
 2. Local projection cập nhật từ canonical state; failure không báo saved giả.
 3. Offline edit acceptance cần chốt trước chọn queue/offline behavior; không thêm outbox event type tự động.
-4. Đăng ký ProfileScreen vào app navigation hiện có, thêm ScreenId/title và nối tab Account tới màn profile; không để người dùng phải vào route prototype/debug để truy cập.
+4. [x] Đăng ký ProfileScreen vào app navigation hiện có, thêm ScreenId/title và nối tab Account tới màn profile; không để người dùng phải vào route prototype/debug để truy cập.
 
 - [ ] Thực hiện các kịch bản nghiệm thu trực tiếp trong mục 6; thu logs an toàn/device timestamps khi cần.
 - [ ] Review kết quả; một branch fail hoặc thiếu required device/emulator evidence thì slice chưa hoàn thành.
@@ -159,10 +161,10 @@ App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 
-Ghi trong kết quả execution: baseline/commit mới, command, exit status, số cases, emulator/device/runtime version, date, actual outcomes và remaining gaps. Các checklist hiện đều chưa chạy.
+**Evidence 2026-10-23:** `pnpm exec tsc --noEmit` PASS; `pnpm exec jest --runInBand --runTestsByPath __tests__/profile-edit.test.ts` PASS (5 tests); Firebase Firestore Emulator (Standard, demo project, Java 25 / Node 24) `pnpm run test:rules` PASS (6 tests, gồm 40/41 emoji). ESLint chưa chạy được: `expo lint` tự tạo config tương tác rồi không trả output, đã dừng và xóa config phát sinh. Expo Go visual/online/offline checks còn cần chạy thủ công. Không có Firebase Cloud deploy.
 
 ## 8. Human review và bàn giao P6.2
 
-Human phải duyệt scope, non-goals, tasks, acceptance cases, dependencies và các quyết định còn mở của **SL-029** trước implementation. Duyệt một slice không duyệt tất cả 37; duyệt authoring batch không duyệt code.
+Human đã duyệt scope, non-goals, tasks và quyết định offline ở trên ngày 2026-10-23. Duyệt một slice không duyệt tất cả 37; duyệt authoring batch không duyệt code.
 
 Sau approval, cập nhật trạng thái/date/decision evidence trong đúng plan; kế hoạch mới chỉ đủ execution-ready khi blocker đã được giải quyết và baseline được re-inspect. Dùng qskill-executing-plans khi user yêu cầu execute plan đã duyệt. Không tự bắt đầu P6.2 từ file draft hoặc từ prompt batch.

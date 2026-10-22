@@ -9,6 +9,11 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == uid;
     }
 
+    function validProfileDisplayName(value) {
+      // RE2 quantifier đếm ký tự Unicode; String.size() có thể đếm đơn vị UTF-16.
+      return value is string && value.matches('^[\\s\\S]{1,40}$') && !value.matches('^\\s*$');
+    }
+
     function profilePath(uid) {
       return /databases/$(database)/documents/users/$(uid);
     }
@@ -1386,10 +1391,7 @@ service cloud.firestore {
       allow create: if isOwner(uid)
         && request.resource.data.keys().hasAll(['displayName', 'email', 'isPremium', 'createdAt', 'updatedAt'])
         && request.resource.data.keys().hasOnly(['displayName', 'email', 'isPremium', 'createdAt', 'updatedAt'])
-        && request.resource.data.displayName is string
-        && request.resource.data.displayName.size() >= 1
-        && request.resource.data.displayName.size() <= 40
-        && !request.resource.data.displayName.matches('^\\s*$')
+        && validProfileDisplayName(request.resource.data.displayName)
         && request.resource.data.email is string
         && request.resource.data.email == request.auth.token.email
         && request.resource.data.isPremium == false
@@ -1397,7 +1399,18 @@ service cloud.firestore {
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt is timestamp
         && request.resource.data.updatedAt == request.time;
-      allow list, update, delete: if false;
+      allow list, delete: if false;
+      // Profile edit chỉ đổi tên và server timestamp; entitlement/email giữ nguyên.
+      allow update: if isOwner(uid)
+        && request.resource.data.keys().hasAll(['displayName', 'email', 'isPremium', 'createdAt', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['displayName', 'email', 'isPremium', 'createdAt', 'updatedAt'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasAll(['displayName', 'updatedAt'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'updatedAt'])
+        && validProfileDisplayName(request.resource.data.displayName)
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.isPremium == resource.data.isPremium
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt == request.time;
 
       match /groupHistory/{roomId} {
         allow get, list: if isOwner(uid);
