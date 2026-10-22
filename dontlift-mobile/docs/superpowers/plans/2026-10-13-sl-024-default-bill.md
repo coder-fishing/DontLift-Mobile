@@ -52,6 +52,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | `src/features/settlement/bill-allocation.ts` | Pure integer allocation, deterministic rounding và exact-sum residual distribution. |
 | `src/features/settlement/bill-repository.ts` | Host-authenticated online transaction, finalized member-score reads, atomic publication và receipt replay. |
 | `src/features/settlement/published-bill-navigation.ts` | Điều kiện chuyển Member tới breakdown khi nhận bill state live. |
+| `src/features/settlement/published-bill-state.ts` | Giữ breakdown đã xác nhận của đúng room cùng trạng thái loading/cache/error hiện tại. |
 | `src/screens/BillAllocationScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
 | `src/features/settlement/published-bill-listener.ts` | Theo dõi bill shares canonical đã công bố để Member nhận cập nhật realtime. |
 | `src/screens/GroupSummaryScreen.tsx` | Giữ Member ở summary khi chưa có bill; chuyển sang breakdown khi nhận shares đã công bố. |
@@ -60,6 +61,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 | `src/features/settlement/bill-repository.ts` | Host-authenticated online transaction, finalized snapshot read, atomic share publication, and receipt replay. |
 | `__tests__/default-bill.test.ts` | Kiểm thử allocation và exact-sum invariants. |
 | `__tests__/published-bill-navigation.test.ts` | Kiểm chứng Member chờ tại Group Summary, tự chuyển khi Host publish, và chỉ thấy breakdown read-only. |
+| `__tests__/published-bill-state.test.ts`, `__tests__/published-bill-listener.test.ts`, `__tests__/bill-allocation-screen.test.tsx` | Hồi quy trạng thái cache/lỗi, callback cũ, retry listener và hiển thị saved breakdown cho Host/Member. |
 
 **Unit:** bill allocation engine và calculateBillShares.
 **Nhận:** Host, finalized score snapshot, eligible members và totalBillVnd.
@@ -194,6 +196,16 @@ Ghi trong kết quả execution: baseline/commit mới, command, exit status, s�
 | Firestore Rules Emulator | BLOCKED | Chưa có `FIRESTORE_EMULATOR_HOST`; `java -version` không chạy được do Java chưa cài/không có trên PATH. Không triển khai production Rules. |
 | Expo Go / Host-Member realtime | UNVERIFIED | Cần chạy app trên thiết bị và hai tài khoản để xác nhận UI, publish, member listener và retry. |
 | Billing / Functions / production deployment | NOT USED | Giữ Spark; không bật billing, deploy Functions hoặc production Rules. |
+
+### PR #50 — hồi quy sau review, 2026-10-22
+
+- Mỗi publication được nhận diện bằng roomId/requestId và chỉ tự mở breakdown một lần trong phiên đăng nhập; quay lại summary không bị đẩy sang bill lần nữa.
+- Thứ tự trừ residual là residual tăng dần rồi UID tăng dần, kể cả phần chênh lệch dưới 1.000 VND. Các case 1.000/1.501/2.001 VND có UID ties đã tái hiện lỗi trước khi sửa.
+- Breakdown đã xác nhận được giữ cùng trạng thái cache/error/loading hiện tại; không nâng trạng thái này thành published. Host và Member đều thấy cảnh báo hoặc nút retry tương ứng.
+- Callback cũ không được ghi đè lỗi/cache của listener. Retry đăng ký lại subscription để nhận publication realtime sau lỗi.
+- PASS: `node node_modules/typescript/bin/tsc --noEmit`; exit 0.
+- PASS: Jest `--runInBand --runTestsByPath` cho `default-bill`, `published-bill-navigation`, `published-bill-state`, `published-bill-listener` và `bill-allocation-screen`; 5 suites, 36 tests, exit 0. Kiểm tra màn hình dùng React test renderer, chưa thay thế xác minh Expo Go trên thiết bị.
+- PASS: `git diff --check`; exit 0. Rules không thay đổi; các blocker emulator, lint và Expo Go trong bảng trên vẫn giữ nguyên.
 
 ## 8. Human review và bàn giao P6.2
 
