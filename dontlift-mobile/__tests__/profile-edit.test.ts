@@ -1,5 +1,6 @@
 import { runTransaction, onSnapshot } from 'firebase/firestore';
 import { createProfileRepository, validateProfileDisplayName } from '../src/features/profile/profile-repository';
+import { canSubmitProfileSave } from '../src/features/profile/profile-save-state';
 
 jest.mock('firebase/firestore', () => ({
   doc: (_firestore: unknown, ...parts: string[]) => ({ path: parts.join('/') }),
@@ -65,14 +66,17 @@ describe('profile editing', () => {
     const persistLocal = jest.fn().mockResolvedValue(undefined);
     const repository = createProfileRepository({ firestore, auth, persistLocal });
     expect(repository.listen('user-a', onProfile, jest.fn())).toBe(unsubscribe);
-    expect(onSnapshot).toHaveBeenCalledWith(expect.objectContaining({ path: 'users/user-a' }), expect.any(Function), expect.any(Function));
+    expect(onSnapshot).toHaveBeenCalledWith(expect.objectContaining({ path: 'users/user-a' }),
+      { includeMetadataChanges: true }, expect.any(Function), expect.any(Function));
 
-    const onSnapshotProfile = jest.mocked(onSnapshot).mock.calls[0][1] as unknown as (snapshot: unknown) => void;
-    onSnapshotProfile({
+    const onSnapshotProfile = jest.mocked(onSnapshot).mock.calls[0][2] as unknown as (snapshot: unknown) => void;
+    const cachedSnapshot = {
       exists: () => true,
       data: () => ({ displayName: 'Canonical', email: profile.email, isPremium: true, createdAt: { toMillis: () => 1234 } }),
-      metadata: { fromCache: false },
-    });
+      metadata: { fromCache: true },
+    };
+    onSnapshotProfile(cachedSnapshot);
+    onSnapshotProfile({ ...cachedSnapshot, metadata: { fromCache: false } });
     expect(onProfile).toHaveBeenCalledWith({ ...profile, displayName: 'Canonical' }, false);
     expect(persistLocal).toHaveBeenCalledWith({ ...profile, displayName: 'Canonical' });
   });
@@ -82,7 +86,7 @@ describe('profile editing', () => {
     const onProfile = jest.fn();
     const repository = createProfileRepository({ firestore, auth, persistLocal: jest.fn() });
     repository.listen('user-a', onProfile, jest.fn());
-    const onSnapshotProfile = jest.mocked(onSnapshot).mock.calls[0][1] as unknown as (snapshot: unknown) => void;
+    const onSnapshotProfile = jest.mocked(onSnapshot).mock.calls[0][2] as unknown as (snapshot: unknown) => void;
     (auth as unknown as { currentUser: { uid: string } }).currentUser.uid = 'user-b';
     onSnapshotProfile({
       exists: () => true,
@@ -91,5 +95,11 @@ describe('profile editing', () => {
     });
     expect(onProfile).not.toHaveBeenCalled();
     (auth as unknown as { currentUser: { uid: string } }).currentUser.uid = 'user-a';
+  });
+
+  it('allows an online retry when only the local profile projection needs repair', () => {
+    expect(canSubmitProfileSave({ dirty: false, needsLocalRepair: true, saving: false, online: true })).toBe(true);
+    expect(canSubmitProfileSave({ dirty: false, needsLocalRepair: true, saving: false, online: false })).toBe(false);
+    expect(canSubmitProfileSave({ dirty: false, needsLocalRepair: false, saving: false, online: true })).toBe(false);
   });
 });

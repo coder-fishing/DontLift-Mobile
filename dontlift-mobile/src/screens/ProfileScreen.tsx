@@ -7,6 +7,7 @@ import { GlassCard } from '../components/GlassCard';
 import type { RegistrationProfile } from '../features/auth/auth-controller';
 import type { ProfileRepository } from '../features/profile/profile-repository';
 import { ProfileEditError, validateProfileDisplayName } from '../features/profile/profile-repository';
+import { canSubmitProfileSave } from '../features/profile/profile-save-state';
 
 type Props = {
   profile: RegistrationProfile;
@@ -33,12 +34,14 @@ export function ProfileScreen({ profile, repository, onProfileUpdated, onSignOut
   const [nameError, setNameError] = useState<string>();
   const [message, setMessage] = useState<string>();
   const [saving, setSaving] = useState(false);
+  const [needsLocalRepair, setNeedsLocalRepair] = useState(false);
   const [online, setOnline] = useState<boolean | null>(null);
   const [listeningError, setListeningError] = useState(false);
   const mounted = useRef(true);
   const savedNameRef = useRef(savedName);
   const onProfileUpdatedRef = useRef(onProfileUpdated);
   const dirty = name.trim() !== savedName;
+  const canSave = canSubmitProfileSave({ dirty, needsLocalRepair, saving, online });
   savedNameRef.current = savedName;
   onProfileUpdatedRef.current = onProfileUpdated;
 
@@ -82,10 +85,14 @@ export function ProfileScreen({ profile, repository, onProfileUpdated, onSignOut
       if (!mounted.current) return;
       savedNameRef.current = canonical.displayName;
       setName(canonical.displayName); setSavedName(canonical.displayName);
+      setNeedsLocalRepair(false);
       onProfileUpdated(canonical);
       setMessage('Profile saved.');
     } catch (error) {
-      if (mounted.current) setMessage(saveError(error));
+      if (mounted.current) {
+        if (error instanceof ProfileEditError && error.code === 'local-cache-failed') setNeedsLocalRepair(true);
+        setMessage(saveError(error));
+      }
     } finally { if (mounted.current) setSaving(false); }
   }, [name, online, profile.uid, repository, onProfileUpdated]);
 
@@ -147,12 +154,13 @@ export function ProfileScreen({ profile, repository, onProfileUpdated, onSignOut
         {listeningError ? <Text accessibilityRole="alert" style={[styles.message, { color: colors.error }]}>Live profile updates are unavailable. Check your connection and retry.</Text> : null}
         {!online && !message ? <Text style={[styles.message, { color: colors.textSecondary }]}>Offline. Changes stay on this screen until you save online.</Text> : null}
 
-        <Pressable testID="profile-save" accessibilityRole="button" accessibilityLabel="Save profile name"
-          accessibilityState={{ disabled: saving || !dirty || !online }} disabled={saving || !dirty || !online} onPress={() => { void save(); }}
+        <Pressable testID="profile-save" accessibilityRole="button"
+          accessibilityLabel={needsLocalRepair && !dirty ? 'Retry local profile update' : 'Save profile name'}
+          accessibilityState={{ disabled: !canSave }} disabled={!canSave} onPress={() => { void save(); }}
           style={({ pressed }) => [styles.saveButton, { backgroundColor: colors.primary,
-            opacity: saving || !dirty || !online ? 0.48 : pressed ? 0.82 : 1 }]}>
+            opacity: !canSave ? 0.48 : pressed ? 0.82 : 1 }]}>
           {saving ? <ActivityIndicator color={colors.onPrimary} /> : null}
-          <Text style={[styles.saveText, { color: colors.onPrimary }]}>{saving ? 'Saving…' : 'Save changes'}</Text>
+          <Text style={[styles.saveText, { color: colors.onPrimary }]}>{saving ? 'Saving…' : needsLocalRepair && !dirty ? 'Retry local update' : 'Save changes'}</Text>
         </Pressable>
       </GlassCard>
 

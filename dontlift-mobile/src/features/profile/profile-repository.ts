@@ -47,7 +47,7 @@ export function createProfileRepository(dependencies: {
         onError(new ProfileEditError('unauthenticated'));
         return () => undefined;
       }
-      return onSnapshot(doc(dependencies.firestore, 'users', uid), snapshot => {
+      return onSnapshot(doc(dependencies.firestore, 'users', uid), { includeMetadataChanges: true }, snapshot => {
         if (dependencies.auth.currentUser?.uid !== uid) return;
         if (!snapshot.exists()) { onError(new ProfileEditError('not-found')); return; }
         try {
