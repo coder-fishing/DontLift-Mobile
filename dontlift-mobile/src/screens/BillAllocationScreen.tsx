@@ -110,7 +110,7 @@ export function BillAllocationScreen({
   const colors = useColorScheme() === 'dark' ? Colors.dark : Colors.light;
   const [billInput, setBillInput] = useState('');
   const [submitted, setSubmitted] = useState(false);
-  const [isEditingOverrides, setIsEditingOverrides] = useState(false);
+  const [overrideEditingRequested, setIsEditingOverrides] = useState(false);
   const [overrideDrafts, setOverrideDrafts] = useState<Record<string, { type: BillShareOverride['type']; value: string }>>({});
   const host = mode === 'host';
   const parsedTotal = pendingTotalVnd ?? (billInput ? Number(billInput.replace(/\D/g, '')) : 0);
@@ -127,6 +127,8 @@ export function BillAllocationScreen({
   const paidLocked = (confirmedBill?.billPaidCount ?? 0) > 0;
   const canOverride = host && confirmedBill != null && !paidLocked && state.kind === 'published'
     && !pendingPaymentMemberUid && !isMarkingPayment;
+  // Thanh toán trên thiết bị khác có thể khóa bill ngay khi Host đang sửa; hiển thị lại các hành động thanh toán.
+  const isEditingOverrides = canOverride && overrideEditingRequested;
   const parsedOverrides = useMemo(() => {
     const overrides: BillShareOverride[] = [];
     for (const [uid, draft] of Object.entries(overrideDrafts)) {
