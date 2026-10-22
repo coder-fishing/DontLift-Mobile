@@ -1032,10 +1032,12 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const pendingBillCommand = useRef<{ command: CalculateBillCommand; rosterMemberUids: string[] } | null>(null);
   const pendingBillOverride = useRef<{ command: ApplyBillOverridesCommand; rosterMemberUids: string[] } | null>(null);
   const activeBillRoomId = useRef<string | null>(null);
+  const latestBillRevision = useRef<{ roomId: string | null; revision: number }>({ roomId: null, revision: -1 });
   const autoOpenedBillPublications = useRef(new Set<string>());
 
   useEffect(() => {
     activeBillRoomId.current = groupSummarySnapshot?.roomId ?? null;
+    latestBillRevision.current = { roomId: activeBillRoomId.current, revision: -1 };
     pendingBillCommand.current = null;
     pendingBillOverride.current = null;
     setCommittedBill(null);
@@ -1051,7 +1053,17 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       return undefined;
     }
     setPublishedBillState({ kind: 'loading' });
-    return listenToPublishedBill(roomRuntime.firestore, groupSummarySnapshot.roomId, setPublishedBillState);
+    const roomId = groupSummarySnapshot.roomId;
+    return listenToPublishedBill(roomRuntime.firestore, roomId, state => {
+      if (activeBillRoomId.current !== roomId) return;
+      if (state.kind === 'published') {
+        const revision = state.bill.billRevision ?? 0;
+        const latest = latestBillRevision.current;
+        if (latest.roomId === roomId && revision < latest.revision) return;
+        latestBillRevision.current = { roomId, revision };
+      }
+      setPublishedBillState(state);
+    });
   }, [groupSummarySnapshot?.roomId, groupSummarySnapshot?.reconciliationStatus, roomRuntime.firestore, billListenerRevision]);
 
   useEffect(() => {
@@ -1407,8 +1419,13 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       const result = await billRepository.applyOverrides(pending.command, pending.rosterMemberUids);
       if (activeBillRoomId.current === pending.command.roomId) {
         pendingBillOverride.current = null;
-        setCommittedBill(result);
-        setPublishedBillState({ kind: 'published', bill: result });
+        const latest = latestBillRevision.current;
+        const resultRevision = result.billRevision ?? 0;
+        if (latest.roomId !== pending.command.roomId || resultRevision >= latest.revision) {
+          latestBillRevision.current = { roomId: pending.command.roomId, revision: resultRevision };
+          setCommittedBill(result);
+          setPublishedBillState({ kind: 'published', bill: result });
+        }
       }
     } catch (error) {
       if (activeBillRoomId.current === pending.command.roomId) setBillOverrideError(billPublishErrorMessage(error));
