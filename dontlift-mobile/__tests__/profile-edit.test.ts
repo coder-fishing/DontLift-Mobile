@@ -36,6 +36,21 @@ describe('profile editing', () => {
     expect(persistLocal).toHaveBeenCalledWith({ ...profile, displayName: 'After' });
   });
 
+  it('repairs the local projection without rewriting an already committed name', async () => {
+    const update = jest.fn();
+    jest.mocked(runTransaction).mockImplementation(async (_db, callback) => callback({
+      get: async () => ({ exists: () => true, data: () => ({
+        displayName: 'After', email: profile.email, isPremium: true, createdAt: { toMillis: () => 1234 },
+      }) }), update,
+    } as never));
+    const persistLocal = jest.fn().mockResolvedValue(undefined);
+    const repository = createProfileRepository({ firestore, auth, persistLocal });
+
+    await expect(repository.updateDisplayName('user-a', 'After')).resolves.toEqual({ ...profile, displayName: 'After' });
+    expect(update).not.toHaveBeenCalled();
+    expect(persistLocal).toHaveBeenCalledWith({ ...profile, displayName: 'After' });
+  });
+
   it('does not start a transaction for an invalid name or a different account', async () => {
     const repository = createProfileRepository({ firestore, auth, persistLocal: jest.fn() });
     await expect(repository.updateDisplayName('user-a', '  ')).rejects.toMatchObject({ code: 'invalid-argument' });

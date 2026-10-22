@@ -73,6 +73,8 @@ export function createProfileRepository(dependencies: {
           const saved = await transaction.get(reference);
           if (!saved.exists()) throw new ProfileEditError('not-found');
           const previous = readRegistrationProfile(uid, saved.data());
+          // Retry sau lỗi cache chỉ đồng bộ lại SQLite, không gửi update rỗng bị Rules từ chối.
+          if (previous.displayName === validation.value) return previous;
           // Email và entitlement chỉ đọc; Rules cũng chỉ cho đổi tên cùng timestamp server.
           transaction.update(reference, { displayName: validation.value, updatedAt: serverTimestamp() });
           return { ...previous, displayName: validation.value };
