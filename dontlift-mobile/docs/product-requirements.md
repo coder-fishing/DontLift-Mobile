@@ -171,7 +171,7 @@ As any participant, I want to see the calculated breakdown so I know exactly wha
 
 *Acceptance Criteria:*
 - Each member's default share is calculated by the authenticated Host client using the finalized scores and the integer penalty-weighted formula. On Firebase Spark, Firestore Rules authorize the Host and room state but do not verify calculation correctness or roster completeness (ADR-021).
-- The Host may optionally override default penalty weights by manually assigning percentage or absolute VND penalty amounts per member; the remaining bill balance is split equally among non-penalized members.
+- The Host may optionally override selected raw member shares with a fixed VND amount or percentage before any member is marked paid. Untouched members retain the default raw allocation; the full raw vector must equal the bill and uses the same rounding pipeline (ADR-022).
 - Shares are rounded to the nearest 1,000 VND with deterministic rounding adjustment such that SUM(Member Shares) = Total Bill exactly.
 - Members with 0 violations receive a positive mathematical base component before rounding; the final integer VND share may be zero for a small bill after deterministic rounding (ADR-021).
 - Early Exit members participate in bill allocation using the same formula (automated penalty weight or Host override) based on their Penalty Score frozen at exit time. A member with zero violations at exit pays a normal equal base share identical to any non-penalized member.
@@ -250,7 +250,7 @@ As a user who purchased Premium, I want to enter my activation code so I can unl
 ### FR-05 — Bill Splitting
 - Integer VND arithmetic throughout; no floating point.
 - Deterministic rounding: SUM(shares) = Total Bill always.
-- **Hybrid Bill Allocation Model:** Default calculation applies automated penalty-weighted formula: Score = (LiftCount × 10) + (ViolationDurationSeconds × 1). The Host possesses an override interface to manually assign specific penalty percentages or absolute VND amounts per member, with unassigned remainder divided equally among zero-violation members.
+- **Hybrid Bill Allocation Model:** Default calculation applies automated penalty-weighted formula: Score = (LiftCount × 10) + (ViolationDurationSeconds × 1). Before the first payment is marked, the Host may override selected raw member shares with percentages or absolute VND amounts. Untouched Members keep their default raw shares; the full total must still match exactly (ADR-022).
 - Early leavers (approved Early Exit) are included in bill allocation; their Penalty Score is frozen at exit time and used in the same formula as remaining members.
 - Allocation logic is isolated as replaceable business logic; the UI and sync layer have no dependency on its internals.
 
@@ -289,7 +289,7 @@ As a user who purchased Premium, I want to enter my activation code so I can unl
 
 | # | Question | Decision |
 |---|----------|----------|
-| OQ-1 | Bill split model | Hybrid model: Automated penalty-weighted calculation by default; Host option to manually override per-member penalty percentages or absolute VND amounts with remaining bill split equally. |
+| OQ-1 | Bill split model | Hybrid model: Automated penalty-weighted calculation by default; Host can override selected raw shares before first payment, with no separate remainder distribution (ADR-022). |
 | OQ-2 | Early Exit member bill rule | Included in bill allocation. Penalty Score frozen at exit time; applied via the same penalty-weighted/hybrid formula. Zero violations at exit = normal equal base share. |
 | OQ-3 | Grace period on OS background/inactive | Violation recorded at transition detection. iOS: extend via `beginBackgroundTask`, monitor `backgroundTimeRemaining`, call `endBackgroundTask` before expiry. Android: observe lifecycle events; use WorkManager for deferred guaranteed work. |
 | OQ-4 | Early termination vote timeout | 30 seconds; dismissed server-side on expiry, session continues. |

@@ -1,167 +1,65 @@
-# Kế hoạch triển khai P6.1 — SL-025: Host override bill shares
+# SL-025 — Host overrides bill shares
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use the qskill-executing-plans skill to implement this plan task-by-task. Steps use checkbox tracking.
-> Kế hoạch chỉ mô tả file, unit, hành vi, quy tắc, đầu ra và test cases; không có implementation code hoặc signatures. Đọc source thật trước mỗi task.
-> **Gate:** Không execute kế hoạch khi trạng thái còn DRAFT hoặc khi blocker/dependency chưa giải quyết. Việc tạo file này không phê duyệt backlog hay P6.2.
+> Execution plan approved on 2026-10-22. Implement in the current checkout and branch. Keep Firebase Spark; no Functions, billing, deployment, commit, push, or PR is authorized by this plan.
 
-**Mục tiêu:** Host override bill shares: Validated complete raw share vector, cùng rounding pipeline và canonical receipt.
+**Status:** IMPLEMENTED / emulator and Expo Go verification pending
+**Plan slug:** `2026-10-13-sl-025-bill-overrides`
+**Branch:** `feature/sl-025-bill-overrides`
+**Prerequisite:** SL-024 default bill shares
+**Decisions:** D8 resolved below; Spark authority exception in [ADR-022](../../decisions/ADR-022-spark-bill-overrides.md).
+**Traceability:** US-14; API §6.3; ADR-005, ADR-021, ADR-022.
 
-**Slice:** SL-025. **Ưu tiên đề xuất:** P1. **Release:** MVP + activation/Premium; post-MVP deferred. SL-036 chỉ được tính release sau D6.
+## Goal and scope
 
-**Trạng thái kế hoạch:** DRAFT — chưa được human duyệt; bị chặn bởi D8.
-**Trạng thái implementation quan sát:** Toggle override không có raw-vector validation/backend. Chưa có evidence nghiệm thu slice.
-**Baseline khảo sát:** docs/p6.0-implementation-slices tại 57ca1eb28a2952c66d01f89b9b89bf755ab4812a.
-**Ngày soạn:** 2026-10-13, Asia/Saigon.
-**Plan slug:** `2026-10-13-sl-025-bill-overrides`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-025-bill-overrides]`.
-**Đầu vào phạm vi:** Backlog P6.0 v0.1 trong cuộc trò chuyện ngày 2026-10-13, chưa được phê duyệt. User đã yêu cầu ghi draft P6.1 cho cả 37 slice; không suy thành approval thực thi.
-**Traceability:** US-14; API §6.3; ADR-005; V07.
-**Phụ thuộc bắt buộc:** [SL-024](./2026-10-13-sl-024-default-bill.md)
-**Ưu tiên mềm:** Theo thứ tự đề xuất trong [mục lục](../../implementation-plan.md); thứ tự không tạo thêm hard dependency.
+Let the Host adjust the finalized bill split with fixed VND or percentage values, preview the complete result, and publish a replacement version that Members see only after it commits. Members remain read-only. Hosts may publish successive versions until the first payment is marked; any paid member locks the split. Use Firestore client transactions and Security Rules on Spark.
 
-## 1. Nguồn và ranh giới
+Do not add Functions, billing, payment verification, QR generation, score edits, offline queueing, or physical cleanup. Rules authorize the Host and lifecycle but cannot prove calculation correctness or roster completeness.
 
-Đọc [PRD](../../product-requirements.md), [Feature Spec](../../feature-specification.md), [Product Design](../../product-design.md), [Design Brief](../../product-design-brief.md), [Architecture](../../software-architecture.md), [API contracts](../../api-contracts.md), ADR áp dụng trong [decisions](../../decisions), cùng AGENTS ở app root. Tham chiếu cụ thể của slice nằm trong Traceability phía trên.
+## Approved decisions
 
-V01–V10 chỉ các màn tương ứng tại `design/concepts/concept-final/screens/`; prototype nằm tại `prototype/`. Chúng là read-only visual/interaction references, không chứng minh integration. Nếu journey không có design screen, trình bày gap với human trước quyết định UI mới.
+- **D8:** Before first payment, allow replacement versions. After any Member is marked paid, reject further override writes. SL-027 must change the share payment status and increment `rooms/{roomId}.billPaidCount` atomically. Missing count on legacy rooms is interpreted as zero.
+- Use a monotonically increasing `billRevision` and `expectedRevision` compare-and-swap. Default-only rooms start at logical revision 0; the fields may remain absent for compatibility with older SL-024 clients. An override advances it by one and sets `billOverrideRequestId` in the final transaction.
+- Stage each request in `billOverrides/{requestId}/shares/{uid}` using chunks of at most 8 recipient writes. Members read only the active pointer's version. Publish by atomically switching the pointer, revision, preparation state, and immutable command receipt. A failed or abandoned stage stays hidden. Keep old versions until normal retention expiry.
+- Overrides replace selected members' default raw amounts. A percentage is basis points of the room total. Untouched members retain their default raw amount. Reject unless the complete raw vector sums exactly to the bill before rounding. Run default and override vectors through one ADR-005 rounding/residual algorithm; no remainder-after-override branch.
+- Same request ID and payload replays its receipt; same ID with a different payload is `already-exists`. Competing expected revisions cannot both publish. No command is queued offline.
 
-**Kiến trúc:** applyBillOverrides sở hữu hành vi của slice. Presentation đọc kết quả qua controller/repository; không tự trở thành nguồn authoritative. Units và đường dẫn mới bên dưới là đề xuất, chưa tồn tại trên baseline; nếu prerequisite đã tạo cùng trách nhiệm thì reuse, không thêm convention thứ hai.
+## Implementation tasks
 
-**Stack:** Expo SDK 57 / React Native / TypeScript. SQLite cho local-first khi slice có persistence; React Native Firebase Auth/Firestore Standard/Functions cho boundary có Firebase. Không bắt slice thuần local phải có network.
+1. **Math:** Refactor `src/features/settlement/bill-allocation.ts` so default and overridden exact raw vectors share the same integer rounding path. Use BigInt rational arithmetic; reject invalid UIDs/types/values, duplicate override UIDs, percentages above 10,000 bps, negative shares, non-exact total, unsafe final values, and impossible non-negative allocations.
+2. **Contract:** Update API §6.3, feature-spec data model/UX, implementation index D8, ADR-021 scope note, and this plan. Add ADR-022. Clarify in §6.4 that SL-027 must increment the room paid counter atomically.
+3. **Repository:** Extend `src/features/settlement/bill-repository.ts` with an online, in-session retryable override command. Stage per-request version documents and share chunks of eight; atomically switch the current pointer only when `expectedRevision` still matches, room remains finalized, settlement details are current, and paid count is zero. Preserve immutable history and same-session retry behavior.
+4. **Rules:** Add explicit Rules for override manifest, staged shares, receipt, active-version member reads, and room pointer/revision transition. Preserve existing default-share immutability. Keep per-chunk Rules document accesses within Firestore's atomic-operation access budget. Deny writes when paid count is positive.
+5. **Listener and UI:** Listen to the pointer-selected share collection and retain revision/lock metadata. In `BillAllocationScreen`, provide Host-only fixed-VND/percentage controls for each member, inline validation, exact-total preview, explicit replacement confirmation, online/loading/error states, and a paid-lock state. Keep Member controls read-only and use semantic theme tokens, accessible labels, keyboard-safe scrolling, and >=48dp touch targets.
+6. **Integration:** Wire screen callbacks in `src/app/index.tsx`; preserve the current published breakdown until a replacement pointer is confirmed. A failed/ambiguous response keeps the same request ID and revision for retry.
 
-**Không gồm:** Editing frozen score, configurable per-room penalty weights, policy post-payment tự đặt.
+## Acceptance criteria
 
-## 2. Blocker, risk và quyết định cần duyệt
+- Member or outsider override attempts are denied; Members can only read the active published version.
+- A non-member UID, duplicate UID, negative amount, percentage above 100%, malformed request, or raw vector whose exact sum differs from total is rejected.
+- Default and override calculations use one deterministic rounding algorithm, never produce negative shares, and sum exactly to `totalBillVnd`.
+- Host can publish a fixed VND override and a percentage override before first payment; after each successful switch, Members see the full new version, never a partial one.
+- Same-session retry with the same request ID returns the committed version; changed payload with the same ID is rejected; stale expected revision cannot overwrite a newer version. Request identity is not persisted across app restarts.
+- A paid count above zero blocks both preparation/staging and final publication. A payment racing final publication serializes on the room document.
+- Existing SL-024 default-only rooms continue to load; absent `billRevision`/`billPaidCount` maps to revision 0/unpaid.
+- Staged and superseded versions are not Member-readable. Direct writes to `/billShares` remain denied after initial publication.
+- UI validation, keyboard/small-screen layout, and accessibility are checked on Expo Go Android/iOS when devices are available. No false success is shown on offline or ambiguous writes.
 
-- **D8:** Duyệt recalculation/override sau publication hoặc MARKED_AS_PAID: rule khóa/version/concurrency và outcome UI.
+## Verification
 
-**Rủi ro cụ thể:** D8: payment/recalculation concurrency; raw-vector remainder eligibility cần khớp docs.
+Run TypeScript and lint checks for changed app code. Rules compilation and authorization behavior require the Firestore Emulator Suite; if Java is unavailable, record it as unverified and do not deploy production Rules. Use unit checks for BigInt boundary cases and integer invariants if the existing runner is available. Inspect the rendered screen on Expo Go; desktop/source review does not count as device verification. Do not claim results that were not observed.
 
-Nếu một contract chỉ có responsibility mà chưa có schema, task đầu là trình bày missing decision với nguồn; không tự tạo endpoint/field mới. Các hành vi test bên dưới mô tả outcome cần đạt, không thay thế wire approval. Ngưỡng/range/default chưa được spec xác định phải có quyết định ghi lại trước khi implement.
+## Current observations
 
-## 3. File và quyền sở hữu dự kiến
+- The repository is clean on `feature/sl-025-bill-overrides` before execution.
+- SL-024 already publishes default shares in chunks of 8 and exposes a listener/repository/UI that this slice will extend.
+- Rules cannot independently recompute the complete split; this remains the accepted Spark trust boundary.
+- Initial implementation must preserve Expo Go/Firebase Cloud operation and must not enable billing or deploy any service.
 
-Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại trạng thái file lúc execute để chọn Create/Modify; không ghi đè implementation của dependency.
+## Execution record — 2026-10-22
 
-| File dự kiến | Trách nhiệm |
-|---|---|
-| `src/features/settlement/bill-controller.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
-| `src/screens/BillAllocationScreen.tsx` | Presentation và states của journey; không chứa domain math/sync authority. |
-| `functions/src/apply-bill-overrides.cjs` | Backend boundary của slice; server identity/validation/transaction. |
-| `functions/src/bill-allocation.cjs` | Backend boundary của slice; server identity/validation/transaction. |
-| `functions/index.js` | SL-025 đăng ký/export `applyBillOverrides` theo Functions runtime bootstrap do SL-003 sở hữu; không khởi tạo Admin/runtime lần hai. |
-| `__tests__/bill-overrides.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
-| `functions/tests/bill-overrides.test.cjs` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
-| `functions/tests/bill-overrides-discovery.test.cjs` | Xác nhận entrypoint export callable đúng tên và emulator discovery thấy callable trước khi chạy transaction cases. |
-
-**Unit:** applyBillOverrides.
-**Nhận:** Host overrides FIXED_VND hoặc PERCENT_BPS và full bill/member set.
-**Trả:** Validated complete raw share vector, cùng rounding pipeline và canonical receipt.
-**Đầu vào từ dependency:** capabilities/records/commands đã nghiệm thu theo các plan liên kết; chưa có dependency output thì không giả coi integration có thật.
-**Đầu ra cho slice sau:** outcome và invariants trong mục tiêu/nghiệm thu dưới đây; tên internal unit là đề xuất, wire names chỉ dùng theo API/ADR đã duyệt.
-
-### Contract dữ liệu đã có
-
-Bảng dưới là trích ranh giới từ API đã duyệt, không tạo schema mới. Common response giữ version/requestId/serverTimeUtcMs khi contract yêu cầu; full required fields/errors/transaction outputs vẫn theo API section được tham chiếu.
-
-| Field | Bắt buộc / hướng | Quy tắc |
-|---|---|---|
-| version | Bắt buộc | 1, theo common envelope. |
-| requestId | Bắt buộc | UUID; cùng actor/payload replay trả prior outcome, payload khác bị collision. |
-| roomId | Bắt buộc | UUID. |
-| totalBillVnd | Bắt buộc | Integer từ 1.000. |
-| overrides | Bắt buộc | Non-empty list, UID không trùng. |
-| uid / type / value | Mỗi override | Member UID; FIXED_VND hoặc PERCENT_BPS; integer không âm, percent không quá 10.000 basis points. |
-
-## 4. Ràng buộc xuyên suốt
-
-- Giữ approved architecture; newer human decisions và accepted ADR exceptions thắng prose cũ.
-- Không sao chép Firebase token vào SQLite, AsyncStorage hoặc SecureStore; SDK quản lý session.
-- Event offline-capable dùng SQLite domain record và sync_outbox trong một transaction; syncEvents là ingestion authority.
-- Command lifecycle/vote/bill/payment không queue để replay muộn. Firestore cache không thay thế outbox.
-- Membership authority là rooms/{roomId}/members/{uid}. Functions derive actor từ Auth và tự authorization; Admin SDK bypass Rules.
-- Giữ 3-Second Grace Period ở cả foreground/background theo ADR-008.
-- Local Premium không cấp server quota/capacity; chỉ verified Server Premium cấp server benefits.
-- Bill dùng integer VND, deterministic residual và tổng exact theo ADR-005; VietQR non-custodial, không bank polling.
-- UI dùng semantic tokens và accepted Liquid Acrylic; loading/empty/error/offline/syncing, labels, safe areas và touch targets được kiểm chứng khi phù hợp.
-- Không thêm social login, analytics dashboards, kiosk, wallet, chat, AI coaching hoặc camera-based detection vào MVP.
-- Không install/provision/deploy/publish trong lượt authoring plan này; mọi check bên dưới là hướng dẫn execution sau approval.
-
-## 5. Các task thực hiện sau approval
-
-### Task 1 — Boundary và quy tắc của Host override bill shares
-
-**Files:** Dùng units/config/backend/repositories trong bảng mục 3; khi test source đã được chỉ định, đặt cases thuộc boundary vào đúng app/backend target. Không thay presentation chưa cần cho task này.
-
-**Nhận/trả:** Nhận Host overrides FIXED_VND hoặc PERCENT_BPS và full bill/member set; trả Validated complete raw share vector, cùng rounding pipeline và canonical receipt. Với contract đang bị chặn, chưa có quyền thêm schema dù test outcome đã được nêu.
-
-- [ ] Đọc lại source/spec và xác nhận tất cả blocker cùng dependency cho task đã được giải quyết; nếu chưa, dừng execution và báo đúng blocker.
-- [ ] Viết focused failing cases sau đây; runner không tìm thấy hoặc thiếu dependency không được tính là red nghiệp vụ.
-
-- [ ] Member override → deny.
-- [ ] Duplicate member UID → invalid-argument.
-- [ ] Negative amount hoặc percentage quá 100% → reject.
-
-- [ ] Chạy focused command trong mục 7; xác nhận failure đúng behavior đang thiếu, không từ toolchain lỗi.
-- [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
-
-1. Chốt policy recalculation sau paid/share publication trước implementation.
-2. Reject duplicate UID, negative value, percentage trên 10.000 basis points hoặc vector không represent full bill.
-3. Default/override đều đi qua allocation owner SL-024; không tạo remainder-after-override branch thứ hai.
-4. Đăng ký `applyBillOverrides` từ `functions/index.js` bằng Admin/Functions runtime đã bootstrap; kiểm tra module export và Emulator Suite callable discovery trước transaction acceptance.
-
-- [ ] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
-- [ ] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-025-bill-overrides]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-025-bill-overrides.md` và `Task: 1`.
-
-### Task 2 — Journey tích hợp và recovery
-
-**Files:** Presentation/adapter/evidence trong mục 3 cùng boundary task 1; không refactor screen không liên quan. Task này không tạo implementation thứ hai cho unit task 1.
-
-**Nhận:** Output task 1 đã kiểm chứng. **Trả:** Journey/bằng chứng có thể nghiệm thu; error/offline không false-success.
-
-- [ ] Viết các failing cases về integration/recovery sau; không viết tests chỉ mirror implementation.
-
-- [ ] Overrides không represent full bill → reject.
-- [ ] Default/override dùng cùng rounding → exact sum.
-- [ ] Same request replay → cùng outcome; khác payload → collision.
-- [ ] `functions/index.js` exports `applyBillOverrides`; Functions Emulator Suite discovery gọi được đúng callable.
-
-- [ ] Chạy focused checks, xác nhận failure đúng behavior; giữ fixtures tách khỏi device evidence.
-- [ ] Tích hợp theo thứ tự:
-
-1. Host form hiện amount/percentage validation và preview phân biệt canonical.
-2. Submit transaction updates shares/metadata/receipt; Member không thấy editing controls.
-3. Concurrency/retry policy giữ một canonical version và không làm paid state sai với số tiền mới.
-
-- [ ] Thực hiện các kịch bản nghiệm thu trực tiếp trong mục 6; thu logs an toàn/device timestamps khi cần.
-- [ ] Review kết quả; một branch fail hoặc thiếu required device/emulator evidence thì slice chưa hoàn thành.
-- [ ] Commit task sau review nếu execution được phép. Subject dùng `[2026-10-13-sl-025-bill-overrides]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-025-bill-overrides.md` và `Task: 2`.
-
-## 6. Nghiệm thu và failure outcomes
-
-- [ ] Member override → deny.
-- [ ] Duplicate member UID → invalid-argument.
-- [ ] Negative amount hoặc percentage quá 100% → reject.
-- [ ] Overrides không represent full bill → reject.
-- [ ] Default/override dùng cùng rounding → exact sum.
-- [ ] Same request replay → cùng outcome; khác payload → collision.
-- [ ] Host override VND rồi percent theo policy → Member read-only breakdown.
-- [ ] Bill có paid Member → xử lý theo D8 đã duyệt, không silent overwrite.
-- [ ] Host/Member đọc được shares trong room sau override theo SL-024 Rules; outsider/cross-room bị deny và direct share writes vẫn bị từ chối.
-
-Mỗi case phải có actual result. Unit cases dùng controlled fixtures để chứng minh domain; Firebase boundary cần Rules/Functions emulator tests cho allowed/denied/replay/concurrency khi áp dụng. Sensor/lifecycle cần physical devices. Không có evidence thì ghi UNVERIFIED và blocker, không tick PASS.
-
-**Failure recovery bắt buộc:** không hiển thị successful save/transition khi commit/request chưa thành công; giữ dữ liệu/retry context theo hành vi cụ thể trong tasks. Không log email đầy đủ, token, activation code hoặc bank details. Case không áp dụng cho slice phải ghi lý do trong evidence, không bỏ im lặng.
-
-## 7. Verification và ghi nhận evidence
-
-App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath __tests__/bill-overrides.test.ts`. Backend focused tests sau backend bootstrap SL-003 và native/emulator prerequisites SL-002: `node --test functions/tests/bill-overrides.test.cjs functions/tests/bill-overrides-discovery.test.cjs`; discovery test confirms the callable export before transaction cases. TypeScript: `pnpm exec tsc --noEmit`. Lint: `pnpm run lint` chỉ khi repository có ESLint setup thực tế.
-
-Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
-
-Ghi trong kết quả execution: baseline/commit mới, command, exit status, số cases, emulator/device/runtime version, date, actual outcomes và remaining gaps. Các checklist hiện đều chưa chạy.
-
-## 8. Human review và bàn giao P6.2
-
-Human phải duyệt scope, non-goals, tasks, acceptance cases, dependencies và các quyết định còn mở của **SL-025** trước implementation. Duyệt một slice không duyệt tất cả 37; duyệt authoring batch không duyệt code.
-
-Sau approval, cập nhật trạng thái/date/decision evidence trong đúng plan; kế hoạch mới chỉ đủ execution-ready khi blocker đã được giải quyết và baseline được re-inspect. Dùng qskill-executing-plans khi user yêu cầu execute plan đã duyệt. Không tự bắt đầu P6.2 từ file draft hoặc từ prompt batch.
+- Contract, ADR-022, Rules, repository, shared BigInt rounding, listener, Host UI, and app callbacks are implemented on `feature/sl-025-bill-overrides`.
+- `pnpm exec tsc --noEmit`: PASS. `git diff --check`: PASS.
+- `pnpm run lint`: UNVERIFIED/failed as a project check. Expo generated a temporary ESLint config because none existed, then reported 35 errors across existing project files; the generated config was removed to avoid adding an unrequested lint setup.
+- Firestore Rules Emulator compilation/authorization: UNVERIFIED because Java is unavailable in this environment. Do not deploy these Rules until Emulator validation succeeds.
+- Expo Go Android/iOS visual and interaction check: UNVERIFIED; no attached device session was available. The UI uses existing theme tokens and the existing virtualized `FlatList` pattern.
+- No app/domain test cases were added or run in this turn. No production Rules were deployed, and no commit, push, or PR was created.

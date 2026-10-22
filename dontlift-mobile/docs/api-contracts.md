@@ -17,6 +17,8 @@
 > Settlement update 2026-10-21: [ADR-020](decisions/ADR-020-spark-settlement-details.md) adds a Host-only settlement-details transaction and member-scoped expiring read on Spark, with no Functions or billing.
 
 > Default bill update 2026-10-22: [ADR-021](decisions/ADR-021-spark-default-bill.md) adds a narrowly scoped Host-calculated bill-share transaction on Spark. Rules authorize Host/lifecycle/schema but do not verify calculation correctness or roster completeness.
+>
+> Bill override update 2026-10-22: [ADR-022](decisions/ADR-022-spark-bill-overrides.md) adds Host-calculated versioned bill overrides on Spark, locked after the first paid share. Rules authorize revision/state but do not verify calculation correctness or roster completeness.
 
 > **Owner:** Software architecture package  
 > **Status:** APPROVED  
@@ -25,7 +27,7 @@
 
 ## 1. Common envelope
 
-Every callable requires Firebase Authentication. Functions derive `actorUid` from the verified ID token and never trust a UID supplied by the client. Rules-authorized Spark transactions, including `createRoom` (§2), `startRoom` (§3), `joinRoomByPin` (§4), termination-vote transactions (§3.2), early-exit transactions (§3.1), room-completion transactions (§5), and `calculateBillShares` (§6.2), are exceptions defined by their corresponding ADRs.
+Every callable requires Firebase Authentication. Functions derive `actorUid` from the verified ID token and never trust a UID supplied by the client. Rules-authorized Spark transactions, including `createRoom` (§2), `startRoom` (§3), `joinRoomByPin` (§4), termination-vote transactions (§3.2), early-exit transactions (§3.1), room-completion transactions (§5), `calculateBillShares` (§6.2), and `applyBillOverrides` (§6.3), are exceptions defined by their corresponding ADRs.
 
 Every side-effecting request contains:
 
@@ -272,15 +274,21 @@ The authenticated Host client runs an online, resumable Firestore command under 
 
 **Authority limit:** Rules check authenticated Host ownership, finalized room state, settlement-details existence, document ownership, and field shape. They cannot independently recalculate the roster-wide result or prove that all members and scores were included. The published values are Host-authoritative under Spark; do not describe them as server-verified. A same-room Member may read the published breakdown; direct writes by Members and outsiders are denied.
 
-### 6.3 `applyBillOverrides`
+### 6.3 `applyBillOverrides` — versioned Firestore command (Spark)
 
-**Request:** common request plus required `roomId: UUID`, `totalBillVnd: integer >= 1000`, and non-empty `overrides[]`. Each override requires `uid`, `type: "FIXED_VND" | "PERCENT_BPS"`, and non-negative integer `value`; percentage values are basis points.
+The authenticated Host client runs the online, in-session retryable command under [ADR-022](decisions/ADR-022-spark-bill-overrides.md). This is a Spark client transaction guarded by Rules, not a callable. The Host supplies a complete roster observation and the proposed override entries; as with SL-024, the roster is a Host attestation and Rules cannot prove completeness or recalculate the amounts.
 
-**Response:** the same response schema as `calculateBillShares`, plus `overrideApplied: true`.
+**Request:** `version: 1`, `requestId: UUIDv4`, `roomId: UUIDv4`, `expectedRevision: non-negative integer`, and a non-empty `overrides[]`. Each entry is `{ uid, type: "FIXED_VND" | "PERCENT_BPS", value }`; value is a non-negative integer and percentage is basis points of the room total, at most 10,000. A fixed value is VND. Entries replace the selected Member's default raw amount; omitted Members keep their default raw amount. The complete raw vector must equal `totalBillVnd` exactly before rounding.
 
-**Errors:** `unauthenticated`, `permission-denied`, `invalid-argument` for duplicate Members, negative values, percentages above 10,000 basis points or a raw vector that cannot represent the full bill; `not-found`; `failed-precondition`; `unavailable`; `already-exists`.
+**Transaction outputs:** The client calculates the full vector and applies the same ADR-005 rounding/residual algorithm used by §6.2. It creates a request-specific preparation, stages `billOverrides/{requestId}/shares/{uid}` in sequential transactions of at most eight recipient writes, then atomically changes `billOverrideRequestId`, advances `billRevision`, publishes the manifest, and creates `billOverrideCommands/{requestId}`. The final transaction requires the supplied revision to equal the room's current revision and `billPaidCount` to be zero. A missing revision/count on a default-only or legacy room is treated as 0; SL-024 does not need a schema write. Members can read only the version named by the room pointer; staged and superseded versions remain hidden from Members. Old versions are retained through room expiry, with no physical cleanup promise.
 
-**Transaction outputs:** form the complete raw share vector, run the same canonical rounding/residual algorithm, replace bill-share documents, store override metadata and command receipt atomically. There is no separate remainder-after-override path.
+**Response:** `{ version: 1, requestId, roomId, expectedRevision, billRevision, totalBillVnd, calculationVersion: 1, overrideApplied: true, shares[], sumShareVnd }`. The response does not claim `serverTimeUtcMs`.
+
+**Replay and concurrency:** Same request ID and canonical payload returns the committed receipt and shares; a different payload under the same ID returns `already-exists`. Competing requests based on the same revision cannot both switch the room pointer. The live app session retains the request ID for retry after an ambiguous response. Commands are not queued offline; pending request identity is not persisted across app restarts.
+
+**Errors:** `unauthenticated`, `permission-denied` for a non-Host or Rules rejection, `invalid-argument` for malformed/duplicate entries or invalid values, `not-found`, `failed-precondition` for a stale revision, paid bill, non-finalized room, expired settlement details, or vector that does not exactly represent the bill, `unavailable`, and `already-exists` for request-ID payload collision.
+
+**Authority limit:** Rules check authenticated Host ownership, finalized room state, settlement expiry, membership per staged share, paid state, and revision transition. They do not verify override math or roster completeness. Values remain Host-attested under Spark.
 
 ### 6.4 `markBillSharePaid`
 
@@ -290,7 +298,7 @@ The authenticated Host client runs an online, resumable Firestore command under 
 
 **Errors:** `unauthenticated`, `permission-denied`, `invalid-argument`, `not-found`, `failed-precondition` when already paid or settlement is not ready, `unavailable`, `already-exists`.
 
-**Transaction outputs:** perform the one-way payment-status transition and store command receipt. No bank API or automatic verification is called.
+**Transaction outputs:** perform the one-way payment-status transition and store command receipt. SL-027 must also increment `rooms/{roomId}.billPaidCount` in the same Rules-authorized transaction. This room-level counter is the lock authority for SL-025 and must serialize with a bill revision switch; missing counter on legacy rooms is zero. No bank API or automatic verification is called.
 
 ## 8. Activation callable
 

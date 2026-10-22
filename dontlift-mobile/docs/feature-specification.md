@@ -129,8 +129,8 @@
 
 ### 4.3 Bill Settlement & VietQR (`US-13` – `US-15`, `FR-05`)
 1. **Total Bill Input (`US-13`):** Host enters a positive integer amount in VND, minimum 1,000 VND; divisibility by 1,000 is not required.
-2. **Calculation Engine (`US-14`):** Cloud Function executes the Hybrid Bill Allocation algorithm in Section 5.2 and applies the same deterministic rounding pipeline to default and override cases.
-3. **Host Override Option (`US-14`):** Host MAY assign a specific VND share or percentage to selected members. Overrides modify the raw share vector; they do not invoke a separate remainder-distribution branch.
+2. **Calculation Engine (`US-14`):** Default and Host override bill vectors use the same deterministic rounding pipeline in Section 5.2. On Firebase Spark, the Host client calculates and Rules authorize the transaction under ADR-021/ADR-022; Rules do not independently verify calculation correctness or roster completeness.
+3. **Host Override Option (`US-14`):** Host MAY assign a specific VND share or percentage to selected members before any Member is marked paid. Overrides modify the raw share vector; all untouched members retain their default raw amount. The complete vector must equal the bill before the shared rounding step; there is no remainder-distribution branch. Once any Member is marked paid, further overrides are locked (ADR-022).
 4. **Breakdown Display (`US-14`):** Real-time snapshot updates members' UI with exact individual share, violation count, and penalty breakdown. Final shares always sum exactly to the entered total.
 5. **VietQR Code Generation (`US-15`):**  
    - Member taps "Pay Share".  
@@ -185,7 +185,7 @@ Total Group Penalty Score: $S_{\text{total}} = \sum_{j=1}^N S_j$.
   $$P_i = \left( \frac{B_{\text{base}}}{N} \right) + \left( B_{\text{penalty}} \times \frac{S_i}{S_{\text{total}}} \right)$$
 
 #### Step 3: Host Manual Override Handling (If Applied)
-Host overrides replace the selected members' raw amounts or percentages before rounding. The complete raw share vector must represent the full bill. Default and override cases continue through the same Step 4; there is no separate remainder-after-override algorithm.
+Host overrides replace selected members' raw amounts or percentages before rounding. Percentage values are basis points of the total bill. Untouched members keep their default raw amount. Reject if the complete raw vector does not equal the full bill. Default and override cases continue through the same Step 4; there is no separate remainder-after-override algorithm.
 
 #### Step 4: Deterministic 1,000 VND Rounding & Residual Distribution
 1. Initial 1,000 VND rounding uses integer arithmetic and rounds an exact 500 VND tie upward:
@@ -323,11 +323,16 @@ CREATE TABLE IF NOT EXISTS app_settings (
   │     ├── endedAt: timestamp
   │     └── durationSeconds: number
   │
-  └── /billShares/{uid}
-  └── /billCommands/{requestId}
-        ├── shareVnd: number
-        ├── paymentStatus: "UNPAID" | "MARKED_AS_PAID"
-        └── updatedAt: timestamp
+  ├── billRevision: integer (default 0; incremented for each override)
+  ├── billOverrideRequestId: UUID | absent (current version pointer)
+  ├── billPaidCount: integer (default 0; incremented atomically by SL-027)
+  ├── /billShares/{uid} (SL-024 default version)
+  ├── /billOverrides/{requestId}
+  │     └── /shares/{uid} (versioned staged/final shares; Members read active pointer only)
+  ├── /billCommands/{requestId} (default publication receipt)
+  └── /billOverrideCommands/{requestId} (immutable override receipt)
+
+Each share contains the final `shareVnd`, request ID, and update timestamp. Payment status is owned by SL-027 and must update `billPaidCount` atomically with the first `MARKED_AS_PAID` transition (ADR-022).
 ```
 
 ---

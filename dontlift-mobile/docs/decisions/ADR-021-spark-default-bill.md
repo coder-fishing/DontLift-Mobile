@@ -22,7 +22,7 @@ SL-024 still needs a canonical breakdown stored in Firestore so room Members can
 - A room may publish its default bill breakdown once in SL-024. A same-request retry replays its receipt; a new request after publication is rejected. Editing or replacing published shares requires a separately approved slice/policy.
 - Preserve ADR-005's integer VND, non-negative result, deterministic residual order, frozen early-exit score, and exact-sum invariant for the supported client algorithm. These math invariants are verified by app-side validation and tests, not by Rules.
 - Interpret “non-zero base share” as a positive mathematical base component before the ADR-005 rounding step. A final integer share may be zero after the specified rounding and residual distribution when the bill is small relative to the roster. Do not add a minimum per-member bill or distort the agreed rounding pipeline.
-- This is a narrowly scoped SL-024 Spark exception. It does not authorize other bill commands, overrides, payment status writes, Cloud Functions deployment, Cloud Billing, or weakening their contracts.
+- This is a narrowly scoped SL-024 Spark exception. Host bill overrides are separately approved under ADR-022. Neither ADR authorizes payment status writes; SL-027 must follow its own approved contract and atomically maintain `billPaidCount`. No Cloud Functions deployment or Cloud Billing is authorized.
 
 ## Consequences
 
