@@ -68,6 +68,7 @@ import { createBillRepository, BillRepositoryError, type CalculateBillCommand, t
 import { listenToPublishedBill, type PublishedBillState } from '../features/settlement/published-bill-listener';
 import { billPublicationKey, shouldOpenPublishedBillForMember } from '../features/settlement/published-bill-navigation';
 import { selectPublishedBillState } from '../features/settlement/published-bill-state';
+import { shouldTrackGroupConnectivity } from '../features/settlement/group-connectivity';
 import {
   createRoomLivenessRepository, HOST_HEARTBEAT_INTERVAL_MS, HOST_STALE_AFTER_MS, STALE_ROOM_RETRY_MS,
   RoomLivenessError,
@@ -1078,7 +1079,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const groupCaptureRoomSnapshot = ownGroupRoomMember?.status === 'ACTIVE' ? groupRoomSnapshot : null;
 
   useEffect(() => {
-    if (currentScreen !== '13-group-summary') return undefined;
+    if (!shouldTrackGroupConnectivity(currentScreen)) return undefined;
     let active = true;
     const update = (state: Network.NetworkState) => {
       if (active) setGroupIsOnline(state.isConnected === true && state.isInternetReachable !== false);
