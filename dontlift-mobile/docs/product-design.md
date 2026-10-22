@@ -269,3 +269,5 @@ During gate review P4.5, the running interactive prototype and React Native code
 - ❌ **No Email Verification Enforcement (MVP).**
 - ❌ **No SSO / Social Login (Deferred to Post-MVP v1.1).**
 - ❌ **No Analytics Dashboards (MVP).**
+
+SL-028 history UI: Group home has a Group history action. History list/detail use accessible labels and 48-point-or-larger actions, loading/empty/error/offline/pending states, pull-to-refresh and an explicit retry. Device-recorded statistics and canonical room result are separate sections. EARLY_EXIT shows its approved cutoff. HOST_OVERRIDE explains why late excluded violations do not change points or payment. Cached room/bill details are labeled Saved copy; the Pay my share action reopens a separate current-payment view for the signed-in user only. It revalidates membership, active bill version, paid counter and unexpired bank details from Firebase; offline/cached data cannot produce a QR. Returning preserves the selected history session. Bank account details are never cached by this journey.

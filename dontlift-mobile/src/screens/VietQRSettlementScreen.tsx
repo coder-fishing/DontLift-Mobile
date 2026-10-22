@@ -13,6 +13,7 @@ type Props = {
   member: { uid: string; displayName: string; status: string } | undefined;
   billState: PublishedBillState; detailsState: SettlementDetailsState; isOnline: boolean;
   onRefresh: () => void; onBack: () => void;
+  backLabel?: string;
 };
 
 function QrImage({ uri, colors, onRetry }: {
@@ -77,9 +78,9 @@ export function VietQRSettlementScreen(props: Props) {
   );
   return (
     <View style={styles.container}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Back to bill breakdown" onPress={props.onBack}
+      <Pressable accessibilityRole="button" accessibilityLabel={`Back to ${(props.backLabel ?? 'Bill breakdown').toLowerCase()}`} onPress={props.onBack}
         style={({ pressed }) => [styles.back, pressed && styles.pressed]}>
-        <Text style={[styles.actionText, { color: colors.primary }]}>‹  Bill breakdown</Text>
+        <Text style={[styles.actionText, { color: colors.primary }]}>‹  {props.backLabel ?? 'Bill breakdown'}</Text>
       </Pressable>
       <GlassCard style={[styles.paymentCard, cardStyle]}>
         <View style={styles.headingRow}>

@@ -1350,6 +1350,36 @@ service cloud.firestore {
         );
     }
 
+    // Personal summary là thống kê do thiết bị báo; không thay đổi điểm canonical hoặc bill.
+    function validGroupHistory(uid, roomId, data) {
+      let room = get(roomPath(roomId)).data;
+      let member = get(hostMemberPath(roomId, uid)).data;
+      let early = member.status == 'EARLY_EXIT';
+      let terminal = room.status in ['COMPLETED', 'CANCELLED', 'ABORTED'];
+      let cutoff = early ? member.earlyExitAt : room.endedAt;
+      let end = early && terminal && room.endedAt < cutoff ? room.endedAt : cutoff;
+      return isOwner(uid)
+        && member.status in ['ACTIVE', 'EARLY_EXIT']
+        && (early || terminal) && room.startedAt is timestamp && end is timestamp
+        && data.keys().hasAll(['version', 'eventId', 'actorUid', 'roomId', 'status', 'startedAtUtcMs',
+          'completedAtUtcMs', 'liftCount', 'violationDurationSeconds', 'penaltyScore', 'uploadedAt'])
+        && data.keys().hasOnly(['version', 'eventId', 'actorUid', 'roomId', 'status', 'startedAtUtcMs',
+          'completedAtUtcMs', 'liftCount', 'violationDurationSeconds', 'penaltyScore', 'uploadedAt'])
+        && data.version == 1 && data.actorUid == uid && data.roomId == roomId
+        && roomId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
+        && data.eventId is string
+        && data.eventId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
+        && data.status == (early ? 'EARLY_EXIT' : room.status)
+        && data.startedAtUtcMs is int && data.startedAtUtcMs == room.startedAt.toMillis()
+        && data.completedAtUtcMs is int && data.completedAtUtcMs == end.toMillis()
+        && data.startedAtUtcMs >= 0 && data.completedAtUtcMs >= data.startedAtUtcMs
+        && data.liftCount is int && data.liftCount >= 0 && data.liftCount <= 9007199254740991
+        && data.violationDurationSeconds is int && data.violationDurationSeconds >= 0
+        && data.violationDurationSeconds <= 9007199254740991
+        && data.penaltyScore is int && data.penaltyScore >= 0 && data.penaltyScore <= 9007199254740991
+        && data.penaltyScore == data.liftCount * 10 + data.violationDurationSeconds
+        && data.uploadedAt == request.time;
+    }
     match /users/{uid} {
       // Hồ sơ chỉ được tạo một lần; client không thể tự cấp Premium hay sửa hồ sơ người khác.
       allow get: if isOwner(uid);
@@ -1369,6 +1399,23 @@ service cloud.firestore {
         && request.resource.data.updatedAt == request.time;
       allow list, update, delete: if false;
 
+      match /groupHistory/{roomId} {
+        allow get, list: if isOwner(uid);
+        allow create: if validGroupHistory(uid, roomId, request.resource.data);
+        // Sửa hẹp theo membership/cutoff server; không cho thay identity hay tăng điểm.
+        allow update: if validGroupHistory(uid, roomId, request.resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'completedAtUtcMs', 'liftCount', 'violationDurationSeconds', 'penaltyScore', 'uploadedAt'])
+          && request.resource.data.completedAtUtcMs <= resource.data.completedAtUtcMs
+          && (request.resource.data.completedAtUtcMs < resource.data.completedAtUtcMs
+            || (resource.data.status != 'EARLY_EXIT' && request.resource.data.status == 'EARLY_EXIT'))
+          && request.resource.data.liftCount <= resource.data.liftCount
+          && request.resource.data.violationDurationSeconds <= resource.data.violationDurationSeconds
+          && (request.resource.data.completedAtUtcMs < resource.data.completedAtUtcMs
+            || (request.resource.data.liftCount == resource.data.liftCount
+              && request.resource.data.violationDurationSeconds == resource.data.violationDurationSeconds));
+        allow delete: if false;
+      }
       // Solo summary được ghi bởi syncEvents; owner chỉ đọc history của chính mình.
       match /sessions/{sessionId} {
         allow get, list: if request.auth != null && request.auth.uid == uid;

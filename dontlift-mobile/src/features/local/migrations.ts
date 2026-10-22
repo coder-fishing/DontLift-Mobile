@@ -265,6 +265,9 @@ const migrations: LocalMigration[] = [
   {
     version: 8,
     async migrate(database) {
+      const existing = await database.getFirstAsync<{ sql: string }>("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'rooms'");
+      // user_version có thể bị reset dù schema mới còn đủ; không rebuild làm mất các cột reconciliation/history.
+      if (existing && /length\s*\(\s*pin\s*\)\s+IN\s*\(\s*4\s*,\s*8\s*\)/i.test(existing.sql)) return;
       // Mở rộng độ dài PIN nhưng giữ nguyên phòng và membership đã cache.
       await database.execAsync(`
         DROP INDEX IF EXISTS idx_room_members_owner_status;
@@ -312,6 +315,31 @@ const migrations: LocalMigration[] = [
       const memberColumns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(room_members)');
       if (!memberColumns.some(column => column.name === 'sync_acknowledged_at')) {
         await database.execAsync('ALTER TABLE room_members ADD COLUMN sync_acknowledged_at TEXT');
+      }
+    },
+  },
+  {
+    version: 10,
+    async migrate(database) {
+      await database.execAsync(`
+        CREATE TABLE IF NOT EXISTS group_history (
+          actor_uid TEXT NOT NULL, room_id TEXT NOT NULL,
+          completed_at_utc_ms INTEGER NOT NULL, summary_json TEXT NOT NULL,
+          sync_status TEXT NOT NULL CHECK(sync_status IN ('PENDING', 'SYNCED', 'FAILED')),
+          source TEXT NOT NULL DEFAULT 'LOCAL' CHECK(source IN ('LOCAL', 'CLOUD')),
+          detail_json TEXT,
+          PRIMARY KEY(actor_uid, room_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_group_history_owner_completed ON group_history(actor_uid, completed_at_utc_ms DESC, room_id DESC);
+      `);
+    },
+  },
+  {
+    version: 11,
+    async migrate(database) {
+      const columns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(group_history)');
+      if (!columns.some(column => column.name === 'terminal_confirmed')) {
+        await database.execAsync('ALTER TABLE group_history ADD COLUMN terminal_confirmed INTEGER NOT NULL DEFAULT 0');
       }
     },
   },

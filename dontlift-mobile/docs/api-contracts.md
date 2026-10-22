@@ -206,6 +206,21 @@ The event document is the idempotency receipt. A retry with the same ID and iden
 
 Members of the room may read its violation documents. The leaderboard reads room member documents and sorts by ascending `penaltyScore`, then ascending UID for a stable tie. Outsiders and cross-room users remain denied. Firestore listeners provide updates after the transaction commits.
 
+### 5.2 SL-028: GROUP_SESSION_LOCAL_SUMMARY on Spark (ADR-024)
+
+Human approved D4 and the Spark exception on 2026-10-22. This event uses a dedicated Firestore client transaction instead of the syncEvents callable. Owner destination: users/{actorUid}/groupHistory/{roomId}. The command is a personal history projection, never canonical room completion or score authority.
+
+Payload: version 1; UUID eventId; actorUid; UUID roomId; status COMPLETED/CANCELLED/ABORTED/EARLY_EXIT; non-negative safe integer startedAtUtcMs/completedAtUtcMs/liftCount/violationDurationSeconds/penaltyScore. Score equals 10*liftCount+violationDurationSeconds. Millisecond times are projections of the server cutoff/start. The cloud document adds server uploadedAt.
+
+Owner authorization and ACTIVE/EARLY_EXIT room membership are required. Before upload, read room and own membership in one transaction and normalize the local summary/outbox to that authority. Rules bind start to room.startedAt, terminal cutoff to room.endedAt, and EARLY_EXIT to the earlier approved member cutoff if present. An active room without an approved exit cannot produce history completion. Owner get/list remains allowed after completion. Deletes and cross-owner reads/writes are denied. Narrow corrections may change status to EARLY_EXIT and/or reduce the cutoff to the current server-authorized value, retaining identity/start/event ID and never increasing counts/duration; status-only corrections retain stats. All other updates are denied. Stats are device-reported; Rules cannot prove capture completeness.
+
+Identity: actorUid/roomId with a durable UUID event ID. Write the local summary and matching GROUP_SESSION_LOCAL_SUMMARY outbox in one SQLite transaction after capture/lifecycle draining and cutoff normalization, together with recording completion. Same payload replays without writes; changed event ID or payload outside the narrow authority correction under the same room identity fails already-exists. Synced EARLY_EXIT records are rechecked until terminal authority is observed, including backdated aborts. Transient failure retains PENDING; permanent invalid/permission/conflict errors become FAILED and remain explicitly retryable. Local ACK failure does not delete the envelope; replay reads the saved cloud document before local acknowledgment; ACK/failure only updates the matching local payload.
+
+Owner query: completedAtUtcMs DESC, document ID DESC, cursor pair and page size 20. Local/cache merge deduplicates by actor/room and keeps pending local state. Independent startup/reconnect/foreground retry does not depend on the current room or screen. Account changes cancel old callbacks. Second-device recovery includes records already uploaded, not never-uploaded sessions.
+
+Retention: Free UI shows seven days, pending/failed local records remain visible. Local Premium extends local-origin visibility; verified Server Premium extends cloud-origin visibility. This is an application visibility policy, not server-enforced deletion. SL-033 owns purge. No bank account or QR cache. Existing per-room canonical detail permissions and settlement expiry remain unchanged.
+
+
 ## 6. Room completion and reconciliation transactions
 
 ### 5.1 `completeRoom`

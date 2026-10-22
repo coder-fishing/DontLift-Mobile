@@ -480,3 +480,7 @@ Không còn open architecture decision. Dedicated development/production Firebas
 - Mermaid files phải parse thành công trước khi artifact package được xem là hoàn tất.
 
 SL-027 exception: ADR-023 uses a Host-only Spark transaction for manual payment confirmation. The current share, immutable payment receipt and room paid counter change atomically; the first mark locks overrides. No bank verification or Functions.
+
+### SL-028 owner history exception — ADR-024
+
+GROUP_SESSION_LOCAL_SUMMARY uses an atomic SQLite summary/outbox producer after authoritative cutoff recovery, then a create-only Rules-checked client transaction into users/{uid}/groupHistory/{roomId}. This replaces the draft callable route for this event only. It neither completes a room nor changes finalized scores/bills. Personal summaries are device-reported; room/member resources remain canonical. History has stable owner/room identity, owner-path cursor pagination, independent reconnect retries and local/cloud source-aware visibility. No bank details are persisted. Physical purge remains SL-033; no scheduled services or billing.

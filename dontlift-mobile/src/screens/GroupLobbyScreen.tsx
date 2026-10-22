@@ -19,9 +19,10 @@ interface GroupLobbyScreenProps {
   isStarting?: boolean;
   startError?: string;
   onStartRoom?: () => void;
+  onOpenHistory?: () => void;
 }
 
-export function GroupLobbyScreen({ room, isCreating, errorMessage, onCreateRoom, onJoinRoom, onCancelCreate, lobbyState, isHost, isStarting, startError, onStartRoom }: GroupLobbyScreenProps) {
+export function GroupLobbyScreen({ room, isCreating, errorMessage, onCreateRoom, onJoinRoom, onCancelCreate, lobbyState, isHost, isStarting, startError, onStartRoom, onOpenHistory }: GroupLobbyScreenProps) {
   // Snapshot của phòng trước không được lóe lên giữa lần đổi room và effect cleanup.
   const visibleLobbyState = lobbyState?.snapshot && lobbyState.snapshot.roomId !== room?.roomId ? null : lobbyState;
   if (!room) {
@@ -29,6 +30,7 @@ export function GroupLobbyScreen({ room, isCreating, errorMessage, onCreateRoom,
       <View style={styles.container}>
         <View style={styles.card}>
           <Text style={styles.eyebrow}>GROUP ROOM</Text>
+          {onOpenHistory ? <PrimaryButton title="Group history" variant="secondary" onPress={onOpenHistory} /> : null}
           <Text style={styles.title}>Tạo phòng tập trung</Text>
           <Text style={styles.body}>Tạo phòng đang chờ. PIN và mã QR chỉ xuất hiện sau khi lưu thành công trên Firebase.</Text>
           {errorMessage ? <Text accessibilityRole="alert" style={styles.error}>{errorMessage}</Text> : null}
@@ -55,6 +57,7 @@ export function GroupLobbyScreen({ room, isCreating, errorMessage, onCreateRoom,
     <View style={styles.container}>
       <View style={styles.card}>
         <Text style={styles.eyebrow}>ROOM ĐANG CHỜ</Text>
+        {onOpenHistory ? <PrimaryButton title="Group history" variant="secondary" onPress={onOpenHistory} /> : null}
         <Text style={styles.title}>Phòng đã sẵn sàng</Text>
         <Text style={styles.body}>Chia sẻ mã mời để người khác tham gia. Danh sách bên dưới được cập nhật trực tiếp từ Firebase.</Text>
         <View style={styles.qrCard} accessibilityLabel="Mã QR lời mời phòng">

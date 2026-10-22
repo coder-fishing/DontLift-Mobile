@@ -24,7 +24,8 @@ export function BottomNav({ currentScreen, onNavigate }: BottomNavProps) {
     currentScreen === '13-group-summary' ||
     currentScreen === '07-bill-allocation' ||
     currentScreen === '08-vietqr-settlement' ||
-    currentScreen === '14-settlement-details';
+    currentScreen === '14-settlement-details' ||
+    currentScreen === '15-group-history';
 
   return (
     <View

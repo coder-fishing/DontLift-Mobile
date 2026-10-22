@@ -27,6 +27,8 @@ import { SoloSelectScreen } from '../screens/SoloSelectScreen';
 import { SoloTimerScreen } from '../screens/SoloTimerScreen';
 import { SoloSummaryScreen } from '../screens/SoloSummaryScreen';
 import { HistoryScreen } from '../screens/HistoryScreen';
+import { GroupHistoryScreen } from '../screens/GroupHistoryScreen';
+import { createGroupHistoryRepository } from '../features/history/group-history-repository';
 import { createSoloHistoryRepository } from '../features/history/solo-history-repository';
 import { GroupLobbyScreen } from '../screens/GroupLobbyScreen';
 import { GroupActiveScreen } from '../screens/GroupActiveScreen';
@@ -52,7 +54,7 @@ import { createSyncEventsPort } from '../features/sync/sync-events-port';
 import { getConfiguredFirebaseRuntime } from '../features/auth/firebase-adapters';
 import { getLocalDatabase } from '../features/local/database';
 import { createRoomRepository, persistEarlyExitProjection, persistRoomLobbyProjection, persistTerminalRoomProjection, restoreCachedActiveRoom, RoomCreateError, type CreatedRoom, type RoomCreateCommand, type JoinedRoom, RoomJoinError, roomJoinErrorMessage, RoomStartError, roomStartErrorMessage, type RoomStartCommand } from '../features/rooms/room-repository';
-import { listenToRoomLobby, type RoomLobbyState } from '../features/rooms/room-listener';
+import { listenToRoomLobby, type RoomLobbyState, type RoomLobbySnapshot } from '../features/rooms/room-listener';
 import { createGroupViolationRepository, GroupViolationError } from '../features/rooms/group-violation-repository';
 import { createEarlyExitSyncRetry } from '../features/rooms/early-exit-sync-retry';
 import { createEarlyExitCleanupRetry } from '../features/rooms/early-exit-cleanup-retry';
@@ -183,6 +185,27 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     [profile.uid],
   );
   const roomRuntime = useMemo(() => getConfiguredFirebaseRuntime(Platform.OS, __DEV__), [profile.uid]);
+  const groupHistoryRepository = useMemo(() => createGroupHistoryRepository({
+    firestore: roomRuntime.firestore, auth: roomRuntime.auth,
+  }), [roomRuntime]);
+  useEffect(() => {
+    let disposed = false;
+    void groupHistoryRepository.recoverLocal(profile.uid).catch(() => undefined);
+    const retry = async () => {
+      try {
+        const network = await Network.getNetworkStateAsync();
+        if (!disposed && network.isConnected && network.isInternetReachable !== false) {
+          await groupHistoryRepository.syncPending(profile.uid);
+        }
+      } catch { /* Outbox còn bền vững; lần foreground/reconnect sau sẽ thử lại. */ }
+    };
+    void retry();
+    // Worker độc lập selected room/screen; rời history không làm mất trigger retry.
+    const network = Network.addNetworkStateListener(() => { void retry(); });
+    const lifecycle = AppState.addEventListener('change', state => { if (state === 'active') void retry(); });
+    const timer = setInterval(() => { void retry(); }, 30_000);
+    return () => { disposed = true; network.remove(); lifecycle.remove(); clearInterval(timer); };
+  }, [groupHistoryRepository, profile.uid]);
   const roomRepository = useMemo(() => createRoomRepository({
       firestore: roomRuntime.firestore,
       auth: roomRuntime.auth,
@@ -281,7 +304,11 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     userId: string;
     cutoffUtcMs: number;
     startedAtUtcMs: number;
+    historySnapshot?: RoomLobbySnapshot;
   }) => {
+    // Abort có thể backdate trước earlyExitAt; mọi caller dùng cùng mốc sớm nhất.
+    const terminalEnd = input.historySnapshot?.endedAtUtcMs;
+    input = { ...input, cutoffUtcMs: terminalEnd == null ? input.cutoffUtcMs : Math.min(input.cutoffUtcMs, terminalEnd) };
     const existingTask = earlyExitCutoffCleanupTasks.current.get(input.roomId);
     if (existingTask) return existingTask;
 
@@ -371,7 +398,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       }
       setRoomLobbyState(state);
     },
-      snapshot => persistRoomLobbyProjection(getLocalDatabase(), snapshot));
+      snapshot => persistRoomLobbyProjection(getLocalDatabase(), snapshot, profile.uid));
   }, [lobbyRoom?.roomId, roomRuntime.firestore, profile.uid]);
 
   useEffect(() => {
@@ -526,7 +553,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
         try {
           // Không chốt local interval cho tới khi lần ghi capture cuối cùng đã hoàn tất.
           await groupCaptureWork.current.get(roomId)?.waitForIdle();
-          if (snapshot.status === 'COMPLETED' || snapshot.status === 'ABORTED') {
+          if (snapshot.status === 'COMPLETED' || snapshot.status === 'ABORTED' || snapshot.status === 'CANCELLED') {
             // Reconcile candidate nền theo cutoff server trước khi terminal cleanup đóng session.
             const cutoffUtcMs = earlyExitCutoffUtcMs == null
               ? endedAtUtcMs : Math.min(endedAtUtcMs, earlyExitCutoffUtcMs);
@@ -535,7 +562,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
           if (earlyExitCutoffUtcMs != null && startedAtUtcMs != null) {
             // Nếu đây là snapshot đầu tiên sau khi Host duyệt, áp cutoff trước giờ kết thúc phòng.
             await runEarlyExitCutoffCleanup({
-              roomId, userId: profile.uid, cutoffUtcMs: earlyExitCutoffUtcMs, startedAtUtcMs,
+              roomId, userId: profile.uid, cutoffUtcMs: Math.min(earlyExitCutoffUtcMs, snapshot.endedAtUtcMs!), startedAtUtcMs, historySnapshot: snapshot,
             });
           }
           // Chốt violation đã xác nhận theo mốc kết thúc server, giữ outbox pending cho SL-020 reconciliation.
@@ -549,6 +576,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
             reconciliationStatus: snapshot.reconciliationStatus,
             pendingMemberCount: snapshot.pendingMemberCount,
             finalizationReason: snapshot.finalizationReason,
+            historySnapshot: snapshot,
           });
           if (restoredGroupRoomId.current === roomId) restoredGroupRoomId.current = null;
           if (snapshot.status !== 'COMPLETED') {
@@ -611,7 +639,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     cleanupRetryController = createEarlyExitCleanupRetry(
       async () => {
         // Dùng cùng cleanup với terminal path để hai snapshot không chốt sai thứ tự.
-        await runEarlyExitCutoffCleanup({ roomId, userId: profile.uid, cutoffUtcMs, startedAtUtcMs });
+        await runEarlyExitCutoffCleanup({ roomId, userId: profile.uid, cutoffUtcMs, startedAtUtcMs, historySnapshot: snapshot });
         if (disposed) return;
       },
       {
@@ -791,7 +819,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
         if (ownMember?.status === 'EARLY_EXIT' && ownMember.earlyExitAtUtcMs != null) {
           await runEarlyExitCutoffCleanup({
             roomId: lobbyRoom.roomId, userId: profile.uid,
-            cutoffUtcMs: ownMember.earlyExitAtUtcMs, startedAtUtcMs: snapshot.startedAtUtcMs,
+            cutoffUtcMs: ownMember.earlyExitAtUtcMs, startedAtUtcMs: snapshot.startedAtUtcMs, historySnapshot: snapshot,
           });
         }
       }
@@ -1964,7 +1992,10 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       {/* Main Body */}
       <View style={styles.mainBody}>
         {currentScreen === '01-login' && <LoginScreenBackground />}
-        {currentScreen === '11-solo-history' ? (
+        {currentScreen === '15-group-history' ? (
+          <GroupHistoryScreen key={profile.uid} userId={profile.uid} serverPremium={profile.isPremium}
+            repository={groupHistoryRepository} onBack={() => navigateToScreen('05-group-lobby')} />
+        ) : currentScreen === '11-solo-history' ? (
           <HistoryScreen
             userId={profile.uid}
             serverPremium={profile.isPremium}
@@ -2078,6 +2109,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
 
         {currentScreen === '05-group-lobby' && (
           <GroupLobbyScreen
+            onOpenHistory={() => setCurrentScreen('15-group-history')}
             room={lobbyRoom ? {
               roomId: lobbyRoom.roomId, pin: lobbyRoom.pin, invitation: lobbyRoom.invitation,
               hostUid: lobbyRoom.hostUid,
