@@ -25,6 +25,29 @@ const bill: PublishedBill = {
   calculationVersion: 1, shares: [{ uid: 'member', shareVnd: 1_000 }], sumShareVnd: 1_000,
 };
 
+test.each(['published', 'cached', 'error'] as const)('Pay share navigation requires a current published bill (%s)', async kind => {
+  const onPayShare = jest.fn();
+  let mounted: Rendered | undefined;
+  try {
+    await renderer.act(() => {
+      mounted = renderer.create(<BillAllocationScreen
+        roomId="room" mode="member" actorUid="member" onPayShare={onPayShare}
+        members={[{ uid: 'member', displayName: 'Member', penaltyScore: 0 }]}
+        state={{ kind, bill }} isOnline isPublishing={false}
+        onPublish={jest.fn()} onRetry={jest.fn()} onRetryPublish={jest.fn()} onBack={jest.fn()}
+      />);
+    });
+    const button = mounted!.root.findByProps({ accessibilityLabel: 'View VietQR for your published share' });
+    expect(button.props.disabled).toBe(kind !== 'published');
+    if (kind === 'published') {
+      await renderer.act(() => { (button.props.onPress as () => void)(); });
+      expect(onPayShare).toHaveBeenCalledTimes(1);
+    }
+  } finally {
+    await renderer.act(async () => mounted?.unmount());
+  }
+});
+
 test.each([
   { mode: 'host', kind: 'error' },
   { mode: 'member', kind: 'error' },

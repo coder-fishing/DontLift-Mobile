@@ -12,6 +12,8 @@ import type { PublishedBillState } from '../features/settlement/published-bill-l
 export type BillAllocationMember = { uid: string; displayName: string; penaltyScore: number };
 
 type Props = {
+  actorUid?: string;
+  onPayShare?: () => void;
   roomId: string;
   mode: 'host' | 'member';
   members: readonly BillAllocationMember[];
@@ -95,7 +97,7 @@ function OverrideMemberEditor({
 }
 
 export function BillAllocationScreen({
-  roomId, mode, members, state, isOnline, isPublishing, pendingTotalVnd,
+  roomId, mode, members, state, isOnline, isPublishing, pendingTotalVnd, actorUid, onPayShare,
   isApplyingOverride = false, hasPendingOverride = false, publishError, overrideError,
   onPublish, onApplyOverrides = () => undefined, onRetry, onRetryPublish, onRetryOverride = () => undefined, onBack,
 }: Props) {
@@ -371,6 +373,15 @@ export function BillAllocationScreen({
         : null}
       ListFooterComponent={(
         <View style={styles.footer}>
+          {confirmedBill && !isEditingOverrides && onPayShare && confirmedBill.shares.some(share => share.uid === actorUid) ? (
+            <Pressable accessibilityRole="button" accessibilityLabel="View VietQR for your published share"
+              disabled={!isOnline || state.kind !== 'published' || hasPendingOverride || isApplyingOverride}
+              accessibilityState={{ disabled: !isOnline || state.kind !== 'published' || hasPendingOverride || isApplyingOverride }}
+              onPress={onPayShare} style={({ pressed }) => [styles.publishButton, pressed && styles.pressed,
+                (!isOnline || state.kind !== 'published' || hasPendingOverride || isApplyingOverride) && styles.disabled]}>
+              <Text style={[styles.publishText, { color: colors.onPrimary }]}>Pay your share</Text>
+            </Pressable>
+          ) : null}
           {confirmedBill ? (
             <GlassCard style={[styles.publishedCard, { backgroundColor: colors.authFormSurface, borderColor: colors.glassBorder, shadowColor: colors.glassShadow }]}>
               <Text style={[styles.publishedTitle, { color: colors.primary }]}>{state.kind === 'published' ? 'Published to this room' : 'Saved copy'}</Text>
