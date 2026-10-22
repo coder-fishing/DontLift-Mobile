@@ -5,6 +5,7 @@ import { Colors } from '../constants/theme';
 import { formatTime } from '../constants';
 import { rankGroupMembers } from '../features/rooms/group-active-domain';
 import type { RoomLobbySnapshot } from '../features/rooms/room-listener';
+import type { PublishedBillState } from '../features/settlement/published-bill-listener';
 
 type Props = {
   snapshot: RoomLobbySnapshot;
@@ -17,12 +18,14 @@ type Props = {
   onSyncAndAcknowledge: () => void;
   onFinalizeWithOverride: (unsyncedMemberUids: string[]) => void;
   onOpenSettlementDetails: () => void;
+  billState: PublishedBillState;
+  onOpenBillAllocation: () => void;
   onReturnToGroupHome: () => void;
 };
 
 export function GroupSummaryScreen({ snapshot, actorUid, isOnline, isSyncing, errorMessage,
   isFinalizingOverride, overrideErrorMessage, onSyncAndAcknowledge, onFinalizeWithOverride,
-  onOpenSettlementDetails, onReturnToGroupHome }: Props) {
+  onOpenSettlementDetails, billState, onOpenBillAllocation, onReturnToGroupHome }: Props) {
   const ownMember = snapshot.members.find(member => member.uid === actorUid);
   const acknowledged = ownMember?.syncAcknowledgedAtUtcMs != null;
   const pendingMembers = snapshot.members.filter(member => member.syncAcknowledgedAtUtcMs == null);
@@ -150,7 +153,23 @@ export function GroupSummaryScreen({ snapshot, actorUid, isOnline, isSyncing, er
       </View>
       {finalized ? <Text style={styles.finalNote}>{hostOverrideFinalized
         ? 'The Host finalized the scores before every member synced. Late eligible lifts stay in history and do not change these scores or payment.'
-        : 'The room scores are final. Bill settlement is handled in a later slice.'}</Text> : null}
+        : 'The room scores are final. The Host can now publish the room bill split.'}</Text> : null}
+      {finalized && !isHost ? (
+        <GlassCard style={styles.billCard}>
+          <Text style={styles.sectionTitle}>Room bill</Text>
+          <Text style={styles.body}>{billState.kind === 'published' ? 'The Host published the final shares.'
+            : billState.kind === 'cached' ? 'A saved copy is available; reconnect to confirm the current result.'
+              : billState.kind === 'error' ? 'Could not check the room bill. Try again.'
+                : billState.kind === 'loading' ? 'Checking whether the Host has published shares…'
+                  : 'Waiting for the Host to publish shares.'}</Text>
+          {billState.kind === 'published' || (billState.kind === 'cached' && billState.bill) || billState.kind === 'error' ? (
+            <Pressable accessibilityRole="button" onPress={onOpenBillAllocation}
+              style={({ pressed }) => [styles.secondaryAction, pressed && styles.pressed]}>
+              <Text style={styles.secondaryActionText}>{billState.kind === 'error' ? 'Check bill status' : 'View bill breakdown'}</Text>
+            </Pressable>
+          ) : null}
+        </GlassCard>
+      ) : null}
       {finalized && ownMember ? (
         <Pressable
           accessibilityRole="button"
@@ -180,6 +199,7 @@ const styles = StyleSheet.create({
   countRow: { gap: 4, borderTopWidth: 1, borderTopColor: Colors.light.border, paddingTop: 12 },
   count: { color: Colors.light.primary, fontSize: 17, fontWeight: '900' },
   syncCard: { gap: 10 },
+  billCard: { gap: 10, padding: 16 },
   rosterCard: { gap: 10 },
   pendingRow: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 10 },
   pendingDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.light.textSecondary },
@@ -201,6 +221,9 @@ const styles = StyleSheet.create({
   settlementButton: { minHeight: 48, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16,
     borderRadius: 12, backgroundColor: Colors.light.primary },
   settlementButtonText: { color: Colors.light.onPrimary, fontWeight: '800' },
+  secondaryAction: { minHeight: 48, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16,
+    borderRadius: 12, borderWidth: 1, borderColor: Colors.light.border },
+  secondaryActionText: { color: Colors.light.primary, fontWeight: '800' },
   homeButton: { minHeight: 48, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16,
     borderRadius: 12, borderWidth: 1, borderColor: Colors.light.border },
   homeButtonText: { color: Colors.light.text, fontWeight: '800' },

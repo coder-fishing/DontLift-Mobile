@@ -21,9 +21,10 @@ When documents conflict, use this precedence:
 
 Current architectural overrides:
 
-- ADR-010 supersedes the native runtime: Firebase JS SDK owns Auth persistence through its AsyncStorage adapter in Expo Go. Do not manually copy ID/refresh tokens into app tables or implement token refresh. Profile bootstrap is create-only through Firestore Rules; authoritative commands remain server-owned except exact Spark transactions approved by ADR-011 through ADR-018.
+- ADR-010 supersedes the native runtime: Firebase JS SDK owns Auth persistence through its AsyncStorage adapter in Expo Go. Do not manually copy ID/refresh tokens into app tables or implement token refresh. Profile bootstrap is create-only through Firestore Rules; authoritative commands remain server-owned except exact Spark transactions approved by ADR-011 through ADR-018, ADR-020, and ADR-021.
 - Offline-capable events sync through `syncEvents`, except the Spark group-violation transaction and its early-exit cutoff extension approved in ADR-014/ADR-015. SL-019 termination voting is a separate narrow Spark transaction exception defined by ADR-016. SL-020 completion/ACK and SL-021 Host score override use the exact Rules-checked transactions in ADR-017/ADR-018; client ACK and Host-observed pending UID lists are attestations, not server verification of SQLite or roster completeness. Do not direct-write authoritative violation or Solo summary documents outside their exact Rules-checked transactions.
 - SL-023 settlement details use the Host-only Spark transaction and membership-scoped, expiry-limited read in ADR-020; do not add a Cloud Function, billing dependency, local bank-detail projection, or physical cleanup promise to this slice.
+- SL-024 default bill shares use the Host-calculated Spark transaction in ADR-021. Rules authorize the Host and finalized room state but do not verify share math or roster completeness; never describe published values as server-verified.
 - `rooms/{roomId}/members/{uid}` is the room membership authority; do not use an unbounded `participantIds` array.
 - ADR-008 governs Android/iOS background transitions and the 3-Second Grace Period.
 - Local Premium and Server Premium are separate entitlements as defined by ADR-007.
@@ -133,3 +134,9 @@ Do not treat `docs/project-brief.md` as current implementation architecture.
 - Summarize user-visible behavior.
 - List the main files edited and checks run.
 - State remaining risks or unverified platform behavior.
+
+<!-- antislop:start -->
+## antislop
+
+For UI, copy, accessibility, or mobile layout work, read the available core filter at `C:\Users\ADMIN\.agents\skills\antislop\SKILL.md` and apply its during-work mode when the user has selected it. Optional antislop concern-specific skill folders are not installed in this environment; do not fetch them.
+<!-- antislop:end -->

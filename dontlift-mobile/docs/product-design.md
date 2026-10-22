@@ -137,7 +137,7 @@ DontLift is designed to solve phone distraction in focus and social contexts thr
 - Accessible to Host only on `COMPLETED` sessions with reconciliation `FINALIZED`. Host enters total bill amount in integer VND (validated $\ge 1,000$).
 
 ### 6.2 Hybrid Bill Allocation Algorithm
-- **Base Allocation:** 40% of bill split equally among all members.
+- **Base Allocation:** 40% of bill split equally among all members. Each zero-violation Member has a positive mathematical base component before rounding; after deterministic rounding the final integer share may be zero for a small bill (ADR-021).
 - **Penalty Allocation:** 60% of bill allocated proportionally based on individual Penalty Score vs group total Penalty Score. Zero-violation members pay equal base shares. Early Exit leavers are included using their score frozen at departure.
 - **Host Manual Override:** Host may assign custom VND or percentage penalties to specific members. Remaining bill balance is distributed equally among non-overridden zero-violation members.
 - **Deterministic Rounding:** All shares rounded to nearest 1,000 VND. Residual discrepancy $\Delta = B - \sum P_i'$ distributed 1,000 VND at a time according to descending residual rank ($R_i = P_i - P_i'$). Guarantee: $\sum \text{Member Shares} = \text{Total Bill}$ with zero discrepancy.

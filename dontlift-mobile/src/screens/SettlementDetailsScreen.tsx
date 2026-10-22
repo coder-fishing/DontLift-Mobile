@@ -35,6 +35,7 @@ type Props = {
   mode: "host" | "member";
   repository: Repository;
   onSaved: (details: SettlementDetails) => void;
+  onContinueToBill?: () => void;
   onBack: () => void;
   bankDirectory: { list: () => Promise<BankOption[]> };
 };
@@ -98,6 +99,7 @@ export function SettlementDetailsScreen({
   mode,
   repository,
   onSaved,
+  onContinueToBill,
   onBack,
   bankDirectory,
 }: Props) {
@@ -483,6 +485,15 @@ export function SettlementDetailsScreen({
                       {saveError}
                     </Text>
                   ) : null}
+                  {details && onContinueToBill ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={onContinueToBill}
+                      style={({ pressed }) => [styles.continueButton, pressed && styles.pressed]}
+                    >
+                      <Text style={styles.continueButtonText}>Continue to bill preview</Text>
+                    </Pressable>
+                  ) : null}
                   <PrimaryButton
                     title={
                       saving
@@ -564,6 +575,10 @@ const styles = StyleSheet.create({
   expiry: { color: Colors.light.textSecondary, fontSize: 13 },
   note: { color: Colors.light.textSecondary, fontSize: 12, lineHeight: 18 },
   saveButton: { marginTop: 4 },
+  continueButton: { minHeight: 48, alignItems: "center", justifyContent: "center", borderRadius: 12,
+    borderWidth: 1, borderColor: Colors.light.border },
+  continueButtonText: { color: Colors.light.primary, fontSize: 15, fontWeight: "800" },
+  pressed: { opacity: 0.78 },
   placeholder: {
     color: Colors.light.textSecondary,
     fontSize: 15,

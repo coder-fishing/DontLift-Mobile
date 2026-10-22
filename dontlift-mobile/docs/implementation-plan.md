@@ -87,7 +87,7 @@ SL-037 phụ thuộc bắt buộc SL-001–SL-036 vì phạm vi đã chọn gồ
 | D6 | Duyệt theme catalog/default/downgrade và behavior advanced leaderboard; analytics nâng cao vẫn deferred. D6 tiếp tục chặn nghiệm thu SL-034/036 và downstream SL-037 cho tới khi các hành vi liên quan được chốt. |
 | D7 | Duyệt provider ads, test credentials, placements và consent. Giải quyết rõ xung đột PRD: FR-06 bắt buộc Home/Lobby/History/Settings, còn ví dụ US-18 và Product Design có Profile nhưng thiếu Home; áp dụng FR-06 trừ khi có quyết định human mới hơn. |
 | D8 | Duyệt recalculation/override sau publication hoặc MARKED_AS_PAID: rule khóa/version/concurrency và outcome UI. |
-| D9 | Giải quyết wording non-zero base share khi bill nhỏ/nhiều Members đối nghịch integer/non-negative/exact-sum. Giữ invariant ADR-005; không tự tạo minimum bill per member. |
+| D9 | Resolved for SL-024 on 2026-10-22: non-zero base means a positive pre-round mathematical component; a final integer share may be zero after ADR-005 rounding for a small bill. No minimum per member. See ADR-021. |
 | D10 | Chốt max retry/retention horizon và receipt TTL; xác định bảo vệ unsynced data trước purge, failed-event retention và expired-read policy. |
 | D11 | Chốt default sound state, bundled violation alert asset và user scope của local preferences trước khi SL-030 tạo asset/defaults. |
 | D12 | **RESOLVED 2026-10-20:** `Asia/Ho_Chi_Minh`; SL-013 Rules derive monthly bucket from server `request.time` (UTC+07:00), not device clock/timezone. |
@@ -147,7 +147,7 @@ Shared ownership: 001 sở hữu test harness/root lockfile changes; 002 native 
 | Early-exit request resource (path theo contract được duyệt) | 018; sau khi D3 chốt path/schema | Host và requester/member theo policy đã duyệt đọc; client writes chỉ được mở nếu contract/ADR cho phép, mặc định giữ server boundary. |
 | Termination-vote resource (path theo contract được duyệt) | 019; sau khi D3 chốt path/schema | Active members đọc trong room; mở client writes chỉ theo contract được duyệt; expiry/finalization server-owned. |
 | `rooms/{roomId}/settlementDetails/current` | 023 settlement-details Rules | Thành viên cùng room đọc trước expiry; chỉ Host active ghi bằng Spark transaction sau khi room FINALIZED; outsider bị deny. |
-| `rooms/{roomId}/billShares/{uid}` | 024 bill-share Rules; 025–027 reuse và kiểm tra consumer reads | Members đọc breakdown/status; chỉ calculation/payment callables ghi. |
+| `rooms/{roomId}/billShares/{uid}` | 024 bill-share Rules; 025–027 reuse và kiểm tra consumer reads | SL-024 cho Host publish final shares một lần theo Spark/ADR-021; các payment/status mutations còn lại chỉ qua command boundary riêng. |
 | Group-history queries trên room/member/violation/share resources hiện có | 028 kiểm chứng consumer query sau khi D4 chốt destination/projection | Không tạo path hoặc quyền mới trước D4; reuse Rules của producer cho mọi document được đọc. |
 | Advanced leaderboard read model nếu behavior D6 yêu cầu resource mới | 036 sau D6; nếu dùng projection hiện có thì reuse 017 | Chỉ audience/entitlement đã duyệt đọc; mọi projection writes server-only. |
 | PIN reservations, usage, command/sync receipts, activation codes, reconciliation audits | 013/014/017/020/021/032 tạo qua backend; 033 stamps approved `expiresAt` on `syncReceipts`; 037 configures and verifies Firestore TTL; Rules mặc định deny | Server-only; không cấp client read/write trực tiếp nếu contract không nêu rõ; TTL chỉ xóa receipt sau D10 horizon, không xóa domain records. |

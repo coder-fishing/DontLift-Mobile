@@ -172,7 +172,7 @@ Given:
 #### Step 1: Base & Penalty Weight Split
 - Base Weight $W_{\text{base}} = 0.40$ (40% of bill split equally).
 - Penalty Weight $W_{\text{penalty}} = 0.60$ (60% of bill weighted by Penalty Score).
-- Base Share Pool: $B_{\text{base}} = B \times W_{\text{base}}$
+- Base Share Pool: $B_{\text{base}} = B \times W_{\text{base}}$. A zero-violation Member's mathematical base component is positive before rounding; the final integer VND share may be zero when the bill is small relative to the roster (ADR-021).
 - Penalty Share Pool: $B_{\text{penalty}} = B \times W_{\text{penalty}}$
 
 #### Step 2: Individual Share Calculation
@@ -324,6 +324,7 @@ CREATE TABLE IF NOT EXISTS app_settings (
   │     └── durationSeconds: number
   │
   └── /billShares/{uid}
+  └── /billCommands/{requestId}
         ├── shareVnd: number
         ├── paymentStatus: "UNPAID" | "MARKED_AS_PAID"
         └── updatedAt: timestamp
