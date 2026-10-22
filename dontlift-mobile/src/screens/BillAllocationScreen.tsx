@@ -281,7 +281,24 @@ export function BillAllocationScreen({
             </View>
           ) : null}
 
-          {canOverride && !isEditingOverrides ? (
+          {host && hasPendingOverride && !paidLocked ? (
+            <GlassCard style={[styles.overrideCard, { backgroundColor: colors.authFormSurface, borderColor: colors.glassBorder }]}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Replacement pending</Text>
+              <Text style={[styles.helper, { color: colors.textSecondary }]}>Retry the saved request to check whether it published. Your custom amounts are kept with that request.</Text>
+              {overrideError ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.error }]}>{overrideError}</Text> : null}
+              {!isOnline ? <Text style={[styles.helper, { color: colors.textSecondary }]}>Reconnect to retry.</Text> : null}
+              <Pressable accessibilityRole="button" accessibilityLabel="Retry publishing the saved bill override"
+                accessibilityState={{ disabled: !isOnline || isApplyingOverride, busy: isApplyingOverride }}
+                disabled={!isOnline || isApplyingOverride} onPress={onRetryOverride}
+                style={({ pressed }) => [styles.publishButton, pressed && styles.pressed,
+                  (!isOnline || isApplyingOverride) && styles.disabled]}>
+                {isApplyingOverride ? <ActivityIndicator color={colors.onPrimary} /> : null}
+                <Text style={[styles.publishText, { color: colors.onPrimary }]}>{isApplyingOverride ? 'Publishing…' : 'Retry publish'}</Text>
+              </Pressable>
+            </GlassCard>
+          ) : null}
+
+          {canOverride && !isEditingOverrides && !hasPendingOverride ? (
             <Pressable accessibilityRole="button" accessibilityLabel="Adjust bill shares before first payment"
               accessibilityState={{ disabled: !isOnline || isApplyingOverride || hasPendingOverride }}
               disabled={!isOnline || isApplyingOverride || hasPendingOverride}
@@ -292,28 +309,27 @@ export function BillAllocationScreen({
             </Pressable>
           ) : null}
 
-          {canOverride && isEditingOverrides ? (
+          {canOverride && isEditingOverrides && !hasPendingOverride ? (
             <GlassCard style={[styles.overrideCard, { backgroundColor: colors.authFormSurface, borderColor: colors.glassBorder }]}>
               <Text style={[styles.sectionTitle, { color: colors.text }]}>Custom amounts</Text>
               <Text style={[styles.helper, { color: colors.textSecondary }]}>Unchanged members keep their default raw amount. The full total must equal {formatVND(confirmedBill.totalBillVnd)} VND exactly.</Text>
               {parsedOverrides.message ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.error }]}>{parsedOverrides.message}</Text> : null}
               {overrideTotalMismatch ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.error }]}>These amounts do not add up to the full bill. Adjust the custom values before publishing.</Text> : null}
               {overrideError ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.error }]}>{overrideError}</Text> : null}
-              {hasPendingOverride ? <Text style={[styles.helper, { color: colors.textSecondary }]}>A publish response is pending. Retry the same request to check whether it committed.</Text> : null}
               {!isOnline ? <Text style={[styles.helper, { color: colors.textSecondary }]}>Connect to the internet before publishing a replacement.</Text> : null}
               <View style={styles.overrideActions}>
                 <Pressable accessibilityRole="button" accessibilityLabel="Cancel editing bill shares" disabled={isApplyingOverride || hasPendingOverride}
                   onPress={() => setIsEditingOverrides(false)} style={({ pressed }) => [styles.cancelButton, { borderColor: colors.border }, pressed && styles.pressed]}>
                   <Text style={[styles.secondaryButtonText, { color: colors.textSecondary }]}>Cancel</Text>
                 </Pressable>
-                <Pressable accessibilityRole="button" accessibilityLabel={hasPendingOverride ? 'Retry publishing the same bill override' : 'Publish replacement bill shares'}
+                <Pressable accessibilityRole="button" accessibilityLabel="Publish replacement bill shares"
                   accessibilityState={{ disabled: !overridePreview || !parsedOverrides.entries?.length || !isOnline || isApplyingOverride }}
                   disabled={!overridePreview || !parsedOverrides.entries?.length || !isOnline || isApplyingOverride}
-                  onPress={hasPendingOverride ? onRetryOverride : requestOverride}
+                  onPress={requestOverride}
                   style={({ pressed }) => [styles.publishButton, pressed && styles.pressed,
                     (!overridePreview || !parsedOverrides.entries?.length || !isOnline || isApplyingOverride) && styles.disabled]}>
                   {isApplyingOverride ? <ActivityIndicator color={colors.onPrimary} /> : null}
-                  <Text style={[styles.publishText, { color: colors.onPrimary }]}>{isApplyingOverride ? 'Publishing…' : hasPendingOverride ? 'Retry publish' : 'Publish replacement'}</Text>
+                  <Text style={[styles.publishText, { color: colors.onPrimary }]}>{isApplyingOverride ? 'Publishing…' : 'Publish replacement'}</Text>
                 </Pressable>
               </View>
               {overridePreview ? <Text style={[styles.previewTotal, { color: colors.textSecondary }]}>Preview total · {formatVND(overridePreview.sumShareVnd)} VND</Text> : null}
