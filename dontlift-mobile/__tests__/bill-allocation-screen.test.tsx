@@ -85,3 +85,36 @@ test.each([
     await renderer.act(async () => mounted?.unmount());
   }
 });
+
+test('Host confirmation waits for modal approval and captures publication identity', async () => {
+  const { Alert } = require('react-native') as typeof import('react-native');
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+  const onMarkPaid = jest.fn();
+  let mounted: Rendered | undefined;
+  try {
+    await renderer.act(() => { mounted = renderer.create(<BillAllocationScreen roomId="room" mode="host"
+      members={[{ uid: 'member', displayName: 'Member', penaltyScore: 0 }]} state={{ kind: 'published', bill }}
+      isOnline isPublishing={false} onPublish={jest.fn()} onRetry={jest.fn()} onRetryPublish={jest.fn()} onBack={jest.fn()} onMarkPaid={onMarkPaid} />); });
+    await renderer.act(() => { (mounted!.root.findByProps({ accessibilityLabel: 'Mark Member as paid' }).props.onPress as () => void)(); });
+    expect(onMarkPaid).not.toHaveBeenCalled();
+    const buttons = alert.mock.calls[0][2]!;
+    expect(buttons[0].style).toBe('cancel');
+    await renderer.act(() => { buttons[1].onPress!(); });
+    expect(onMarkPaid).toHaveBeenCalledWith('member', 'request', 0);
+  } finally { await renderer.act(() => mounted?.unmount()); alert.mockRestore(); }
+});
+
+test('pending payment retry stays accessible without the editor', async () => {
+  const retry = jest.fn();
+  let mounted: Rendered | undefined;
+  try {
+    await renderer.act(() => { mounted = renderer.create(<BillAllocationScreen roomId="room" mode="host"
+      members={[{ uid: 'member', displayName: 'Member', penaltyScore: 0 }]} state={{ kind: 'published', bill }}
+      isOnline isPublishing={false} onPublish={jest.fn()} onRetry={jest.fn()} onRetryPublish={jest.fn()} onBack={jest.fn()}
+      pendingPaymentMemberUid="member" onRetryPayment={retry} />); });
+    const button = mounted!.root.findByProps({ accessibilityLabel: 'Retry the saved payment confirmation' });
+    expect(button.props.disabled).toBe(false);
+    await renderer.act(() => { (button.props.onPress as () => void)(); });
+    expect(retry).toHaveBeenCalledTimes(1);
+  } finally { await renderer.act(() => mounted?.unmount()); }
+});

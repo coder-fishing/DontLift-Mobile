@@ -14,6 +14,11 @@ export type BillAllocationMember = { uid: string; displayName: string; penaltySc
 type Props = {
   actorUid?: string;
   onPayShare?: () => void;
+  pendingPaymentMemberUid?: string;
+  isMarkingPayment?: boolean;
+  paymentError?: string;
+  onMarkPaid?: (memberUid: string, publicationRequestId: string, expectedRevision: number) => void;
+  onRetryPayment?: () => void;
   roomId: string;
   mode: 'host' | 'member';
   members: readonly BillAllocationMember[];
@@ -100,6 +105,7 @@ export function BillAllocationScreen({
   roomId, mode, members, state, isOnline, isPublishing, pendingTotalVnd, actorUid, onPayShare,
   isApplyingOverride = false, hasPendingOverride = false, publishError, overrideError,
   onPublish, onApplyOverrides = () => undefined, onRetry, onRetryPublish, onRetryOverride = () => undefined, onBack,
+  pendingPaymentMemberUid, isMarkingPayment = false, paymentError, onMarkPaid, onRetryPayment,
 }: Props) {
   const colors = useColorScheme() === 'dark' ? Colors.dark : Colors.light;
   const [billInput, setBillInput] = useState('');
@@ -119,7 +125,8 @@ export function BillAllocationScreen({
   }, [host, validTotal, parsedTotal, members]);
   const confirmedBill = state.bill ?? null;
   const paidLocked = (confirmedBill?.billPaidCount ?? 0) > 0;
-  const canOverride = host && confirmedBill != null && !paidLocked && state.kind === 'published';
+  const canOverride = host && confirmedBill != null && !paidLocked && state.kind === 'published'
+    && !pendingPaymentMemberUid && !isMarkingPayment;
   const parsedOverrides = useMemo(() => {
     const overrides: BillShareOverride[] = [];
     for (const [uid, draft] of Object.entries(overrideDrafts)) {
@@ -153,6 +160,19 @@ export function BillAllocationScreen({
   const displayedShares: readonly BillShare[] = canOverride && isEditingOverrides && overridePreview
     ? overridePreview.shares : confirmedBill?.shares ?? preview?.shares ?? [];
   const membersByUid = useMemo(() => new Map(members.map(member => [member.uid, member])), [members]);
+  const payableShares = confirmedBill?.shares.filter(share => share.shareVnd > 0) ?? [];
+  const paidShares = payableShares.filter(share => share.paymentStatus === 'MARKED_AS_PAID');
+  const paymentDisabled = !isOnline || state.kind !== 'published' || isMarkingPayment
+    || Boolean(pendingPaymentMemberUid) || hasPendingOverride || isApplyingOverride;
+  const requestMarkPaid = (share: BillShare) => {
+    if (!host || !confirmedBill || paymentDisabled || !onMarkPaid) return;
+    const publication = confirmedBill.requestId;
+    const revision = confirmedBill.billRevision ?? 0;
+    Alert.alert('Confirm payment received?',
+      `Mark ${shareLabel(membersByUid.get(share.uid))} as paid for ${formatVND(share.shareVnd)} VND? Check your bank account first. This cannot be undone, and the bill split will be locked.`,
+      [{ text: 'Cancel', style: 'cancel' }, { text: 'I received the payment',
+        onPress: () => onMarkPaid(share.uid, publication, revision) }]);
+  };
 
   const requestPublish = () => {
     if (!preview || !isOnline || isPublishing) return;
@@ -225,6 +245,28 @@ export function BillAllocationScreen({
               <Text style={[styles.helper, { color: colors.textSecondary }]}>At least one member has been marked as paid. The room split can no longer be changed.</Text>
             </GlassCard>
           ) : null}
+
+          {confirmedBill ? (
+            <Text accessibilityLiveRegion="polite" style={[styles.helper, { color: colors.textSecondary }]}>
+              {payableShares.length === 0 ? 'No transfers are needed for this bill.'
+                : `${paidShares.length} of ${payableShares.length} payments confirmed by the Host${paidShares.length === payableShares.length ? ' · All confirmed' : ''}`}
+            </Text>
+          ) : null}
+
+          {host && pendingPaymentMemberUid ? (
+            <GlassCard style={[styles.overrideCard, { backgroundColor: colors.authFormSurface, borderColor: colors.glassBorder }]}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Confirming payment</Text>
+              <Text style={[styles.helper, { color: colors.textSecondary }]}>Checking the saved confirmation for {shareLabel(membersByUid.get(pendingPaymentMemberUid))}. Status changes only after server confirmation.</Text>
+              {paymentError ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.error }]}>{paymentError}</Text> : null}
+              <Pressable accessibilityRole="button" accessibilityLabel="Retry the saved payment confirmation"
+                disabled={!isOnline || isMarkingPayment} accessibilityState={{ disabled: !isOnline || isMarkingPayment, busy: isMarkingPayment }}
+                onPress={onRetryPayment} style={({ pressed }) => [styles.publishButton, pressed && styles.pressed,
+                  (!isOnline || isMarkingPayment) && styles.disabled]}>
+                {isMarkingPayment ? <ActivityIndicator color={colors.onPrimary} /> : null}
+                <Text style={[styles.publishText, { color: colors.onPrimary }]}>{isMarkingPayment ? 'Confirming…' : 'Retry confirmation'}</Text>
+              </Pressable>
+            </GlassCard>
+          ) : host && paymentError ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.error }]}>{paymentError}</Text> : null}
 
           {host && !confirmedBill ? (
             <GlassCard style={[styles.entryCard, { backgroundColor: colors.authFormSurface, borderColor: colors.glassBorder, shadowColor: colors.glassShadow }]}>
@@ -351,10 +393,23 @@ export function BillAllocationScreen({
               <View style={[styles.rowIndex, { backgroundColor: colors.backgroundElement }]}><Text style={[styles.rowIndexText, { color: colors.textSecondary }]}>{String(index + 1).padStart(2, '0')}</Text></View>
               <View style={styles.memberInfo}>
                 <Text style={[styles.memberName, { color: colors.text }]} numberOfLines={2}>{shareLabel(member)}</Text>
+                {confirmedBill ? <Text style={[styles.helper, { color: item.paymentStatus === 'MARKED_AS_PAID' ? colors.primary : colors.textSecondary }]}>
+                  {item.shareVnd === 0 ? 'No payment due' : item.paymentStatus === 'MARKED_AS_PAID'
+                    ? `Paid · Host confirmed${state.kind !== 'published' ? ' (saved copy)' : ''}` : 'Awaiting Host confirmation'}
+                </Text> : null}
               </View>
               <Text accessibilityLabel={`${shareLabel(member)} pays ${formatVND(item.shareVnd)} Vietnamese dong`}
                 style={[styles.shareAmount, { color: colors.text }]}>{formatVND(item.shareVnd)} VND</Text>
             </View>
+            {host && confirmedBill && !isEditingOverrides && item.shareVnd > 0
+              && item.paymentStatus !== 'MARKED_AS_PAID' && onMarkPaid ? (
+              <Pressable accessibilityRole="button" accessibilityLabel={`Mark ${shareLabel(member)} as paid`}
+                disabled={paymentDisabled} accessibilityState={{ disabled: paymentDisabled }}
+                onPress={() => requestMarkPaid(item)} style={({ pressed }) => [styles.markPaidButton,
+                  { borderColor: colors.border }, pressed && styles.pressed, paymentDisabled && styles.disabled]}>
+                <Text style={[styles.secondaryButtonText, { color: colors.primary }]}>Mark as paid</Text>
+              </Pressable>
+            ) : null}
             {canOverride && isEditingOverrides && member ? (
               <OverrideMemberEditor member={member} currentShareVnd={item.shareVnd} draft={overrideDrafts[item.uid]}
                 colors={colors} disabled={isApplyingOverride || hasPendingOverride}
@@ -379,7 +434,8 @@ export function BillAllocationScreen({
               accessibilityState={{ disabled: !isOnline || state.kind !== 'published' || hasPendingOverride || isApplyingOverride }}
               onPress={onPayShare} style={({ pressed }) => [styles.publishButton, pressed && styles.pressed,
                 (!isOnline || state.kind !== 'published' || hasPendingOverride || isApplyingOverride) && styles.disabled]}>
-              <Text style={[styles.publishText, { color: colors.onPrimary }]}>Pay your share</Text>
+              <Text style={[styles.publishText, { color: colors.onPrimary }]}>{confirmedBill.shares.find(share => share.uid === actorUid)?.paymentStatus === 'MARKED_AS_PAID'
+                ? 'View payment confirmation' : 'Pay your share'}</Text>
             </Pressable>
           ) : null}
           {confirmedBill ? (
@@ -421,6 +477,8 @@ export function BillAllocationScreen({
 }
 
 const styles = StyleSheet.create({
+  markPaidButton: { minHeight: 48, paddingHorizontal: 18, paddingVertical: 12, borderWidth: 1,
+    borderRadius: 14, alignSelf: 'flex-end', justifyContent: 'center', marginBottom: 12 },
   flex: { flex: 1 },
   list: { flex: 1 },
   content: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 36, gap: 10 },

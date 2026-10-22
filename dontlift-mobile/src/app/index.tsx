@@ -66,6 +66,8 @@ import { createSettlementDetailsRepository, type SettlementDetailsState } from '
 import { createBankDirectoryRepository } from '../features/settlement/bank-directory';
 import { createBillRepository, BillRepositoryError, type ApplyBillOverridesCommand, type CalculateBillCommand, type PublishedBill } from '../features/settlement/bill-repository';
 import type { BillShareOverride } from '../features/settlement/bill-allocation';
+import { createPaymentStatusRepository, PaymentStatusError, type MarkPaymentCommand } from '../features/settlement/payment-status-repository';
+import { acceptsBillProgress } from '../features/settlement/payment-status-domain';
 import { listenToPublishedBill, type PublishedBillState } from '../features/settlement/published-bill-listener';
 import { billPublicationKey, shouldOpenPublishedBillForMember } from '../features/settlement/published-bill-navigation';
 import { selectPublishedBillState } from '../features/settlement/published-bill-state';
@@ -1028,17 +1030,26 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const [committedBill, setCommittedBill] = useState<PublishedBill | null>(null);
   const [isPublishingBill, setIsPublishingBill] = useState(false);
   const [billPublishError, setBillPublishError] = useState<string>();
+  const paymentStatusRepository = useMemo(() => createPaymentStatusRepository({
+    firestore: roomRuntime.firestore, auth: roomRuntime.auth,
+  }), [roomRuntime.firestore, roomRuntime.auth]);
+  const [isMarkingPayment, setIsMarkingPayment] = useState(false);
+  const [paymentError, setPaymentError] = useState<string>();
+  const pendingPayment = useRef<MarkPaymentCommand | null>(null);
   const [isApplyingBillOverride, setIsApplyingBillOverride] = useState(false);
   const [billOverrideError, setBillOverrideError] = useState<string>();
   const pendingBillCommand = useRef<{ command: CalculateBillCommand; rosterMemberUids: string[] } | null>(null);
   const pendingBillOverride = useRef<{ command: ApplyBillOverridesCommand; rosterMemberUids: string[] } | null>(null);
   const activeBillRoomId = useRef<string | null>(null);
-  const latestBillRevision = useRef<{ roomId: string | null; revision: number }>({ roomId: null, revision: -1 });
+  const latestBillRevision = useRef<{ roomId: string | null; revision: number; paidCount: number }>({ roomId: null, revision: -1, paidCount: 0 });
   const autoOpenedBillPublications = useRef(new Set<string>());
 
   useEffect(() => {
     activeBillRoomId.current = groupSummarySnapshot?.roomId ?? null;
-    latestBillRevision.current = { roomId: activeBillRoomId.current, revision: -1 };
+    latestBillRevision.current = { roomId: activeBillRoomId.current, revision: -1, paidCount: 0 };
+    pendingPayment.current = null;
+    setIsMarkingPayment(false);
+    setPaymentError(undefined);
     pendingBillCommand.current = null;
     pendingBillOverride.current = null;
     setCommittedBill(null);
@@ -1060,8 +1071,8 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       if (state.kind === 'published') {
         const revision = state.bill.billRevision ?? 0;
         const latest = latestBillRevision.current;
-        if (latest.roomId === roomId && revision < latest.revision) return;
-        latestBillRevision.current = { roomId, revision };
+        if (!acceptsBillProgress(state.bill, latest)) return;
+        latestBillRevision.current = { roomId, revision, paidCount: state.bill.billPaidCount ?? 0 };
       }
       setPublishedBillState(state);
     });
@@ -1079,6 +1090,13 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
 
   useEffect(() => {
     if (publishedBillState.kind === 'published') setCommittedBill(publishedBillState.bill);
+    if (publishedBillState.kind === 'published' && pendingPayment.current
+      && publishedBillState.bill.shares.some(share => share.uid === pendingPayment.current?.memberUid
+        && share.paymentStatus === 'MARKED_AS_PAID')) {
+      pendingPayment.current = null;
+      setIsMarkingPayment(false);
+      setPaymentError(undefined);
+    }
     if (publishedBillState.kind === 'published') pendingBillCommand.current = null;
     if (publishedBillState.kind === 'published' && pendingBillOverride.current?.command.requestId === publishedBillState.bill.requestId) {
       pendingBillOverride.current = null;
@@ -1378,8 +1396,11 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       const result = await billRepository.publish(pending.command, pending.rosterMemberUids);
       if (activeBillRoomId.current === pending.command.roomId) {
         pendingBillCommand.current = null;
-        setCommittedBill(result);
-        setPublishedBillState({ kind: 'published', bill: result });
+        if (acceptsBillProgress(result, latestBillRevision.current)) {
+          latestBillRevision.current = { roomId: result.roomId, revision: result.billRevision ?? 0, paidCount: result.billPaidCount ?? 0 };
+          setCommittedBill(result);
+          setPublishedBillState({ kind: 'published', bill: result });
+        }
       }
     } catch (error) {
       if (activeBillRoomId.current === pending.command.roomId) setBillPublishError(billPublishErrorMessage(error));
@@ -1402,7 +1423,8 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     const snapshot = groupSummarySnapshot;
     const ownMember = snapshot?.members.find(member => member.uid === profile.uid);
     if (!snapshot || snapshot.reconciliationStatus !== 'FINALIZED' || ownMember?.role !== 'HOST'
-      || ownMember.status !== 'ACTIVE' || isApplyingBillOverride || !groupIsOnline) return;
+      || ownMember.status !== 'ACTIVE' || isApplyingBillOverride || !groupIsOnline
+      || pendingPayment.current || isMarkingPayment) return;
     let pending = pendingBillOverride.current;
     if (!pending) {
       if (!overrides?.length || expectedRevision == null) return;
@@ -1424,8 +1446,8 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
         pendingBillOverride.current = null;
         const latest = latestBillRevision.current;
         const resultRevision = result.billRevision ?? 0;
-        if (latest.roomId !== pending.command.roomId || resultRevision >= latest.revision) {
-          latestBillRevision.current = { roomId: pending.command.roomId, revision: resultRevision };
+        if (acceptsBillProgress(result, latest)) {
+          latestBillRevision.current = { roomId: pending.command.roomId, revision: resultRevision, paidCount: result.billPaidCount ?? 0 };
           setCommittedBill(result);
           setPublishedBillState({ kind: 'published', bill: result });
         }
@@ -1438,6 +1460,44 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       }
     } finally {
       if (activeBillRoomId.current === pending.command.roomId) setIsApplyingBillOverride(false);
+    }
+  };
+
+  const handleMarkPayment = async (memberUid?: string, publicationRequestId?: string, expectedRevision?: number) => {
+    const snapshot = groupSummarySnapshot;
+    const host = snapshot?.members.find(member => member.uid === profile.uid);
+    if (!snapshot || activeBillRoomId.current !== snapshot.roomId || host?.role !== 'HOST' || host.status !== 'ACTIVE'
+      || snapshot.reconciliationStatus !== 'FINALIZED' || !groupIsOnline || isMarkingPayment
+      || pendingBillOverride.current || isApplyingBillOverride) return;
+    let command = pendingPayment.current;
+    if (!command) {
+      if (!memberUid || !publicationRequestId || expectedRevision == null) return;
+      command = { version: 1, requestId: Crypto.randomUUID(), roomId: snapshot.roomId, memberUid,
+        targetStatus: 'MARKED_AS_PAID', publicationRequestId, expectedRevision };
+      pendingPayment.current = command;
+    } else if (command.roomId !== snapshot.roomId || (memberUid && command.memberUid !== memberUid)) return;
+    const pending = command;
+    setIsMarkingPayment(true);
+    setPaymentError(undefined);
+    try {
+      await paymentStatusRepository.markPaid(pending, groupIsOnline);
+      if (activeBillRoomId.current === pending.roomId && pendingPayment.current?.requestId === pending.requestId) {
+        // Chỉ subscription xác nhận trạng thái hiển thị; receipt không tự nâng UI thành paid.
+        setBillListenerRevision(revision => revision + 1);
+      }
+    } catch (error) {
+      if (activeBillRoomId.current !== pending.roomId || pendingPayment.current?.requestId !== pending.requestId) return;
+      const code = error instanceof PaymentStatusError ? error.code : 'unavailable';
+      setPaymentError(code === 'unavailable' ? 'Could not confirm the result. Reconnect and retry the saved request.'
+        : code === 'failed-precondition' || code === 'already-exists' ? 'The bill or payment status changed. Refresh and review it before confirming again.'
+          : code === 'permission-denied' ? 'Payment confirmation was denied. Check the Host role and deployed Firestore Rules.'
+            : 'The payment could not be confirmed. Refresh the bill and try again.');
+      if (code !== 'unavailable') {
+        pendingPayment.current = null;
+        setBillListenerRevision(revision => revision + 1);
+      }
+    } finally {
+      if (activeBillRoomId.current === pending.roomId) setIsMarkingPayment(false);
     }
   };
 
@@ -1920,6 +1980,11 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
                 .filter(member => member.status === 'ACTIVE' || member.status === 'EARLY_EXIT')
                 .map(member => ({ uid: member.uid, displayName: member.displayName, penaltyScore: member.penaltyScore }))}
               state={billScreenState}
+              pendingPaymentMemberUid={pendingPayment.current?.memberUid}
+              isMarkingPayment={isMarkingPayment}
+              paymentError={paymentError}
+              onMarkPaid={(uid, publicationId, revision) => { void handleMarkPayment(uid, publicationId, revision); }}
+              onRetryPayment={() => { void handleMarkPayment(); }}
               actorUid={profile.uid}
               onPayShare={() => setCurrentScreen('08-vietqr-settlement')}
               isOnline={groupIsOnline}

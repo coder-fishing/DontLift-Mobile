@@ -86,7 +86,8 @@ export function VietQRSettlementScreen(props: Props) {
           <Text style={[styles.eyebrow, { color: colors.primary }]}>VIETQR PAYMENT</Text>
           <Text style={[styles.room, { color: colors.textSecondary }]}>Room {props.roomPin}</Text>
         </View>
-        <Text style={[styles.title, { color: colors.text }]}>{payment.kind === 'zero' ? 'Nothing to pay' : 'Pay your share'}</Text>
+        <Text style={[styles.title, { color: colors.text }]}>{payment.kind === 'paid' ? 'Payment confirmed'
+          : payment.kind === 'zero' ? 'Nothing to pay' : 'Pay your share'}</Text>
         {payment.kind === 'ready' ? (
           <>
             <Text accessibilityLabel={`${payment.amountVnd} Vietnamese dong`} style={[styles.amount, { color: colors.text }]}>
@@ -99,10 +100,14 @@ export function VietQRSettlementScreen(props: Props) {
           </>
         ) : (
           <View style={styles.unavailable}>
-            {payment.kind !== 'zero' && loading && props.isOnline ? <ActivityIndicator color={colors.primary} /> : null}
+            {payment.kind === 'unavailable' && loading && props.isOnline ? <ActivityIndicator color={colors.primary} /> : null}
             <Text accessibilityRole={payment.kind === 'unavailable' && !loading ? 'alert' : undefined}
               style={[styles.body, { color: colors.textSecondary }]}>{payment.kind === 'zero'
-                ? 'Your published share is 0 VND. No transfer is needed.' : payment.message}</Text>
+                ? 'Your published share is 0 VND. No transfer is needed.' : payment.kind === 'paid'
+                  ? `The Host marked your ${formatVND(payment.amountVnd)} VND share as paid.` : payment.message}</Text>
+            {payment.kind === 'paid' && payment.paidAtUtcMs !== null ? (
+              <Text style={[styles.caption, { color: colors.textSecondary }]}>Confirmed {new Date(payment.paidAtUtcMs).toLocaleString()}</Text>
+            ) : null}
             {payment.kind === 'unavailable' ? (
               <Pressable accessibilityRole="button" accessibilityLabel="Refresh bill and Host payment details"
                 disabled={!props.isOnline} accessibilityState={{ disabled: !props.isOnline }} onPress={props.onRefresh}

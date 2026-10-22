@@ -5,7 +5,8 @@ export type VietQrPayment = {
   kind: 'ready'; imageUrl: string; identity: string; amountVnd: number;
   bankBin: string; accountNumber: string; accountName: string; memo: string;
 };
-export type VietQrState = VietQrPayment | { kind: 'unavailable'; message: string } | { kind: 'zero' };
+export type VietQrState = VietQrPayment | { kind: 'unavailable'; message: string } | { kind: 'zero' }
+  | { kind: 'paid'; amountVnd: number; paidAtUtcMs: number | null };
 
 export function buildVietQrPayment(input: {
   roomId: string; roomPin: string; actorUid: string;
@@ -31,6 +32,9 @@ export function buildVietQrPayment(input: {
     return unavailable('Your published share could not be confirmed. Refresh the bill.');
   }
   const amount = shares[0].shareVnd;
+  if (shares[0].paymentStatus === 'MARKED_AS_PAID') {
+    return { kind: 'paid', amountVnd: amount, paidAtUtcMs: shares[0].paidAtUtcMs ?? null };
+  }
   if (amount === 0) return { kind: 'zero' };
   if (amount > 9_999_999_999_999) return unavailable('This amount exceeds the VietQR limit. Use a manual transfer.');
   if (input.detailsState.kind !== 'ready') return unavailable(input.detailsState.kind === 'loading'
