@@ -6,8 +6,8 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
-  SafeAreaView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { ScreenId } from '../types';
 
 interface ControlDeckDrawerProps {
