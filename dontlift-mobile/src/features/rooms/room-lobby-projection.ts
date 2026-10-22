@@ -2,6 +2,8 @@ import type * as SQLite from 'expo-sqlite';
 import type { RoomLobbySnapshot } from './room-listener';
 import type { CreatedRoom } from './room-repository';
 import { encodeRoomInvitation } from './room-invite-contract';
+import { recordGroupSummary } from '../history/group-summary-repository';
+import { cacheGroupRoomSnapshot } from '../history/group-history-cache';
 
 type RestorableRoomRow = {
   room_id: string;
@@ -56,6 +58,7 @@ export async function restoreCachedActiveRoom(
 export async function persistRoomLobbyProjection(
   databasePromise: Promise<SQLite.SQLiteDatabase>,
   snapshot: RoomLobbySnapshot,
+  userId?: string,
 ): Promise<void> {
   if (snapshot.createdAt === null || snapshot.updatedAt === null
     || snapshot.members.some(member => member.joinedAt === null)) {
@@ -82,6 +85,7 @@ export async function persistRoomLobbyProjection(
         member.syncAcknowledgedAtUtcMs == null ? null : new Date(member.syncAcknowledgedAtUtcMs).toISOString(),
       );
     }
+    if (userId) await cacheGroupRoomSnapshot(transaction, userId, snapshot);
   });
 }
 
@@ -95,6 +99,7 @@ export async function persistTerminalRoomProjection(
     reconciliationStatus?: 'PENDING' | 'FINALIZED' | null;
     pendingMemberCount?: number | null;
     finalizationReason?: 'ALL_SYNCED' | 'HOST_OVERRIDE' | null;
+    historySnapshot?: RoomLobbySnapshot;
   },
 ): Promise<void> {
   const database = await databasePromise;
@@ -112,12 +117,15 @@ export async function persistTerminalRoomProjection(
        WHERE id = ? AND user_id = ? AND mode = 'GROUP' AND status = 'ACTIVE'`,
       input.status === 'COMPLETED' ? 'COMPLETED' : 'CANCELLED', endedAt, input.roomId, input.userId,
     );
+    await recordGroupSummary(transaction, { roomId: input.roomId, userId: input.userId,
+      status: input.status, cutoffUtcMs: input.endedAtUtcMs });
+    if (input.historySnapshot) await cacheGroupRoomSnapshot(transaction, input.userId, input.historySnapshot);
   });
 }
 
 export async function persistEarlyExitProjection(
   databasePromise: Promise<SQLite.SQLiteDatabase>,
-  input: { roomId: string; userId: string; cutoffUtcMs: number; startedAtUtcMs: number },
+  input: { roomId: string; userId: string; cutoffUtcMs: number; startedAtUtcMs: number; historySnapshot?: RoomLobbySnapshot },
 ): Promise<void> {
   const database = await databasePromise;
   const cutoff = new Date(input.cutoffUtcMs).toISOString();
@@ -133,5 +141,8 @@ export async function persistEarlyExitProjection(
       `UPDATE room_members SET status = 'EARLY_EXIT' WHERE room_id = ? AND uid = ?`,
       input.roomId, input.userId,
     );
+    await recordGroupSummary(transaction, { roomId: input.roomId, userId: input.userId,
+      status: 'EARLY_EXIT', cutoffUtcMs: input.cutoffUtcMs });
+    if (input.historySnapshot) await cacheGroupRoomSnapshot(transaction, input.userId, input.historySnapshot);
   });
 }
