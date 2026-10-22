@@ -1,21 +1,42 @@
-import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
-import { Vibration } from 'react-native';
+import {
+  createAudioPlayer,
+  setAudioModeAsync,
+  type AudioPlayer,
+} from "expo-audio";
+import { Vibration } from "react-native";
 
 let violationPlayer: AudioPlayer | null = null;
 let audioModeReady: Promise<void> | null = null;
 
 async function playViolationBeep(): Promise<void> {
-  // Keep the app's existing silent-mode behavior and mix with other short audio.
-  audioModeReady ??= setAudioModeAsync({ playsInSilentMode: false, interruptionMode: 'mixWithOthers' });
-  await audioModeReady;
-  violationPlayer ??= createAudioPlayer(require('../../../assets/audio/violation-alert.wav'));
-  await violationPlayer.seekTo(0);
-  violationPlayer.play();
-}
+  audioModeReady ??= setAudioModeAsync({
+    playsInSilentMode: false,
+    interruptionMode: "mixWithOthers",
+  });
 
-export const nativeFeedbackAdapters = {
-  async vibrate(): Promise<void> {
-    Vibration.vibrate([0, 200, 100, 200]);
-  },
-  playSound: playViolationBeep,
-};
+  await audioModeReady;
+
+  violationPlayer ??= createAudioPlayer(
+    require("../../../assets/audio/notification_message-notification-alert-2-331726.mp3"),
+  );
+
+  const player = violationPlayer;
+
+  for (let i = 0; i < 2; i++) {
+    await player.seekTo(0);
+
+    await new Promise<void>((resolve) => {
+      const subscription = player.addListener(
+        "playbackStatusUpdate",
+        (status) => {
+          if (status.didJustFinish) {
+            subscription.remove();
+            resolve();
+          }
+        },
+      );
+
+      player.play();
+    });
+  }
+}
