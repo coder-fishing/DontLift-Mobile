@@ -478,3 +478,5 @@ Không còn open architecture decision. Dedicated development/production Firebas
 - Device tests trên Android/iOS cho grace cancel/confirm, unexpected network loss, app restart, reconnect, iOS background-task expiration và Android WorkManager delay.
 - Bill property tests bảo đảm integer arithmetic và `SUM(shares) = totalBillVnd`.
 - Mermaid files phải parse thành công trước khi artifact package được xem là hoàn tất.
+
+SL-027 exception: ADR-023 uses a Host-only Spark transaction for manual payment confirmation. The current share, immutable payment receipt and room paid counter change atomically; the first mark locks overrides. No bank verification or Functions.

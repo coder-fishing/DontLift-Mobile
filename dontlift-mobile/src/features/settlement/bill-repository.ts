@@ -3,6 +3,7 @@ import {
   type Firestore,
 } from 'firebase/firestore';
 import type { Auth } from 'firebase/auth';
+import { parseSharePayment, type SharePaymentFields } from './payment-status-domain';
 import {
   calculateBillSharesWithOverrides, calculateDefaultBillShares, BillAllocationError,
   type BillAllocationMember, type BillShareOverride,
@@ -25,7 +26,7 @@ export type ApplyBillOverridesCommand = {
   overrides: BillShareOverride[];
 };
 
-export type BillShare = { uid: string; shareVnd: number };
+export type BillShare = { uid: string; shareVnd: number } & SharePaymentFields;
 
 export type PublishedBill = {
   version: 1;
@@ -65,15 +66,16 @@ function mapError(error: unknown): BillRepositoryError {
 }
 
 function parseShares(data: readonly Record<string, unknown>[]): BillShare[] {
-  const shares = data.map(item => ({
-    uid: typeof item.uid === 'string' ? item.uid : '',
-    shareVnd: item.shareVnd,
-  }));
+  const shares = data.map(item => {
+    const payment = parseSharePayment(item);
+    if (payment === null) throw new BillRepositoryError('failed-precondition');
+    return { uid: typeof item.uid === 'string' ? item.uid : '', shareVnd: item.shareVnd, ...payment };
+  });
   if (shares.some(share => !share.uid || !Number.isSafeInteger(share.shareVnd) || Number(share.shareVnd) < 0)
     || new Set(shares.map(share => share.uid)).size !== shares.length) {
     throw new BillRepositoryError('failed-precondition');
   }
-  return shares.map(share => ({ uid: share.uid, shareVnd: Number(share.shareVnd) }))
+  return shares.map(share => ({ ...share, shareVnd: Number(share.shareVnd) }))
     .sort((a, b) => a.uid.localeCompare(b.uid));
 }
 
@@ -82,7 +84,8 @@ function makeResult(roomId: string, requestId: string, totalBillVnd: number, sha
   if (!Number.isSafeInteger(sumShareVnd) || sumShareVnd !== totalBillVnd) {
     throw new BillRepositoryError('failed-precondition');
   }
-  return { version: 1, requestId, roomId, totalBillVnd, calculationVersion: 1, shares, sumShareVnd };
+  return { version: 1, requestId, roomId, totalBillVnd, calculationVersion: 1, shares, sumShareVnd,
+    billPaidCount: shares.filter(share => share.paymentStatus === 'MARKED_AS_PAID').length };
 }
 
 function sameOverrides(value: unknown, expected: readonly BillShareOverride[]): boolean {
@@ -388,7 +391,7 @@ export function createBillRepository(dependencies: Dependencies) {
         }
         const shares = await readVersionShares(command.requestId, saved.shareUids);
         return { ...makeResult(command.roomId, command.requestId, saved.totalBillVnd, shares),
-          billRevision: saved.billRevision, billPaidCount: 0, overrideApplied: true };
+          billRevision: saved.billRevision, overrideApplied: true };
       };
 
       try {

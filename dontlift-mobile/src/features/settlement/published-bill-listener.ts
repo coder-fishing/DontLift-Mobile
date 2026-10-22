@@ -1,6 +1,7 @@
 import { collection, doc, onSnapshot, type Firestore } from 'firebase/firestore';
 import type { BillShare, PublishedBill } from './bill-repository';
 import type { PublishedBillState } from './published-bill-state';
+import { parseSharePayment } from './payment-status-domain';
 export type { PublishedBillState } from './published-bill-state';
 
 export function listenToPublishedBill(
@@ -71,15 +72,27 @@ export function listenToPublishedBill(
       { includeMetadataChanges: true },
       sharesSnapshot => {
         if (!active || failed || generation !== shareGeneration) return;
-        const shares: BillShare[] = sharesSnapshot.docs.map(shareDoc => ({
+        const payments = sharesSnapshot.docs.map(shareDoc => parseSharePayment(shareDoc.data()));
+        if (payments.some(payment => payment === null)) {
+          if (sharesSnapshot.metadata.hasPendingWrites || sharesSnapshot.metadata.fromCache) onState({ kind: 'cached', bill: null });
+          else fail();
+          return;
+        }
+        const shares: BillShare[] = sharesSnapshot.docs.map((shareDoc, index) => ({
           uid: shareDoc.id,
           shareVnd: shareDoc.data().shareVnd,
+          ...payments[index],
         }));
         if (!Number.isSafeInteger(billPaidCount) || billPaidCount < 0
           || shares.length !== room.billShareCount
           || shares.some(share => !Number.isSafeInteger(share.shareVnd) || share.shareVnd < 0)) {
           if (!sharesSnapshot.metadata.fromCache) fail();
           else onState({ kind: 'cached', bill: null });
+          return;
+        }
+        // Hai stream có thể tới lệch nhịp; chờ room counter và share markers cùng version trước khi báo live.
+        if (shares.filter(share => share.paymentStatus === 'MARKED_AS_PAID').length !== billPaidCount) {
+          onState({ kind: 'cached', bill: null });
           return;
         }
         const sumShareVnd = shares.reduce((sum, share) => sum + share.shareVnd, 0);

@@ -290,15 +290,17 @@ The authenticated Host client runs the online, in-session retryable command unde
 
 **Authority limit:** Rules check authenticated Host ownership, finalized room state, settlement expiry, membership per staged share, paid state, and revision transition. They do not verify override math or roster completeness. Values remain Host-attested under Spark.
 
-### 6.4 `markBillSharePaid`
+### 6.4 `markBillSharePaid` — Spark exception (ADR-023)
 
-**Request:** common request plus required `roomId: UUID`, `memberUid: string`, `targetStatus: "MARKED_AS_PAID"`.
+**Request:** `version: 1`, UUID `requestId`, UUID `roomId`, `memberUid`, `targetStatus: "MARKED_AS_PAID"`, UUID `publicationRequestId`, non-negative integer `expectedRevision`.
 
-**Response:** common response plus `roomId`, `memberUid`, `paymentStatus: "MARKED_AS_PAID"`, `updatedAtUtcMs`.
+**Response:** request fields plus `actorUid`, positive integer `shareVnd`, and `paidAtUtcMs: number | null`. Null means commit succeeded but server timestamp readback is pending. No device-time or serverTime envelope is fabricated.
 
-**Errors:** `unauthenticated`, `permission-denied`, `invalid-argument`, `not-found`, `failed-precondition` when already paid or settlement is not ready, `unavailable`, `already-exists`.
+**Authority:** actual room Host with ACTIVE HOST membership; COMPLETED/FINALIZED room, calculationVersion 1, unexpired settlement details, ACTIVE/EARLY_EXIT target with positive current share. Resolve default/override path from the room pointer and reject stale publication/revision.
 
-**Transaction outputs:** perform the one-way payment-status transition and store command receipt. SL-027 must also increment `rooms/{roomId}.billPaidCount` in the same Rules-authorized transaction. This room-level counter is the lock authority for SL-025 and must serialize with a bill revision switch; missing counter on legacy rooms is zero. No bank API or automatic verification is called.
+**Atomic outputs:** share gains paymentStatus, server paidAt, paidBy, paymentRequestId; room increments billPaidCount and sets lastPaymentRequestId; immutable billPaymentCommands/requestId records command, actorUid, shareVnd and server paidAt. Share amount and identity remain unchanged. Rules require all three changes and a newly created receipt. The first mark locks overrides. Zero shares are No payment due without a paid write.
+
+**Replay/errors:** matching Host receipt returns prior success before live readiness checks; changed payload is already-exists. New request for paid share or stale version is failed-precondition. Other errors: unauthenticated, permission-denied, invalid-argument, not-found, unavailable. Online-only; retain ambiguous request across navigation for explicit retry. Paid UI comes from server-confirmed subscription only. No bank verification or reverse transition.
 
 ### 6.5 VietQR Quick Link — read-only client integration (SL-026)
 

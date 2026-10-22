@@ -15,7 +15,7 @@ type Node = {
   findByProps(props: Record<string, unknown>): Node;
   findAllByProps(props: Record<string, unknown>): Node[];
 };
-type Rendered = { root: Node; unmount(): void };
+type Rendered = { root: Node; update(element: React.ReactElement): void; unmount(): void };
 const renderer = require('react-test-renderer') as {
   create(element: React.ReactElement): Rendered;
   act(task: () => void | Promise<void>): Promise<void>;
@@ -84,4 +84,62 @@ test.each([
   } finally {
     await renderer.act(async () => mounted?.unmount());
   }
+});
+
+test('Host confirmation waits for modal approval and captures publication identity', async () => {
+  const { Alert } = require('react-native') as typeof import('react-native');
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+  const onMarkPaid = jest.fn();
+  let mounted: Rendered | undefined;
+  try {
+    await renderer.act(() => { mounted = renderer.create(<BillAllocationScreen roomId="room" mode="host"
+      members={[{ uid: 'member', displayName: 'Member', penaltyScore: 0 }]} state={{ kind: 'published', bill }}
+      isOnline isPublishing={false} onPublish={jest.fn()} onRetry={jest.fn()} onRetryPublish={jest.fn()} onBack={jest.fn()} onMarkPaid={onMarkPaid} />); });
+    await renderer.act(() => { (mounted!.root.findByProps({ accessibilityLabel: 'Mark Member as paid' }).props.onPress as () => void)(); });
+    expect(onMarkPaid).not.toHaveBeenCalled();
+    const buttons = alert.mock.calls[0][2]!;
+    expect(buttons[0].style).toBe('cancel');
+    await renderer.act(() => { buttons[1].onPress!(); });
+    expect(onMarkPaid).toHaveBeenCalledWith('member', 'request', 0);
+  } finally { await renderer.act(() => mounted?.unmount()); alert.mockRestore(); }
+});
+
+test('pending payment retry stays accessible without the editor', async () => {
+  const retry = jest.fn();
+  let mounted: Rendered | undefined;
+  try {
+    await renderer.act(() => { mounted = renderer.create(<BillAllocationScreen roomId="room" mode="host"
+      members={[{ uid: 'member', displayName: 'Member', penaltyScore: 0 }]} state={{ kind: 'published', bill }}
+      isOnline isPublishing={false} onPublish={jest.fn()} onRetry={jest.fn()} onRetryPublish={jest.fn()} onBack={jest.fn()}
+      pendingPaymentMemberUid="member" onRetryPayment={retry} />); });
+    const button = mounted!.root.findByProps({ accessibilityLabel: 'Retry the saved payment confirmation' });
+    expect(button.props.disabled).toBe(false);
+    await renderer.act(() => { (button.props.onPress as () => void)(); });
+    expect(retry).toHaveBeenCalledTimes(1);
+  } finally { await renderer.act(() => mounted?.unmount()); }
+});
+
+test('a live first payment restores remaining payment actions while Host is editing', async () => {
+  const initial: PublishedBill = { ...bill, billPaidCount: 0, shares: [
+    { uid: 'host', shareVnd: 500 }, { uid: 'member', shareVnd: 500 },
+  ] };
+  const props = { roomId: 'room', mode: 'host' as const, actorUid: 'member',
+    members: [{ uid: 'host', displayName: 'Host', penaltyScore: 0 }, { uid: 'member', displayName: 'Member', penaltyScore: 0 }],
+    isOnline: true, isPublishing: false, onPublish: jest.fn(), onRetry: jest.fn(),
+    onRetryPublish: jest.fn(), onBack: jest.fn(), onMarkPaid: jest.fn(), onPayShare: jest.fn() };
+  let mounted: Rendered | undefined;
+  try {
+    await renderer.act(() => { mounted = renderer.create(<BillAllocationScreen {...props} state={{ kind: 'published', bill: initial }} />); });
+    await renderer.act(() => { (mounted!.root.findByProps({ accessibilityLabel: 'Adjust bill shares before first payment' }).props.onPress as () => void)(); });
+    expect(mounted!.root.findAllByProps({ accessibilityLabel: 'Cancel editing bill shares' }).length).toBeGreaterThan(0);
+    expect(mounted!.root.findAllByProps({ accessibilityLabel: 'Mark Member as paid' })).toHaveLength(0);
+    const paid: PublishedBill = { ...initial, billPaidCount: 1, shares: [
+      { ...initial.shares[0], paymentStatus: 'MARKED_AS_PAID', paidAtUtcMs: 1234 }, initial.shares[1],
+    ] };
+    await renderer.act(() => { mounted!.update(<BillAllocationScreen {...props} state={{ kind: 'published', bill: paid }} />); });
+    expect(mounted!.root.findAllByProps({ accessibilityLabel: 'Cancel editing bill shares' })).toHaveLength(0);
+    expect(mounted!.root.findAllByProps({ accessibilityLabel: 'Publish replacement bill shares' })).toHaveLength(0);
+    expect(mounted!.root.findByProps({ accessibilityLabel: 'Mark Member as paid' }).props.disabled).toBe(false);
+    expect(mounted!.root.findByProps({ accessibilityLabel: 'View VietQR for your published share' }).props.disabled).toBe(false);
+  } finally { await renderer.act(() => mounted?.unmount()); }
 });

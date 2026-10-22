@@ -96,3 +96,10 @@ test('rejects unsupported bank/account input instead of embedding arbitrary URL 
     expect(buildVietQrPayment(input).kind).toBe('unavailable');
   }
 });
+
+test('paid shares produce confirmation instead of a transfer QR', () => {
+  const input = fixture();
+  if (input.billState.kind !== 'published' || !input.billState.bill) throw new Error('fixture');
+  input.billState.bill.shares[0] = { ...input.billState.bill.shares[0], paymentStatus: 'MARKED_AS_PAID', paidAtUtcMs: 900 };
+  expect(buildVietQrPayment(input)).toEqual({ kind: 'paid', amountVnd: 123456, paidAtUtcMs: 900 });
+});

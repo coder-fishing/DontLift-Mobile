@@ -388,3 +388,5 @@ Every UI screen MUST implement explicit state rendering across the 5 canonical U
 - [x] **Persistence:** Local SQLite schemas (including `sessions`, `rooms`, `room_members`, `violation_logs`, `entitlements`) and Firestore document models strictly defined.
 - [x] **Authorization:** RBAC matrix specifies Host vs Member permissions enforced at both Firestore Security Rule and UI layers.
 - [x] **Destructive Actions:** Early Exit, Session Termination, and Host End Session require explicit user interaction confirmation.
+
+SL-027 (ADR-023): Host confirms each positive current-version share once. Members see read-only Host-confirmed status and the paid share no longer offers a payment QR. Zero shares show No payment due. First confirmation locks bill adjustments; ambiguous commands support explicit retry across navigation.

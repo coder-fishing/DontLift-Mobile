@@ -1,6 +1,7 @@
 import { listenToPublishedBill } from '../src/features/settlement/published-bill-listener';
 
 jest.mock('firebase/firestore', () => ({
+  Timestamp: class { toMillis() { return 1234; } },
   collection: jest.fn(),
   doc: jest.fn(),
   onSnapshot: jest.fn(),
@@ -35,6 +36,20 @@ describe('published bill listener status', () => {
     });
   });
 
+  it('waits for matching counter and paid marker before emitting live payment', () => {
+    const onState = jest.fn();
+    const stop = listenToPublishedBill({} as never, 'room', onState);
+    subscriptions[0].next(roomSnapshot());
+    const paid = { docs: [{ id: 'member', data: () => ({ shareVnd: 1000, paymentStatus: 'MARKED_AS_PAID',
+      paidAt: new (jest.requireMock('firebase/firestore').Timestamp)(), paidBy: 'host', paymentRequestId: 'payment' }) }], metadata: { fromCache: false } };
+    subscriptions[1].next(paid);
+    expect(onState.mock.calls.at(-1)?.[0].kind).toBe('cached');
+    subscriptions[0].next({ ...roomSnapshot(), data: () => ({ ...roomSnapshot().data(), billPaidCount: 1 }) });
+    subscriptions.at(-1)!.next(paid);
+    expect(onState.mock.calls.at(-1)?.[0]).toMatchObject({ kind: 'published', bill: { billPaidCount: 1,
+      shares: [{ paymentStatus: 'MARKED_AS_PAID', paidAtUtcMs: 1234 }] } });
+    stop();
+  });
   it('does not label a locally pending room publication as confirmed', () => {
     const onState = jest.fn();
     const stop = listenToPublishedBill({} as never, 'room', onState);
