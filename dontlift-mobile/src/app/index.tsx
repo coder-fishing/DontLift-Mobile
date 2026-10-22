@@ -66,7 +66,8 @@ import { createSettlementDetailsRepository, type SettlementDetails } from '../fe
 import { createBankDirectoryRepository } from '../features/settlement/bank-directory';
 import { createBillRepository, BillRepositoryError, type CalculateBillCommand, type PublishedBill } from '../features/settlement/bill-repository';
 import { listenToPublishedBill, type PublishedBillState } from '../features/settlement/published-bill-listener';
-import { shouldOpenPublishedBillForMember } from '../features/settlement/published-bill-navigation';
+import { billPublicationKey, shouldOpenPublishedBillForMember } from '../features/settlement/published-bill-navigation';
+import { selectPublishedBillState } from '../features/settlement/published-bill-state';
 import {
   createRoomLivenessRepository, HOST_HEARTBEAT_INTERVAL_MS, HOST_STALE_AFTER_MS, STALE_ROOM_RETRY_MS,
   RoomLivenessError,
@@ -1020,11 +1021,13 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const [settlementDetailsMode, setSettlementDetailsMode] = useState<'host' | 'member'>('member');
   const [settlementDetails, setSettlementDetails] = useState<SettlementDetails | null>(null);
   const [publishedBillState, setPublishedBillState] = useState<PublishedBillState>({ kind: 'loading' });
+  const [billListenerRevision, setBillListenerRevision] = useState(0);
   const [committedBill, setCommittedBill] = useState<PublishedBill | null>(null);
   const [isPublishingBill, setIsPublishingBill] = useState(false);
   const [billPublishError, setBillPublishError] = useState<string>();
   const pendingBillCommand = useRef<{ command: CalculateBillCommand; rosterMemberUids: string[] } | null>(null);
   const activeBillRoomId = useRef<string | null>(null);
+  const autoOpenedBillPublications = useRef(new Set<string>());
 
   useEffect(() => {
     activeBillRoomId.current = groupSummarySnapshot?.roomId ?? null;
@@ -1041,11 +1044,14 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     }
     setPublishedBillState({ kind: 'loading' });
     return listenToPublishedBill(roomRuntime.firestore, groupSummarySnapshot.roomId, setPublishedBillState);
-  }, [groupSummarySnapshot?.roomId, groupSummarySnapshot?.reconciliationStatus, roomRuntime.firestore]);
+  }, [groupSummarySnapshot?.roomId, groupSummarySnapshot?.reconciliationStatus, roomRuntime.firestore, billListenerRevision]);
 
   useEffect(() => {
     const ownMember = groupSummarySnapshot?.members.find(member => member.uid === profile.uid);
-    if (shouldOpenPublishedBillForMember(publishedBillState, ownMember?.role, currentScreen)) {
+    if (publishedBillState.kind === 'published' && publishedBillState.bill.roomId === groupSummarySnapshot?.roomId
+      && shouldOpenPublishedBillForMember(publishedBillState, ownMember?.role, currentScreen, autoOpenedBillPublications.current)) {
+      // Chỉ tự mở một lần cho mỗi publication; nút Back phải giữ Member ở summary.
+      autoOpenedBillPublications.current.add(billPublicationKey(publishedBillState.bill));
       setCurrentScreen('07-bill-allocation');
     }
   }, [publishedBillState, groupSummarySnapshot, profile.uid, currentScreen]);
@@ -1055,9 +1061,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     if (publishedBillState.kind === 'published') pendingBillCommand.current = null;
   }, [publishedBillState]);
 
-  const billScreenState: PublishedBillState = committedBill != null && committedBill.roomId === groupSummarySnapshot?.roomId
-    && publishedBillState.kind !== 'published'
-    ? { kind: 'published', bill: committedBill } : publishedBillState;
+  const billScreenState = selectPublishedBillState(publishedBillState, committedBill, groupSummarySnapshot?.roomId);
   useEffect(() => {
     if (currentScreen !== '08-vietqr-settlement') return undefined;
     setSettlementDetails(null);
@@ -1356,16 +1360,10 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     }
   };
 
-  const handleRetryPublishedBill = async () => {
-    const roomId = groupSummarySnapshot?.roomId;
-    if (!roomId) return;
-    setPublishedBillState({ kind: 'loading' });
-    try {
-      const bill = await billRepository.readPublished(roomId);
-      setPublishedBillState(bill ? { kind: 'published', bill } : { kind: 'unpublished' });
-    } catch {
-      setPublishedBillState({ kind: 'error' });
-    }
+  const handleRetryPublishedBill = () => {
+    if (!groupSummarySnapshot) return;
+    // Listener lỗi đã dừng; retry phải gắn subscription mới để tiếp tục nhận publication realtime.
+    setBillListenerRevision(revision => revision + 1);
   };
 
   const createSoloLifecycle = (soloSession: SoloSession, initialState: typeof AppState.currentState) =>

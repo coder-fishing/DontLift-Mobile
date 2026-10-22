@@ -6,7 +6,7 @@ import { GlassCard } from '../components/GlassCard';
 import { Colors } from '../constants/theme';
 import { formatVND } from '../constants';
 import { calculateDefaultBillShares } from '../features/settlement/bill-allocation';
-import type { PublishedBill, BillShare } from '../features/settlement/bill-repository';
+import type { BillShare } from '../features/settlement/bill-repository';
 import type { PublishedBillState } from '../features/settlement/published-bill-listener';
 
 export type BillAllocationMember = { uid: string; displayName: string; penaltyScore: number };
@@ -48,8 +48,7 @@ export function BillAllocationScreen({
       return null;
     }
   }, [host, validTotal, parsedTotal, members]);
-  const confirmedBill = state.kind === 'published' ? state.bill
-    : state.kind === 'cached' ? state.bill : null;
+  const confirmedBill = state.bill ?? null;
   const displayedShares: readonly BillShare[] = confirmedBill?.shares ?? preview?.shares ?? [];
   const membersByUid = useMemo(() => new Map(members.map(member => [member.uid, member])), [members]);
 
@@ -67,7 +66,9 @@ export function BillAllocationScreen({
   };
 
   const stateCopy = state.kind === 'loading' ? 'Checking the current room bill…'
-    : state.kind === 'unpublished' ? 'The Host has not published a bill split yet.'
+    : state.kind === 'unpublished' ? confirmedBill
+      ? 'The current room response does not show a published bill. Showing the last confirmed breakdown.'
+      : host ? undefined : 'The Host has not published a bill split yet.'
       : state.kind === 'cached' ? 'Showing a saved copy. Reconnect to confirm the current published result.'
         : state.kind === 'error' ? 'Could not load the published breakdown.' : undefined;
 
@@ -131,12 +132,13 @@ export function BillAllocationScreen({
             </GlassCard>
           ) : null}
 
-          {!host && stateCopy ? (
+          {stateCopy ? (
             <GlassCard style={[styles.stateCard, { backgroundColor: colors.authFormSurface, borderColor: colors.glassBorder, shadowColor: colors.glassShadow }]}>
               {state.kind === 'loading' ? <ActivityIndicator accessibilityLabel="Checking published bill" color={colors.primary} /> : null}
               <Text accessibilityRole={state.kind === 'error' ? 'alert' : undefined} style={[styles.stateText, { color: colors.textSecondary }]}>{stateCopy}</Text>
               {state.kind === 'error' ? (
-                <Pressable accessibilityRole="button" onPress={onRetry} style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}>
+                <Pressable accessibilityRole="button" accessibilityLabel="Retry loading room bill"
+                  onPress={onRetry} style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}>
                   <Text style={[styles.retryText, { color: colors.primary }]}>Try again</Text>
                 </Pressable>
               ) : null}
@@ -183,11 +185,11 @@ export function BillAllocationScreen({
         <View style={styles.footer}>
           {confirmedBill ? (
             <GlassCard style={[styles.publishedCard, { backgroundColor: colors.authFormSurface, borderColor: colors.glassBorder, shadowColor: colors.glassShadow }]}>
-              <Text style={[styles.publishedTitle, { color: colors.primary }]}>{state.kind === 'cached' ? 'Saved copy' : 'Published to this room'}</Text>
+              <Text style={[styles.publishedTitle, { color: colors.primary }]}>{state.kind === 'published' ? 'Published to this room' : 'Saved copy'}</Text>
               <Text style={[styles.helper, { color: colors.textSecondary }]}>
-                {state.kind === 'cached'
-                  ? 'Reconnect to verify this saved copy against Firebase.'
-                  : 'The Host calculated this breakdown on their device from the room’s finalized scores. Members can review it until payment details expire.'}
+                {state.kind === 'published'
+                  ? 'The Host calculated this breakdown on their device from the room’s finalized scores. Members can review it until payment details expire.'
+                  : 'These amounts were confirmed earlier. Reconnect or retry to check the current room bill.'}
               </Text>
             </GlassCard>
           ) : null}
