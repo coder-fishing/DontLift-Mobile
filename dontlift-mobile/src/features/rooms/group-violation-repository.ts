@@ -5,6 +5,8 @@ import * as Crypto from 'expo-crypto';
 import type { ActiveViolation } from '../solo/grace-period-engine';
 import type { ViolationRecord, ViolationSummary } from '../solo/violation-repository';
 import { getLocalDatabase } from '../local/database';
+import { readGroupSummary } from '../history/group-history-model';
+import { recordGroupSummary } from '../history/group-summary-repository';
 
 type Dependencies = { firestore: Firestore; auth: Auth; database?: () => Promise<SQLite.SQLiteDatabase>; createId?: () => string };
 type PendingRow = { event_id: string; room_id: string; user_id: string; started_at: string; ended_at: string; duration_seconds: number };
@@ -179,6 +181,14 @@ export function createGroupViolationRepository(dependencies: Dependencies) {
         let finalized = 0;
         const cutoffIso = new Date(input.endedAtUtcMs).toISOString();
         await db.withExclusiveTransactionAsync(async tx => {
+        // Sửa summary trước khi xóa log dưới grace, trong cùng transaction để không mất bằng chứng.
+        const history = await tx.getFirstAsync<{ summary_json: string }>(
+          'SELECT summary_json FROM group_history WHERE actor_uid = ? AND room_id = ?', actor.uid, input.roomId,
+        );
+        const summary = history ? readGroupSummary(JSON.parse(history.summary_json), actor.uid, input.roomId) : null;
+        if (summary) await recordGroupSummary(tx, {
+          roomId: input.roomId, userId: actor.uid, status: summary.status, cutoffUtcMs: input.endedAtUtcMs,
+        });
         const pendingRows = await tx.getAllAsync<FinalizableViolationRow>(
           `SELECT v.event_id, v.room_id, v.user_id, v.started_at, v.confirmed_at, v.ended_at, v.created_at
            FROM violation_logs v

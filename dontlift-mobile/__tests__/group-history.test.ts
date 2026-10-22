@@ -4,6 +4,7 @@ import { mergeGroupHistory, readGroupSummary, type GroupLocalSummary } from '../
 import { createGroupHistoryRepository } from '../src/features/history/group-history-repository';
 import type * as SQLite from 'expo-sqlite';
 import { persistEarlyExitProjection, persistTerminalRoomProjection } from '../src/features/rooms/room-lobby-projection';
+import { createGroupViolationRepository } from '../src/features/rooms/group-violation-repository';
 import { cacheGroupRoomSnapshot } from '../src/features/history/group-history-cache';
 import type { RoomLobbySnapshot } from '../src/features/rooms/room-listener';
 jest.mock('../src/features/local/database', () => ({ getLocalDatabase: jest.fn() }));
@@ -249,4 +250,39 @@ test('earlier cutoff trims confirmed closed intervals and removes under-grace in
   await db.withExclusiveTransactionAsync(tx => recordGroupSummary(tx, { roomId: room, userId: 'member', status: 'EARLY_EXIT', cutoffUtcMs: 8000 }));
   const entry = await repo().readEntry('member', room);
   expect(entry?.summary).toMatchObject({ eventId: event, status: 'EARLY_EXIT', completedAtUtcMs: 8000, liftCount: 1, violationDurationSeconds: 7, penaltyScore: 17 });
+});
+
+
+test('terminal finalizer corrects an uploaded exit before removing its under-grace log', async () => {
+  await seed();
+  const violations = createGroupViolationRepository({ firestore: {} as never,
+    auth: { currentUser: { uid: 'member' } } as never, database: async () => db, createId: () => '30000000-0000-4000-8000-000000000028' });
+  await violations.start({ sessionId: room, userId: 'member', startedAtUtcMs: 6000, confirmedAtUtcMs: 9000 });
+  await violations.end({ eventId: '30000000-0000-4000-8000-000000000028', endedAtUtcMs: 11000 });
+  await db.withExclusiveTransactionAsync(tx => recordGroupSummary(tx, { roomId: room, userId: 'member', status: 'EARLY_EXIT', cutoffUtcMs: 11000 }));
+  await db.runAsync("UPDATE group_history SET sync_status='SYNCED'");
+  await db.runAsync("UPDATE sync_outbox SET sync_status='SYNCED' WHERE event_type='GROUP_SESSION_LOCAL_SUMMARY'");
+  failOutbox = true;
+  await expect(violations.finalizeOpenAtRoomEnd({ roomId: room, userId: 'member', endedAtUtcMs: 8000 })).rejects.toThrow('disk-full');
+  expect(await db.getFirstAsync('SELECT COUNT(*) AS n FROM violation_logs')).toMatchObject({ n: 1 });
+  expect((await repo().readEntry('member', room))?.summary).toMatchObject({ completedAtUtcMs: 11000, liftCount: 1 });
+  failOutbox = false;
+  await violations.finalizeOpenAtRoomEnd({ roomId: room, userId: 'member', endedAtUtcMs: 8000 });
+  expect(await db.getFirstAsync('SELECT COUNT(*) AS n FROM violation_logs')).toMatchObject({ n: 0 });
+  expect((await repo().readEntry('member', room))?.summary).toMatchObject({
+    eventId: event, status: 'EARLY_EXIT', completedAtUtcMs: 8000, liftCount: 0, violationDurationSeconds: 0, penaltyScore: 0,
+  });
+  // Retry sau khi deletion đã commit vẫn đọc được summary/outbox đã chuẩn hóa.
+  await violations.finalizeOpenAtRoomEnd({ roomId: room, userId: 'member', endedAtUtcMs: 8000 });
+  const remote = { ...fixture(), status: 'EARLY_EXIT', liftCount: 1, violationDurationSeconds: 5, penaltyScore: 15 };
+  const update = jest.fn();
+  api.runTransaction.mockImplementation(async (_: unknown, fn: (tx: unknown) => Promise<void>) => fn({
+    get: async () => ({ exists: () => true, data: () => remote }), update,
+  }));
+  const history = createGroupHistoryRepository({ firestore: {} as never, auth: { currentUser: { uid: 'member' } } as never,
+    database: Promise.resolve(db), readAuthority: async () => ({ status: 'EARLY_EXIT', roomStatus: 'ABORTED', terminal: true,
+      cutoffUtcMs: 8000, startedAtUtcMs: 1000, earlyExitAtUtcMs: 11000 }) });
+  await history.syncPending('member', true);
+  expect(update.mock.calls[0][1]).toMatchObject({ completedAtUtcMs: 8000, penaltyScore: 0 });
+  expect(await db.getFirstAsync('SELECT sync_status FROM group_history')).toMatchObject({ sync_status: 'SYNCED' });
 });
