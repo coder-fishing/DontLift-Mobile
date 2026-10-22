@@ -47,7 +47,7 @@ function seedStore(memberCount: number) {
   return { documents, uids };
 }
 
-function installTransactions(documents: Map<string, StoredDocument>, failAtCall?: number) {
+function installTransactions(documents: Map<string, StoredDocument>, failAtCall?: number, enforceReceiptReadRule = false) {
   firestoreApi.getDocFromServer.mockImplementation(async (ref: Reference) => snapshot(ref.path, documents.get(ref.path)));
   firestoreApi.getDocsFromServer.mockImplementation(async (ref: Reference) => {
     const prefix = `${ref.path}/`;
@@ -62,7 +62,13 @@ function installTransactions(documents: Map<string, StoredDocument>, failAtCall?
     calls += 1;
     const writes: PendingWrite[] = [];
     const transaction = {
-      get: async (ref: Reference) => snapshot(ref.path, documents.get(ref.path)),
+      get: async (ref: Reference) => {
+        if (enforceReceiptReadRule && ref.path.includes('/billCommands/')
+          && documents.get(`rooms/${ROOM_ID}`)?.calculationVersion !== 1) {
+          throw Object.assign(new Error('Receipt is unreadable before publication'), { code: 'permission-denied' });
+        }
+        return snapshot(ref.path, documents.get(ref.path));
+      },
       set: (ref: Reference, data: StoredDocument) => writes.push({ kind: 'set', ref, data }),
       update: (ref: Reference, data: StoredDocument) => writes.push({ kind: 'update', ref, data }),
     };
@@ -80,6 +86,18 @@ function installTransactions(documents: Map<string, StoredDocument>, failAtCall?
 
 describe('bill repository chunked publication', () => {
   beforeEach(() => jest.clearAllMocks());
+
+  it('publishes without reading the hidden receipt before the bill is published', async () => {
+    const { documents, uids } = seedStore(2);
+    installTransactions(documents, undefined, true);
+    const repository = createBillRepository({ firestore: {} as never,
+      auth: { currentUser: { uid: 'host' } } as never });
+    const command = { version: 1 as const, roomId: ROOM_ID,
+      requestId: '40000000-0000-4000-8000-000000000006', totalBillVnd: 37_000 };
+    await expect(repository.publish(command, uids)).resolves.toMatchObject({ sumShareVnd: 37_000 });
+    expect(documents.get(`rooms/${ROOM_ID}`)?.calculationVersion).toBe(1);
+    await expect(repository.publish(command, uids)).resolves.toMatchObject({ requestId: command.requestId });
+  });
 
   it('resumes when the first share chunk fails after the preparation lock commits', async () => {
     const { documents, uids } = seedStore(2);
