@@ -1,6 +1,18 @@
 import { BillAllocationError, calculateDefaultBillShares } from '../src/features/settlement/bill-allocation';
 
 describe('calculateDefaultBillShares', () => {
+  it.each([
+    { total: 1_000, amounts: [0, 1_000] },
+    { total: 1_501, amounts: [501, 1_000] },
+    { total: 2_001, amounts: [0, 1, 1_000, 1_000] },
+  ])('subtracts tied residuals by ascending UID for a $total VND bill', ({ total, amounts }) => {
+    const members = amounts.map((_, index) => ({ uid: String.fromCharCode(97 + index), penaltyScore: 0 }));
+    const expected = members.map((member, index) => ({ uid: member.uid, shareVnd: amounts[index] }));
+
+    expect(calculateDefaultBillShares(total, members).shares).toEqual(expected);
+    expect(calculateDefaultBillShares(total, [...members].reverse()).shares).toEqual(expected);
+  });
+
   it('splits the full bill equally when every finalized score is zero', () => {
     const result = calculateDefaultBillShares(10_001, [
       { uid: 'b', penaltyScore: 0 }, { uid: 'a', penaltyScore: 0 }, { uid: 'c', penaltyScore: 0 },

@@ -77,6 +77,12 @@ export function calculateDefaultBillShares(
     if (residualDifference !== 0n) return residualDifference > 0n ? -1 : 1;
     return compareUid(left.uid, right.uid);
   });
+  // Khi trừ, residual tăng dần nhưng UID vẫn tăng dần nếu bằng nhau; không đảo toàn bộ thứ tự cộng.
+  const subtractionOrder = [...rawShares].sort((left, right) => {
+    const residualDifference = left.residualNumerator - right.residualNumerator;
+    if (residualDifference !== 0n) return residualDifference < 0n ? -1 : 1;
+    return compareUid(left.uid, right.uid);
+  });
 
   let discrepancy = total - rawShares.reduce((sum, share) => sum + share.roundedVnd, 0n);
   let cursor = 0;
@@ -89,7 +95,7 @@ export function calculateDefaultBillShares(
       noProgress = 0;
     } else {
       // Khi cần giảm tổng, bắt đầu từ residual thấp nhất theo contract ADR-005.
-      const share = residualOrder[residualOrder.length - 1 - (cursor % residualOrder.length)];
+      const share = subtractionOrder[cursor % subtractionOrder.length];
       if (share.roundedVnd >= ROUNDING_UNIT) {
         share.roundedVnd -= ROUNDING_UNIT;
         discrepancy += ROUNDING_UNIT;
@@ -107,7 +113,7 @@ export function calculateDefaultBillShares(
     discrepancy = 0n;
   } else if (discrepancy < 0n) {
     const amountToRemove = -discrepancy;
-    const recipient = [...residualOrder].reverse().find(share => share.roundedVnd >= amountToRemove);
+    const recipient = subtractionOrder.find(share => share.roundedVnd >= amountToRemove);
     if (!recipient) throw new BillAllocationError('failed-precondition');
     recipient.roundedVnd -= amountToRemove;
     discrepancy = 0n;
