@@ -13,6 +13,8 @@ export function listenToPublishedBill(
   let failed = false;
   let shareGeneration = 0;
   let unsubscribeShares: (() => void) | undefined;
+  let blockedShareRequestId: string | null = null;
+  let lastPublishedBill: PublishedBill | null = null;
 
   const stopShares = () => {
     shareGeneration += 1;
@@ -34,7 +36,10 @@ export function listenToPublishedBill(
       return;
     }
     const room = snapshot.data();
-    const requestId = room.billRequestId;
+    const defaultRequestId = room.billRequestId;
+    const overrideRequestId = typeof room.billOverrideRequestId === 'string' ? room.billOverrideRequestId : null;
+    const requestId = overrideRequestId ?? defaultRequestId;
+    const billPaidCount = room.billPaidCount === undefined ? 0 : room.billPaidCount;
     const published = room.calculationVersion === 1 && typeof requestId === 'string'
       && Number.isSafeInteger(room.totalBillVnd) && Number.isSafeInteger(room.billShareCount);
     if (!published) {
@@ -49,10 +54,20 @@ export function listenToPublishedBill(
       return;
     }
 
+    // Quyền đọc version cũ bị thu hồi ngay khi room đổi pointer; chờ snapshot room mới thay vì dừng listener.
+    if (blockedShareRequestId === requestId) {
+      onState({ kind: 'error', bill: lastPublishedBill });
+      return;
+    }
+    if (blockedShareRequestId !== null) blockedShareRequestId = null;
+
     unsubscribeShares?.();
     const generation = ++shareGeneration;
+    const sharesPath = overrideRequestId
+      ? collection(firestore, 'rooms', roomId, 'billOverrides', overrideRequestId, 'shares')
+      : collection(firestore, 'rooms', roomId, 'billShares');
     unsubscribeShares = onSnapshot(
-      collection(firestore, 'rooms', roomId, 'billShares'),
+      sharesPath,
       { includeMetadataChanges: true },
       sharesSnapshot => {
         if (!active || failed || generation !== shareGeneration) return;
@@ -60,7 +75,8 @@ export function listenToPublishedBill(
           uid: shareDoc.id,
           shareVnd: shareDoc.data().shareVnd,
         }));
-        if (shares.length !== room.billShareCount
+        if (!Number.isSafeInteger(billPaidCount) || billPaidCount < 0
+          || shares.length !== room.billShareCount
           || shares.some(share => !Number.isSafeInteger(share.shareVnd) || share.shareVnd < 0)) {
           if (!sharesSnapshot.metadata.fromCache) fail();
           else onState({ kind: 'cached', bill: null });
@@ -75,16 +91,30 @@ export function listenToPublishedBill(
           calculationVersion: 1,
           shares: shares.sort((a, b) => a.uid.localeCompare(b.uid)),
           sumShareVnd,
+          billRevision: Number.isSafeInteger(room.billRevision) ? room.billRevision : 0,
+          billPaidCount,
+          overrideApplied: overrideRequestId !== null,
         };
         if (sumShareVnd !== bill.totalBillVnd) {
           if (sharesSnapshot.metadata.fromCache) onState({ kind: 'cached', bill: null });
           else fail();
           return;
         }
+        lastPublishedBill = bill;
         onState(sharesSnapshot.metadata.fromCache ? { kind: 'cached', bill } : { kind: 'published', bill });
       },
-      () => {
-        if (generation === shareGeneration) fail();
+      error => {
+        if (generation !== shareGeneration) return;
+        const code = typeof error === 'object' && error !== null && 'code' in error
+          ? String(error.code).replace(/^firestore\//, '') : '';
+        if (code === 'permission-denied') {
+          // Pointer đã đổi nhưng snapshot room có thể tới sau lỗi permission của share cũ.
+          blockedShareRequestId = requestId;
+          stopShares();
+          onState({ kind: 'error', bill: lastPublishedBill });
+          return;
+        }
+        fail();
       },
     );
   }, fail);

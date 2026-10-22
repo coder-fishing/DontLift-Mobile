@@ -59,7 +59,7 @@ P0 là nền tảng/critical journey trước; P1 là cần hoàn tất MVP; P2 
 | SL-022 | [Stale room chuyển ABORTED](./superpowers/plans/2026-10-13-sl-022-stale-room-abort.md) | P1 | SL-017 | Resolved for Spark by ADR-019; no scheduled guarantee while all clients are offline |
 | SL-023 | [Host nhập thông tin nhận tiền](./superpowers/plans/2026-10-13-sl-023-settlement-details.md) | P1 | SL-020 | Resolved: Spark transaction/Rules, no billing, per ADR-020 (2026-10-21) |
 | SL-024 | [Nhập bill và tính shares mặc định](./superpowers/plans/2026-10-13-sl-024-default-bill.md) | P0 | SL-018, SL-020, SL-023 | D3, D9 |
-| SL-025 | [Host override bill shares](./superpowers/plans/2026-10-13-sl-025-bill-overrides.md) | P1 | SL-024 | D8 |
+| SL-025 | [Host override bill shares](./superpowers/plans/2026-10-13-sl-025-bill-overrides.md) | P1 | SL-024 | Resolved: Spark versioned shares; lock after first payment (ADR-022) |
 | SL-026 | [Tạo VietQR cho share](./superpowers/plans/2026-10-13-sl-026-vietqr-payment.md) | P1 | SL-024 | E3 |
 | SL-027 | [Host đánh dấu đã thanh toán](./superpowers/plans/2026-10-13-sl-027-manual-payment-status.md) | P1 | SL-026 | Không xác nhận riêng |
 | SL-028 | [Group history và phục hồi dữ liệu](./superpowers/plans/2026-10-13-sl-028-group-history.md) | P1 | SL-020, SL-012, SL-018, SL-021, SL-024 | D4 |
@@ -86,7 +86,7 @@ SL-037 phụ thuộc bắt buộc SL-001–SL-036 vì phạm vi đã chọn gồ
 | D5 | Duyệt checksum cụ thể, test vectors, nguồn code hợp lệ và operational contract cấp code. Website/email mua Premium là external prerequisite, không tự implement. |
 | D6 | Duyệt theme catalog/default/downgrade và behavior advanced leaderboard; analytics nâng cao vẫn deferred. D6 tiếp tục chặn nghiệm thu SL-034/036 và downstream SL-037 cho tới khi các hành vi liên quan được chốt. |
 | D7 | Duyệt provider ads, test credentials, placements và consent. Giải quyết rõ xung đột PRD: FR-06 bắt buộc Home/Lobby/History/Settings, còn ví dụ US-18 và Product Design có Profile nhưng thiếu Home; áp dụng FR-06 trừ khi có quyết định human mới hơn. |
-| D8 | Duyệt recalculation/override sau publication hoặc MARKED_AS_PAID: rule khóa/version/concurrency và outcome UI. |
+| D8 | Resolved for SL-025 on 2026-10-22: allow versioned Host overrides until the first member is marked paid; lock after any paid member. Spark Rules use a room-level counter maintained atomically by SL-027. See ADR-022. |
 | D9 | Resolved for SL-024 on 2026-10-22: non-zero base means a positive pre-round mathematical component; a final integer share may be zero after ADR-005 rounding for a small bill. No minimum per member. See ADR-021. |
 | D10 | Chốt max retry/retention horizon và receipt TTL; xác định bảo vệ unsynced data trước purge, failed-event retention và expired-read policy. |
 | D11 | Chốt default sound state, bundled violation alert asset và user scope của local preferences trước khi SL-030 tạo asset/defaults. |
@@ -96,7 +96,7 @@ SL-037 phụ thuộc bắt buộc SL-001–SL-036 vì phạm vi đã chọn gồ
 | E2 | Cloud release cần projects/config/billing/scheduled jobs được human cho phép; P6.1 authoring không deploy. |
 | E3 | Cần VietQR provider/format và năm banking apps trong cohort để kiểm chứng QR thật. |
 
-D1–D7 và E1/E2 đến từ backlog đề xuất; E3 ghi rõ test cohort đã nêu trong SL-026/037. D8–D11 vẫn là gap chờ human quyết định. D12/D13 được human giải quyết ngày 2026-10-20; D12 thay đổi theo ADR-011 để Rules enforce được quota trên Spark. Giải quyết blocker còn lại bằng evidence/approved decision trước execution, không lấp bằng implementation giả.
+D1–D7 và E1/E2 đến từ backlog đề xuất; E3 ghi rõ test cohort đã nêu trong SL-026/037. D8 được giải quyết cho SL-025 theo ADR-022; D9 được giải quyết theo ADR-021. D10–D11 vẫn là gap chờ human quyết định. D12/D13 được human giải quyết ngày 2026-10-20; D12 thay đổi theo ADR-011 để Rules enforce được quota trên Spark. Giải quyết blocker còn lại bằng evidence/approved decision trước execution, không lấp bằng implementation giả.
 
 D3 chỉ chặn command/event semantics chưa có wire rõ; không blanket-block contract create/join/bill đã có. Mỗi plan nêu phần áp dụng. D6 gồm hai quyết định độc lập về theme catalog và advanced behavior, không gộp approval tùy tiện.
 
@@ -147,7 +147,7 @@ Shared ownership: 001 sở hữu test harness/root lockfile changes; 002 native 
 | Early-exit request resource (path theo contract được duyệt) | 018; sau khi D3 chốt path/schema | Host và requester/member theo policy đã duyệt đọc; client writes chỉ được mở nếu contract/ADR cho phép, mặc định giữ server boundary. |
 | Termination-vote resource (path theo contract được duyệt) | 019; sau khi D3 chốt path/schema | Active members đọc trong room; mở client writes chỉ theo contract được duyệt; expiry/finalization server-owned. |
 | `rooms/{roomId}/settlementDetails/current` | 023 settlement-details Rules | Thành viên cùng room đọc trước expiry; chỉ Host active ghi bằng Spark transaction sau khi room FINALIZED; outsider bị deny. |
-| `rooms/{roomId}/billShares/{uid}` | 024 bill-share Rules; 025–027 reuse và kiểm tra consumer reads | SL-024 cho Host publish final shares một lần theo Spark/ADR-021; các payment/status mutations còn lại chỉ qua command boundary riêng. |
+| `rooms/{roomId}/billShares/{uid}` | Default shares SL-024; override versions in `billOverrides/{requestId}/shares/{uid}` under ADR-022; payment state/counter SL-027 | SL-024 publishes default shares once. SL-025 switches a version pointer before first payment. SL-027 must atomically increment `billPaidCount`; Rules lock further overrides once positive. |
 | Group-history queries trên room/member/violation/share resources hiện có | 028 kiểm chứng consumer query sau khi D4 chốt destination/projection | Không tạo path hoặc quyền mới trước D4; reuse Rules của producer cho mọi document được đọc. |
 | Advanced leaderboard read model nếu behavior D6 yêu cầu resource mới | 036 sau D6; nếu dùng projection hiện có thì reuse 017 | Chỉ audience/entitlement đã duyệt đọc; mọi projection writes server-only. |
 | PIN reservations, usage, command/sync receipts, activation codes, reconciliation audits | 013/014/017/020/021/032 tạo qua backend; 033 stamps approved `expiresAt` on `syncReceipts`; 037 configures and verifies Firestore TTL; Rules mặc định deny | Server-only; không cấp client read/write trực tiếp nếu contract không nêu rõ; TTL chỉ xóa receipt sau D10 horizon, không xóa domain records. |
