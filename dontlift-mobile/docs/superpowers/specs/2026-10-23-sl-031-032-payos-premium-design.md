@@ -1,6 +1,6 @@
 # Thiết kế SL-031/032 — Mua Premium qua payOS
 
-**Trạng thái:** Thiết kế được duyệt trong hội thoại ngày 2026-10-23; đang chờ user rà bản spec này trước khi lập implementation plan.
+**Trạng thái:** User duyệt thiết kế và bản spec trong hội thoại ngày 2026-10-23; implementation plan nằm tại `../plans/2026-10-23-sl-031-032-payos-premium.md`.
 **Nhánh thiết kế:** `feature/sl-031-032-payos-premium` từ `origin/main`.
 **Phạm vi:** Thay luồng activation/redeem bằng một gói Premium online có thời hạn, payOS checkout và một Express backend nhỏ. Firestore tiếp tục ở Firebase Spark.
 
