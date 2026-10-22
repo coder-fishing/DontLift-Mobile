@@ -13,7 +13,7 @@ type Props = {
   profile: RegistrationProfile;
   repository: ProfileRepository;
   onProfileUpdated: (profile: RegistrationProfile) => void;
-  onSignOut: () => Promise<unknown>;
+  onSignOut: () => Promise<{ kind: 'signed-out' } | { kind: 'failed'; message: string }>;
   onBack: () => void;
 };
 
@@ -98,7 +98,16 @@ export function ProfileScreen({ profile, repository, onProfileUpdated, onSignOut
 
   const confirmSignOut = () => Alert.alert('Sign out?', 'You can sign in again with this account or use another one.', [
     { text: 'Cancel', style: 'cancel' },
-    { text: 'Sign out', style: 'destructive', onPress: () => { void onSignOut(); } },
+    { text: 'Sign out', style: 'destructive', onPress: () => {
+      void (async () => {
+        try {
+          const result = await onSignOut();
+          if (result.kind === 'failed') Alert.alert('Sign out failed', result.message);
+        } catch {
+          Alert.alert('Sign out failed', 'We could not sign you out. Please try again.');
+        }
+      })();
+    } },
   ]);
 
   return <KeyboardAvoidingView style={[styles.root, { backgroundColor: colors.authBackdrop, paddingBottom: Math.max(insets.bottom, 8) }]}
