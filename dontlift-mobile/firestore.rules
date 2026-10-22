@@ -61,6 +61,75 @@ service cloud.firestore {
       return /databases/$(database)/documents/rooms/$(roomId)/billOverrides/$(requestId)/shares/$(uid);
     }
 
+    function billPaymentCommandPath(roomId, requestId) {
+      return /databases/$(database)/documents/rooms/$(roomId)/billPaymentCommands/$(requestId);
+    }
+
+    function currentBillPublication(room) {
+      return room.get('billOverrideRequestId', null) is string
+        ? room.billOverrideRequestId : room.get('billRequestId', '');
+    }
+
+    function currentBillSharePath(roomId, room, uid) {
+      return room.get('billOverrideRequestId', null) is string
+        ? billOverrideSharePath(roomId, room.billOverrideRequestId, uid)
+        : /databases/$(database)/documents/rooms/$(roomId)/billShares/$(uid);
+    }
+
+    function validBillPaymentReceiptData(roomId, requestId, data) {
+      return data.keys().hasAll(['version', 'requestId', 'roomId', 'memberUid', 'actorUid', 'targetStatus',
+          'publicationRequestId', 'expectedRevision', 'shareVnd', 'paidAt'])
+        && data.keys().hasOnly(['version', 'requestId', 'roomId', 'memberUid', 'actorUid', 'targetStatus',
+          'publicationRequestId', 'expectedRevision', 'shareVnd', 'paidAt'])
+        && data.version == 1 && data.requestId == requestId && data.roomId == roomId
+        && requestId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
+        && data.memberUid is string && data.memberUid.size() > 0 && data.memberUid.size() <= 128
+        && data.actorUid == request.auth.uid && data.targetStatus == 'MARKED_AS_PAID'
+        && data.publicationRequestId is string && data.expectedRevision is int && data.expectedRevision >= 0
+        && data.shareVnd is int && data.shareVnd > 0 && data.paidAt == request.time;
+    }
+
+    // Share, room counter và receipt phải cùng đổi trong một transaction; receipt cũ không thể tăng lại counter.
+    function validBillPaymentTransition(roomId, requestId, expectedUid, overrideId) {
+      let roomRef = roomPath(roomId);
+      let before = get(roomRef).data;
+      let after = getAfter(roomRef).data;
+      let receiptRef = billPaymentCommandPath(roomId, requestId);
+      let receipt = getAfter(receiptRef).data;
+      let shareRef = currentBillSharePath(roomId, before, receipt.memberUid);
+      let share = get(shareRef).data;
+      let paid = getAfter(shareRef).data;
+      let host = get(hostMemberPath(roomId, request.auth.uid)).data;
+      let details = get(settlementDetailsPath(roomId)).data;
+      return signedIn() && before.hostId == request.auth.uid && host.role == 'HOST' && host.status == 'ACTIVE'
+        && before.status == 'COMPLETED' && before.reconciliationStatus == 'FINALIZED' && before.calculationVersion == 1
+        && details.expiresAt is timestamp && details.expiresAt > request.time
+        && validBillPaymentReceiptData(roomId, requestId, receipt)
+        && !exists(receiptRef)
+        && before.get('billPaidCount', 0) is int && before.get('billPaidCount', 0) >= 0
+        && before.billShareCount is int && before.get('billPaidCount', 0) < before.billShareCount
+        && after.diff(before).affectedKeys().hasOnly(['billPaidCount', 'lastPaymentRequestId'])
+        && after.billPaidCount == before.get('billPaidCount', 0) + 1
+        && after.lastPaymentRequestId == requestId
+        && receipt.publicationRequestId == currentBillPublication(before)
+        && receipt.expectedRevision == before.get('billRevision', 0)
+        && (expectedUid == '' || (receipt.memberUid == expectedUid
+          && ((overrideId == '' && before.get('billOverrideRequestId', null) == null)
+            || (overrideId != '' && before.get('billOverrideRequestId', null) == overrideId))))
+        && get(hostMemberPath(roomId, receipt.memberUid)).data.status in ['ACTIVE', 'EARLY_EXIT']
+        && share.uid == receipt.memberUid && share.requestId == receipt.publicationRequestId
+        && share.shareVnd == receipt.shareVnd && share.get('paymentStatus', 'UNPAID') == 'UNPAID'
+        && paid.diff(share).affectedKeys().hasOnly(['paymentStatus', 'paidAt', 'paidBy', 'paymentRequestId'])
+        && paid.paymentStatus == 'MARKED_AS_PAID' && paid.paidAt == request.time
+        && paid.paidBy == request.auth.uid && paid.paymentRequestId == requestId;
+    }
+
+    function validBillSharePaymentUpdate(roomId, uid, overrideId) {
+      let requestId = request.resource.data.get('paymentRequestId', '');
+      return requestId is string && requestId.size() == 36
+        && validBillPaymentTransition(roomId, requestId, uid, overrideId);
+    }
+
     function validBillPrepareRoom(roomId) {
       let before = resource.data;
       let after = request.resource.data;
@@ -1381,7 +1450,14 @@ service cloud.firestore {
           getAfter(usagePath(request.auth.uid)).data.lastRequestId
         );
       allow update: if signedIn() && (
-        (
+        (request.resource.data.diff(resource.data).affectedKeys().hasAny(['billPaidCount'])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['billPaidCount', 'lastPaymentRequestId'])
+          && request.resource.data.get('lastPaymentRequestId', '') is string
+          && request.resource.data.get('lastPaymentRequestId', '').size() == 36
+          && validBillPaymentTransition(roomId, request.resource.data.lastPaymentRequestId, '', ''))
+        || (resource.data.status == 'COMPLETED' && (validBillPublishRoom(roomId)
+          || validBillPrepareRoom(roomId) || validBillOverrideRoomPublish(roomId))) || (
+
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participantCount', 'updatedAt', 'lastJoinRequestId'])
           && request.resource.data.participantCount is int
           && request.resource.data.updatedAt == request.time
@@ -1434,9 +1510,6 @@ service cloud.firestore {
         || validRoomCompletion(roomId)
         || validRoomSyncAcknowledgment(roomId)
         || validHostScoreOverride(roomId)
-        || validBillPublishRoom(roomId)
-        || validBillPrepareRoom(roomId)
-        || validBillOverrideRoomPublish(roomId)
       );
       allow list, delete: if false;
 
@@ -1529,7 +1602,8 @@ service cloud.firestore {
           || hostCanReadBillPreparation(roomId);
         allow list: if roomParticipant(roomId, request.auth.uid) && publishedBillReadable(roomId);
         allow create: if validBillShareCreate(roomId, uid);
-        allow update, delete: if false;
+        allow update: if validBillSharePaymentUpdate(roomId, uid, '');
+        allow delete: if false;
       }
 
       match /billOverrides/{requestId} {
@@ -1544,7 +1618,8 @@ service cloud.firestore {
             && publishedBillOverrideReadable(roomId, requestId))
             || hostCanReadBillOverride(roomId, requestId);
           allow create: if validBillOverrideShareCreate(roomId, requestId, uid);
-          allow update, delete: if false;
+          allow update: if validBillSharePaymentUpdate(roomId, uid, requestId);
+          allow delete: if false;
         }
       }
 
@@ -1552,6 +1627,14 @@ service cloud.firestore {
         allow get: if billHost(roomId) && get(roomPath(roomId)).data.hostId == request.auth.uid;
         allow list: if false;
         allow create: if validBillOverrideReceiptCreate(roomId, requestId);
+        allow update, delete: if false;
+      }
+
+      match /billPaymentCommands/{requestId} {
+        // Host có thể đọc receipt chưa tồn tại để lần mark đầu không bị permission-denied.
+        allow get: if billHost(roomId) && get(roomPath(roomId)).data.hostId == request.auth.uid;
+        allow list: if false;
+        allow create: if validBillPaymentTransition(roomId, requestId, '', '');
         allow update, delete: if false;
       }
 

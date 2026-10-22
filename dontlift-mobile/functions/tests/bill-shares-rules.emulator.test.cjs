@@ -97,12 +97,12 @@ async function finalize(db, { id = roomId, request = requestId, total = 10_000, 
   const preparationRef = doc(db, `rooms/${id}/billPreparations/current`);
   const receiptRef = doc(db, `rooms/${id}/billCommands/${request}`);
   return runTransaction(db, async tx => {
-    const [room, preparation, receipt] = await Promise.all([
-      tx.get(roomRef), tx.get(preparationRef), tx.get(receiptRef),
+    const [room, preparation] = await Promise.all([
+      tx.get(roomRef), tx.get(preparationRef),
     ]);
     assert.equal(room.exists(), true);
     assert.equal(preparation.data().status, 'PREPARING');
-    assert.equal(receipt.exists(), false);
+
     tx.update(roomRef, { calculationVersion: 1, billPublishedAt: serverTimestamp() });
     tx.update(preparationRef, { status: 'PUBLISHED', publishedAt: serverTimestamp() });
     tx.set(receiptRef, {

@@ -18,10 +18,13 @@ async function createRulesEnvironment() {
 
   const rulesPath = path.resolve(__dirname, '../../../firestore.rules');
   const rules = fs.readFileSync(rulesPath, 'utf8');
-  return initializeTestEnvironment({
+  const environment = await initializeTestEnvironment({
     projectId,
     firestore: { host, port: Number(portText), rules },
   });
+  // Mỗi test bắt đầu sạch; test:rooms chạy tuần tự để không xóa dữ liệu của suite khác.
+  await environment.clearFirestore();
+  return environment;
 }
 
 module.exports = { createRulesEnvironment };
