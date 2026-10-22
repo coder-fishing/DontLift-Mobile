@@ -48,7 +48,7 @@ export function listenToPublishedBill(
       return;
     }
 
-    if (snapshot.metadata.fromCache) {
+    if (snapshot.metadata.fromCache || snapshot.metadata.hasPendingWrites) {
       stopShares();
       onState({ kind: 'cached', bill: null });
       return;
@@ -101,7 +101,8 @@ export function listenToPublishedBill(
           return;
         }
         lastPublishedBill = bill;
-        onState(sharesSnapshot.metadata.fromCache ? { kind: 'cached', bill } : { kind: 'published', bill });
+        onState(sharesSnapshot.metadata.fromCache || sharesSnapshot.metadata.hasPendingWrites
+          ? { kind: 'cached', bill } : { kind: 'published', bill });
       },
       error => {
         if (generation !== shareGeneration) return;

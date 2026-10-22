@@ -1,5 +1,5 @@
 import {
-  doc, getDocFromServer, runTransaction, serverTimestamp, Timestamp, type Firestore,
+  doc, getDocFromServer, onSnapshot, runTransaction, serverTimestamp, Timestamp, type Firestore,
 } from 'firebase/firestore';
 
 export type SettlementDetailsInput = {
@@ -14,6 +14,10 @@ export type SettlementDetails = SettlementDetailsInput & {
   updatedAtUtcMs: number | null;
   expiresAtUtcMs: number;
 };
+
+export type SettlementDetailsState =
+  | { kind: 'loading' | 'unavailable' | 'error' }
+  | { kind: 'ready'; details: SettlementDetails };
 
 export type SettlementDetailsErrorCode =
   | 'unauthenticated' | 'invalid-argument' | 'not-found' | 'failed-precondition'
@@ -81,6 +85,22 @@ export function createSettlementDetailsRepository(dependencies: {
   const detailsRef = (roomId: string) => doc(dependencies.firestore, 'rooms', roomId, 'settlementDetails', 'current');
 
   return {
+    listen(roomId: string, onState: (state: SettlementDetailsState) => void): () => void {
+      if (!dependencies.auth.currentUser || !UUID_V4.test(roomId)) {
+        onState({ kind: 'unavailable' });
+        return () => undefined;
+      }
+      onState({ kind: 'loading' });
+      return onSnapshot(detailsRef(roomId), { includeMetadataChanges: true }, snapshot => {
+        if (snapshot.metadata.fromCache || snapshot.metadata.hasPendingWrites) {
+          onState({ kind: 'loading' });
+          return;
+        }
+        const details = snapshot.exists() ? toDetails(roomId, snapshot.data()) : null;
+        onState(details ? { kind: 'ready', details } : { kind: 'unavailable' });
+      }, () => onState({ kind: 'error' }));
+    },
+
     async read(roomId: string): Promise<SettlementDetails | null> {
       const actor = dependencies.auth.currentUser;
       if (!actor) throw new SettlementDetailsError('unauthenticated');

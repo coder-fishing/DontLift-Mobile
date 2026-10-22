@@ -62,7 +62,7 @@ import { createEarlyExitRepository, EarlyExitError, type EarlyExitDecision, type
 import { listenToOpenEarlyExitRequests } from '../features/rooms/early-exit-listener';
 import { createTerminationVoteRepository, TerminationVoteError, type TerminationChoice } from '../features/rooms/termination-vote-repository';
 import { createRoomCompletionRepository, RoomCompletionError } from '../features/rooms/room-completion-repository';
-import { createSettlementDetailsRepository, type SettlementDetails } from '../features/settlement/settlement-details-repository';
+import { createSettlementDetailsRepository, type SettlementDetailsState } from '../features/settlement/settlement-details-repository';
 import { createBankDirectoryRepository } from '../features/settlement/bank-directory';
 import { createBillRepository, BillRepositoryError, type ApplyBillOverridesCommand, type CalculateBillCommand, type PublishedBill } from '../features/settlement/bill-repository';
 import type { BillShareOverride } from '../features/settlement/bill-allocation';
@@ -1021,7 +1021,8 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     && candidateGroupRoom.startedAtUtcMs !== null ? candidateGroupRoom : null;
   const groupSummarySnapshot = candidateGroupRoom?.status === 'COMPLETED' ? candidateGroupRoom : null;
   const [settlementDetailsMode, setSettlementDetailsMode] = useState<'host' | 'member'>('member');
-  const [settlementDetails, setSettlementDetails] = useState<SettlementDetails | null>(null);
+  const [paymentDetailsState, setPaymentDetailsState] = useState<SettlementDetailsState>({ kind: 'loading' });
+  const [paymentDetailsRevision, setPaymentDetailsRevision] = useState(0);
   const [publishedBillState, setPublishedBillState] = useState<PublishedBillState>({ kind: 'loading' });
   const [billListenerRevision, setBillListenerRevision] = useState(0);
   const [committedBill, setCommittedBill] = useState<PublishedBill | null>(null);
@@ -1093,16 +1094,18 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const billScreenState = selectPublishedBillState(publishedBillState, committedBill, groupSummarySnapshot?.roomId);
   useEffect(() => {
     if (currentScreen !== '08-vietqr-settlement') return undefined;
-    setSettlementDetails(null);
-    if (!lobbyRoom) return undefined;
+    setPaymentDetailsState({ kind: 'loading' });
+    const ownMember = groupSummarySnapshot?.members.find(member => member.uid === profile.uid);
+    if (!groupSummarySnapshot || groupSummarySnapshot.reconciliationStatus !== 'FINALIZED'
+      || !ownMember || !['ACTIVE', 'EARLY_EXIT'].includes(ownMember.status)) return undefined;
     let active = true;
-    void settlementDetailsRepository.read(lobbyRoom.roomId).then(value => {
-      if (active) setSettlementDetails(value);
-    }).catch(() => {
-      if (active) setSettlementDetails(null);
+    const stop = settlementDetailsRepository.listen(groupSummarySnapshot.roomId, state => {
+      if (active) setPaymentDetailsState(state);
     });
-    return () => { active = false; };
-  }, [currentScreen, lobbyRoom?.roomId, settlementDetailsRepository]);
+    return () => { active = false; stop(); };
+  }, [currentScreen, groupSummarySnapshot?.roomId, groupSummarySnapshot?.reconciliationStatus,
+    groupSummarySnapshot?.members.find(member => member.uid === profile.uid)?.status,
+    profile.uid, settlementDetailsRepository, paymentDetailsRevision]);
   const ownGroupRoomMember = groupRoomSnapshot?.members.find(member => member.uid === profile.uid);
   const groupCaptureRoomSnapshot = ownGroupRoomMember?.status === 'ACTIVE' ? groupRoomSnapshot : null;
 
@@ -1917,6 +1920,8 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
                 .filter(member => member.status === 'ACTIVE' || member.status === 'EARLY_EXIT')
                 .map(member => ({ uid: member.uid, displayName: member.displayName, penaltyScore: member.penaltyScore }))}
               state={billScreenState}
+              actorUid={profile.uid}
+              onPayShare={() => setCurrentScreen('08-vietqr-settlement')}
               isOnline={groupIsOnline}
               isPublishing={isPublishingBill}
               pendingTotalVnd={pendingBillCommand.current?.command.totalBillVnd}
@@ -2093,17 +2098,23 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
             repository={settlementDetailsRepository}
             bankDirectory={settlementBankDirectory}
             onContinueToBill={() => setCurrentScreen('07-bill-allocation')}
-            onSaved={details => {
-              setSettlementDetails(details);
+            onSaved={() => {
               setCurrentScreen('07-bill-allocation');
             }}
             onBack={() => setCurrentScreen('13-group-summary')}
           />
         ) : null}
 
-        {currentScreen === '08-vietqr-settlement' && (
-          <VietQRSettlementScreen bill={publishedBillState.kind === 'published' ? publishedBillState.bill : null}
-            actorUid={profile.uid} settlementDetails={settlementDetails} />
+        {currentScreen === '08-vietqr-settlement' && groupSummarySnapshot && (
+          <VietQRSettlementScreen roomId={groupSummarySnapshot.roomId} roomPin={groupSummarySnapshot.pin}
+            actorUid={profile.uid} member={groupSummarySnapshot.members.find(member => member.uid === profile.uid)}
+            billState={billScreenState} detailsState={paymentDetailsState} isOnline={groupIsOnline}
+            onRefresh={() => {
+              setPaymentDetailsState({ kind: 'loading' });
+              setPaymentDetailsRevision(revision => revision + 1);
+              setBillListenerRevision(revision => revision + 1);
+            }}
+            onBack={() => setCurrentScreen('07-bill-allocation')} />
         )}
 
         {currentScreen === '09-activation' && <ActivationScreen />}

@@ -285,16 +285,18 @@ export function createBillRepository(dependencies: Dependencies) {
         }
 
         const finalized = await runTransaction(dependencies.firestore, async transaction => {
-          const [roomSnapshot, hostSnapshot, detailSnapshot, preparationSnapshot, receiptSnapshot] = await Promise.all([
+          const [roomSnapshot, hostSnapshot, detailSnapshot, preparationSnapshot] = await Promise.all([
             transaction.get(roomRef), transaction.get(hostRef), transaction.get(detailRef),
-              transaction.get(preparationRef), transaction.get(receiptRef(requestId)),
+            transaction.get(preparationRef),
           ]);
           if (!roomSnapshot.exists() || !hostSnapshot.exists() || !detailSnapshot.exists()
             || !preparationSnapshot.exists()) throw new BillRepositoryError('failed-precondition');
           const room = roomSnapshot.data();
           const preparation = preparationSnapshot.data();
           if (room.calculationVersion === 1) {
-            if (room.billRequestId !== requestId || receiptSnapshot.id !== requestId) {
+            // Rules chỉ mở đọc receipt sau publication; lần publish đầu tạo receipt mà không đọc trước.
+            const receiptSnapshot = await transaction.get(receiptRef(requestId));
+            if (room.billRequestId !== requestId || !receiptSnapshot.exists() || receiptSnapshot.id !== requestId) {
               throw new BillRepositoryError('already-exists');
             }
             return { kind: 'published' as const, requestId };
@@ -308,7 +310,6 @@ export function createBillRepository(dependencies: Dependencies) {
             || !(detailSnapshot.data().expiresAt instanceof Timestamp)) {
             throw new BillRepositoryError('failed-precondition');
           }
-          if (receiptSnapshot.exists()) throw new BillRepositoryError('already-exists');
           transaction.update(roomRef, {
             calculationVersion: 1,
             billPublishedAt: serverTimestamp(),
