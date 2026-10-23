@@ -12,7 +12,7 @@ import { premiumIsActive } from '../features/premium/premium-entitlement';
 
 const colors = Colors.light;
 const money = (value: number) => `${value.toLocaleString('vi-VN')}đ`;
-type Pending = { requestId: string; packageId: string };
+type Pending = { requestId: string; packageId: string; orderCode?: number };
 export function PremiumScreen({ uid, api, expiresAtUtcMs }: { uid: string; api: PremiumApi; expiresAtUtcMs?: number | null }) {
   const [packages, setPackages] = useState<PremiumPackage[]>(DISPLAY_PREMIUM_PACKAGES);
   const [catalogReady, setCatalogReady] = useState(false);
@@ -52,15 +52,38 @@ export function PremiumScreen({ uid, api, expiresAtUtcMs }: { uid: string; api: 
       // Trạng thái server đã chốt; lỗi dọn cache cục bộ không được che mất kết quả thanh toán.
       await AsyncStorage.removeItem(key).catch(() => undefined);
     } else if (saved) {
-      pendingRef.current = { requestId: saved.requestId, packageId: saved.packageId };
+      const nextPending = { requestId: saved.requestId, packageId: saved.packageId, orderCode: saved.orderCode };
+      const previousPending = pendingRef.current;
+      pendingRef.current = nextPending;
       if (saved.status === 'PAID' || !selectionTouched.current) setSelected(saved.packageId);
       setPending(pendingRef.current);
+      // Lưu mã đơn để lần sau hỏi trạng thái đúng QR, kể cả khi thiết bị khác tạo đơn mới hơn.
+      if (previousPending?.requestId !== nextPending.requestId || previousPending.packageId !== nextPending.packageId
+        || previousPending.orderCode !== nextPending.orderCode) {
+        await AsyncStorage.setItem(key, JSON.stringify(nextPending)).catch(() => undefined);
+      }
     }
     return saved;
   }
 
   async function refresh(forceRefresh = false) {
-    return applyOrder(await api.current(forceRefresh));
+    const knownCheckout = pendingRef.current;
+    if (!knownCheckout) return applyOrder(await api.current(forceRefresh));
+
+    // Luôn đọc trạng thái của QR đang hiển thị; nếu chưa có mã đơn thì retry cùng requestId để phục hồi.
+    const checkout = knownCheckout.orderCode != null
+      ? await api.get(knownCheckout.orderCode)
+      : await api.create(knownCheckout.requestId, knownCheckout.packageId)
+        .then(saved => api.get(saved.orderCode));
+    if (checkout.requestId !== knownCheckout.requestId) {
+      throw new Error('The saved Premium checkout could not be matched. Keep its QR and retry status later.');
+    }
+    const applied = await applyOrder(checkout);
+    if (['PAID', 'CANCELLED', 'EXPIRED'].includes(checkout.status)) {
+      // Chỉ sau khi checkout đã biết kết thúc mới nhận đơn mới nhất của tài khoản.
+      return applyOrder(await api.current(forceRefresh));
+    }
+    return applied;
   }
   async function load() {
     if (working.current) return;
@@ -72,7 +95,12 @@ export function PremiumScreen({ uid, api, expiresAtUtcMs }: { uid: string; api: 
         const value: unknown = JSON.parse(cached);
         if (value && typeof value === 'object' && 'requestId' in value && 'packageId' in value
           && typeof value.requestId === 'string' && typeof value.packageId === 'string') {
-          pendingRef.current = value as Pending;
+          pendingRef.current = {
+            requestId: value.requestId,
+            packageId: value.packageId,
+            ...(typeof value.orderCode === 'number' && Number.isSafeInteger(value.orderCode)
+              ? { orderCode: value.orderCode } : {}),
+          };
           setPending(pendingRef.current);
           setSelected(pendingRef.current.packageId);
         }
@@ -157,12 +185,8 @@ export function PremiumScreen({ uid, api, expiresAtUtcMs }: { uid: string; api: 
 
       const nextOrder = await api.create(nextRequest.requestId, nextRequest.packageId);
       if (!alive.current) return;
-      orderRef.current = nextOrder;
-      setOrder(nextOrder);
-      if (['PAID', 'CANCELLED', 'EXPIRED'].includes(nextOrder.status)) {
-        await applyOrder(nextOrder);
-      } else {
-        setPending(nextRequest);
+      await applyOrder(nextOrder);
+      if (!['PAID', 'CANCELLED', 'EXPIRED'].includes(nextOrder.status)) {
         setStatusMessage(nextOrder.qrCode
           ? 'New payment QR is ready. Scan it with your bank app to continue.'
           : 'The new payment is being prepared. Its QR will appear here when ready.');
@@ -204,12 +228,10 @@ export function PremiumScreen({ uid, api, expiresAtUtcMs }: { uid: string; api: 
       pendingRef.current = request; setPending(request);
       const result = await api.create(request.requestId, request.packageId);
       if (!alive.current) return;
-      orderRef.current = result;
-      setOrder(result);
       selectionTouched.current = false;
+      await applyOrder(result);
       if (['PAID', 'CANCELLED', 'EXPIRED'].includes(result.status)) {
         // Xóa identity của request terminal trước; refresh sau đó mới có thể nhận đơn mới hơn.
-        await applyOrder(result);
         await refresh();
         return;
       }

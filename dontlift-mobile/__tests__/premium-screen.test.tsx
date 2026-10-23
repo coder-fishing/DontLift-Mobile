@@ -12,7 +12,7 @@ jest.mock('../src/constants/theme', () => ({ Colors: { light: { text: 'black', p
 jest.mock('../src/components/GlassCard', () => ({ GlassCard: ({ children }: { children: React.ReactNode }) => children }));
 const renderer = require('react-test-renderer');
 const order = { version: 1 as const, orderCode: 42, requestId: 'saved-request', packageId: 'MONTH_1', amountVnd: 89000, status: 'PENDING' as const, checkoutUrl: 'https://pay.payos.vn/web/test', qrCode: 'test-qr-code', premiumExpiresAtUtcMs: null };
-function api() { return { packages: jest.fn().mockResolvedValue([{ id: 'MONTH_1', amountVnd: 89000, paidMonths: 1, grantedMonths: 1 }]), current: jest.fn().mockResolvedValue(null), create: jest.fn().mockResolvedValue(order), get: jest.fn() }; }
+function api() { return { packages: jest.fn().mockResolvedValue([{ id: 'MONTH_1', amountVnd: 89000, paidMonths: 1, grantedMonths: 1 }]), current: jest.fn().mockResolvedValue(null), create: jest.fn().mockResolvedValue(order), get: jest.fn().mockImplementation(async (orderCode: number) => ({ ...order, orderCode })) }; }
 
 afterEach(() => jest.clearAllMocks());
 test('shows payOS QR in app and keeps pending payment identity until server confirms', async () => {
@@ -22,7 +22,7 @@ test('shows payOS QR in app and keeps pending payment identity until server conf
   await renderer.act(async () => { screen = renderer.create(<PremiumScreen uid="a" api={service} />); });
   await renderer.act(async () => { await screen.root.findByProps({ accessibilityLabel: 'Continue saved Premium checkout' }).props.onPress(); });
   expect(service.create).toHaveBeenCalledWith('saved-request', 'MONTH_1');
-  expect(AsyncStorage.setItem).toHaveBeenCalledWith('premium-checkout:a', JSON.stringify({ requestId: 'saved-request', packageId: 'MONTH_1' }));
+  expect(AsyncStorage.setItem).toHaveBeenCalledWith('premium-checkout:a', JSON.stringify({ requestId: 'saved-request', packageId: 'MONTH_1', orderCode: 42 }));
   expect(screen.root.findByProps({ accessibilityLabel: 'Premium payment QR code' })).toBeTruthy();
   expect(WebBrowser.openBrowserAsync).not.toHaveBeenCalled();
   await renderer.act(async () => { await screen.root.findByProps({ accessibilityLabel: 'Open payOS checkout' }).props.onPress(); });
