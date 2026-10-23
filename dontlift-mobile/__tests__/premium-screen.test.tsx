@@ -17,7 +17,7 @@ function api() { return { packages: jest.fn().mockResolvedValue([{ id: 'MONTH_1'
 afterEach(() => jest.clearAllMocks());
 test('shows payOS QR in app and keeps pending payment identity until server confirms', async () => {
   const service = api();
-  service.current.mockResolvedValue(order);
+  service.current.mockResolvedValue({ ...order, status: 'CREATING', checkoutUrl: null, qrCode: null });
   let screen: ReturnType<typeof renderer.create>;
   await renderer.act(async () => { screen = renderer.create(<PremiumScreen uid="a" api={service} />); });
   await renderer.act(async () => { await screen.root.findByProps({ accessibilityLabel: 'Continue saved Premium checkout' }).props.onPress(); });

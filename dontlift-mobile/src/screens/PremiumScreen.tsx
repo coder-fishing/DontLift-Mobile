@@ -127,6 +127,9 @@ export function PremiumScreen({ uid, api, expiresAtUtcMs }: { uid: string; api: 
       const result = await api.cancelCurrent();
       if (!alive.current) return;
       if (!result) throw new Error('No current payment was found. Refresh and review your Premium status.');
+      if (result.requestId !== pending.requestId) {
+        throw new Error('A different Premium checkout is current for this account. This device’s saved QR was not confirmed cancelled, so no replacement was created. Select its package and resume that checkout before switching.');
+      }
       const applied = await applyOrder(result);
       if (result.status === 'PAID' || applied?.status === 'PAID') {
         setSelected(result.packageId);
