@@ -23,7 +23,7 @@ function makeRepository(status: string, lastRequestId: string | null = null) {
   firestoreMocks.runTransaction.mockImplementation(async (_db, operation) => operation({
     get: async (reference: { path: string }) => reference.path.endsWith(`/members/host`)
       ? { exists: () => true, data: () => ({ role: 'HOST', status: 'ACTIVE' }) }
-      : { exists: () => true, data: () => ({ hostId: 'host', status, lastStartRequestId: lastRequestId }) },
+      : { exists: () => true, data: () => ({ hostId: 'host', status, participantCount: 1, lastStartRequestId: lastRequestId }) },
     update,
   }));
   const repository = createRoomRepository({
@@ -44,6 +44,7 @@ describe('startRoom Spark transaction', () => {
     expect(result).toEqual({ version: 1, roomId, requestId, status: 'ACTIVE', startedAtUtcMs: null });
     expect(update).toHaveBeenCalledWith(expect.objectContaining({ path: `rooms/${roomId}` }), {
       status: 'ACTIVE', startedAt: 'SERVER_TIME', updatedAt: 'SERVER_TIME', lastStartRequestId: requestId,
+      activeMemberCount: 1, hostHeartbeatAt: 'SERVER_TIME',
     });
   });
 
