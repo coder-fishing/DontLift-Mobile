@@ -19,7 +19,6 @@ import * as Crypto from 'expo-crypto';
 import { ScreenId } from '../types';
 import { Header } from '../components/Header';
 import { BottomNav } from '../components/BottomNav';
-import { ControlDeckDrawer } from '../components/ControlDeckDrawer';
 
 // 10 Core Screens
 import { LoginScreen, LoginScreenBackground } from '../screens/LoginScreen';
@@ -29,6 +28,10 @@ import { SoloSummaryScreen } from '../screens/SoloSummaryScreen';
 import { HistoryScreen } from '../screens/HistoryScreen';
 import { GroupHistoryScreen } from '../screens/GroupHistoryScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
+import { SettingsScreen } from '../screens/SettingsScreen';
+import { createSettingsRepository } from '../features/settings/settings-repository';
+import { createFeedbackService } from '../features/settings/feedback-service';
+import { nativeFeedbackAdapters } from '../features/settings/native-feedback';
 import { createGroupHistoryRepository } from '../features/history/group-history-repository';
 import { createSoloHistoryRepository } from '../features/history/solo-history-repository';
 import { GroupLobbyScreen } from '../screens/GroupLobbyScreen';
@@ -96,6 +99,8 @@ const soloSessionController = createSoloSessionController(createLocalSessionRepo
 const soloCompletionController = createSoloSessionCompletionController(createSoloSummaryRepository());
 const violationRepository = createViolationRepository();
 const backgroundRecovery = createBackgroundRecoveryRepository();
+const settingsRepository = createSettingsRepository();
+const feedbackService = createFeedbackService(settingsRepository, nativeFeedbackAdapters);
 const INITIAL_DETECTION_STATE: ForegroundDetectionViewState = {
   orientation: 'UNKNOWN',
   isGraceActive: false,
@@ -269,11 +274,9 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     auth: roomRuntime.auth,
   }), [roomRuntime]);
   const settlementBankDirectory = useMemo(() => createBankDirectoryRepository(), []);
-  // Navigation & Drawer
+  // Navigation
   const [currentScreen, setCurrentScreen] = useState<ScreenId>('02-solo-select');
-  const [drawerVisible, setDrawerVisible] = useState<boolean>(false);
-  const [isHostRole, setIsHostRole] = useState<boolean>(true);
-  const [showEmptyState, setShowEmptyState] = useState<boolean>(false);
+  const settingsReturnScreen = useRef<ScreenId>('02-solo-select');
   const [createdRoom, setCreatedRoom] = useState<CreatedRoom | null>(null);
   const restoredGroupRoomId = useRef<string | null>(null);
   const terminalRoomCleanupInFlight = useRef(new Set<string>());
@@ -1221,7 +1224,10 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     const roomId = groupCaptureRoomSnapshot.roomId;
     const workTracker = createGroupCaptureWorkTracker();
     groupCaptureWork.current.set(roomId, workTracker);
-    const controller = createForegroundDetectionController({ id: roomId, userId: profile.uid }, groupViolationRepository);
+    const controller = createForegroundDetectionController(
+      { id: roomId, userId: profile.uid }, groupViolationRepository,
+      () => feedbackService.notifyConfirmedViolation(profile.uid),
+    );
     let disposed = false;
     let initialized = false;
     let processing = false;
@@ -1622,6 +1628,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     const controller = createForegroundDetectionController(
       { id: activeSoloSession.id, userId: activeSoloSession.userId },
       violationRepository,
+      () => feedbackService.notifyConfirmedViolation(activeSoloSession.userId),
     );
     foregroundDetectionController.current = controller;
     let disposed = false;
@@ -1961,6 +1968,11 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     void completeActiveSoloSession(Date.parse(activeSoloSession.startedAt) + activeSoloSession.durationSeconds * 1_000);
   }, [activeSoloSession, currentScreen, isCompletingSolo, isRecoveringBackground, soloSecondsLeft]);
 
+  const openSettings = () => {
+    if (currentScreen !== '17-settings') settingsReturnScreen.current = currentScreen;
+    setCurrentScreen('17-settings');
+  };
+
   const navigateToScreen = (screen: ScreenId) => {
     if (screen === '02-solo-select' && soloSummaryPendingView && soloSummary) {
       setSoloSummaryPendingView(false);
@@ -2013,13 +2025,16 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       <Header
         currentScreen={currentScreen}
         onNavigate={navigateToScreen}
-        onOpenDrawer={() => setDrawerVisible(true)}
+        onOpenSettings={openSettings}
       />
 
       {/* Main Body */}
       <View style={styles.mainBody}>
         {currentScreen === '01-login' && <LoginScreenBackground />}
-        {currentScreen === '16-profile' ? (
+        {currentScreen === '17-settings' ? (
+          <SettingsScreen key={profile.uid} userId={profile.uid} repository={settingsRepository}
+            onBack={() => setCurrentScreen(settingsReturnScreen.current)} />
+        ) : currentScreen === '16-profile' ? (
           <ProfileScreen key={profile.uid} profile={profile} repository={profileRepository}
             onProfileUpdated={handleProfileUpdated} onSignOut={session.signOut}
             onPremium={() => navigateToScreen('09-activation')}
@@ -2268,17 +2283,6 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
         onNavigate={navigateToScreen}
       />
 
-      {/* Prototype Control Deck Modal */}
-      <ControlDeckDrawer
-        visible={drawerVisible}
-        currentScreen={currentScreen}
-        isHostRole={isHostRole}
-        showEmptyState={showEmptyState}
-        onClose={() => setDrawerVisible(false)}
-        onNavigate={(screen) => setCurrentScreen(screen)}
-        onToggleHostRole={() => setIsHostRole(!isHostRole)}
-        onToggleEmptyState={() => setShowEmptyState(!showEmptyState)}
-      />
     </View>
   );
 }

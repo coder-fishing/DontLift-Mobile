@@ -360,6 +360,26 @@ describe('local database initialization', () => {
     await reopened.closeAsync();
   });
 
+  test('feedback settings persist separately per account across database reopen', async () => {
+    const { getLocalDatabase } = await loadDatabaseModule();
+    const database = await getLocalDatabase();
+    const settingsModule = require('../src/features/settings/settings-repository') as typeof import('../src/features/settings/settings-repository');
+    const { createSettingsRepository, DEFAULT_FEEDBACK_SETTINGS } = settingsModule;
+    const repository = createSettingsRepository(async () => database);
+
+    expect(await repository.getFeedbackSettings('owner-1')).toEqual(DEFAULT_FEEDBACK_SETTINGS);
+    await repository.saveFeedbackSettings('owner-1', { hapticsEnabled: false, soundEnabled: true });
+    expect(await repository.getFeedbackSettings('owner-1')).toEqual({ hapticsEnabled: false, soundEnabled: true });
+    expect(await repository.getFeedbackSettings('owner-2')).toEqual(DEFAULT_FEEDBACK_SETTINGS);
+    await database.closeAsync();
+
+    const reopened = await loadDatabaseModule();
+    const reopenedDatabase = await reopened.getLocalDatabase();
+    const reopenedRepository = createSettingsRepository(async () => reopenedDatabase);
+    expect(await reopenedRepository.getFeedbackSettings('owner-1')).toEqual({ hapticsEnabled: false, soundEnabled: true });
+    await reopenedDatabase.closeAsync();
+  });
+
   test('upgrades a version 1 profile database without losing its profile', async () => {
     const existing = harness?.open();
     if (!existing) throw new Error('SQLite test harness was not initialized.');

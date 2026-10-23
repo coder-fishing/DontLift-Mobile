@@ -55,7 +55,7 @@ test('summary/outbox rollback together and repeated completion reuses one event'
 });
 test('v9 upgrade preserves recordings; startup recovers missing durable summary', async () => {
   await seed(); native.exec('DROP TABLE group_history; PRAGMA user_version = 9'); await migrateLocalDatabase(db); await recoverGroupSummaries(db, 'member');
-  expect(await db.getFirstAsync('PRAGMA user_version')).toMatchObject({ user_version: 11 });
+  expect(await db.getFirstAsync('PRAGMA user_version')).toMatchObject({ user_version: 12 });
   expect(await db.getFirstAsync('SELECT COUNT(*) AS n FROM sessions')).toMatchObject({ n: 1 });
   expect(await db.getFirstAsync('SELECT COUNT(*) AS n FROM group_history')).toMatchObject({ n: 1 });
 });

@@ -2,14 +2,14 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use the qskill-executing-plans skill to implement this plan task-by-task. Steps use checkbox tracking.
 > Kế hoạch chỉ mô tả file, unit, hành vi, quy tắc, đầu ra và test cases; không có implementation code hoặc signatures. Đọc source thật trước mỗi task.
-> **Gate:** Không execute kế hoạch khi trạng thái còn DRAFT hoặc khi blocker/dependency chưa giải quyết. Việc tạo file này không phê duyệt backlog hay P6.2.
+> **Gate:** User đã duyệt riêng SL-030 ngày 2026-10-23; D11 đã giải quyết bên dưới. Approval này không duyệt backlog hoặc P6.2.
 
 **Mục tiêu:** Settings cho haptic và sound: Persisted settings, capability-aware feedback không đổi scoring.
 
 **Slice:** SL-030. **Ưu tiên đề xuất:** P1. **Release:** MVP + activation/Premium; post-MVP deferred. SL-036 chỉ được tính release sau D6.
 
-**Trạng thái kế hoạch:** DRAFT — chưa được human duyệt; bị chặn bởi D11.
-**Trạng thái implementation quan sát:** Không settings persistence/controller. Chưa có evidence nghiệm thu slice.
+**Trạng thái kế hoạch:** APPROVED riêng cho SL-030 ngày 2026-10-23; D11 RESOLVED; implementation đang tiến hành.
+**Trạng thái implementation:** Phần code đã triển khai; chờ user xác nhận UI và feedback native trên thiết bị thật.
 **Baseline khảo sát:** docs/p6.0-implementation-slices tại 57ca1eb28a2952c66d01f89b9b89bf755ab4812a.
 **Ngày soạn:** 2026-10-13, Asia/Saigon.
 **Plan slug:** `2026-10-13-sl-030-feedback-settings`; mọi commit thực hiện plan này phải bắt đầu `[2026-10-13-sl-030-feedback-settings]`.
@@ -32,9 +32,9 @@ V01–V10 chỉ các màn tương ứng tại `design/concepts/concept-final/scr
 
 ## 2. Blocker, risk và quyết định cần duyệt
 
-- **D11:** Duyệt default sound state, bundled alert asset và user scope của local preferences trước khi chốt giá trị mặc định hoặc tạo audio asset.
+- **D11 — RESOLVED 2026-10-23 theo quyết định của user:** Sound tắt mặc định; khi bật, phát một beep ngắn trung tính; preferences lưu cục bộ riêng theo tài khoản trên cùng thiết bị. Haptic bật mặc định theo PRD/Feature Spec hiện hành, có thể tắt trong Settings. Beep là WAV đóng gói trong app; không tải từ mạng.
 
-**Rủi ro cụ thể:** Default sound behavior/asset và local user scope phải chốt khi duyệt.
+**Rủi ro cụ thể còn lại:** Khả năng phát haptic/audio phụ thuộc thiết bị và thiết lập hệ điều hành; lỗi adapter phải không ảnh hưởng commit vi phạm hoặc điểm số.
 
 Nếu một contract chỉ có responsibility mà chưa có schema, task đầu là trình bày missing decision với nguồn; không tự tạo endpoint/field mới. Các hành vi test bên dưới mô tả outcome cần đạt, không thay thế wire approval. Ngưỡng/range/default chưa được spec xác định phải có quyết định ghi lại trước khi implement.
 
@@ -44,18 +44,18 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 | File dự kiến | Trách nhiệm |
 |---|---|
-| `src/features/settings/settings-repository.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
-| `src/features/settings/feedback-service.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
+| `src/features/settings/settings-repository.ts` | Lưu/đọc lựa chọn theo UID trong app_settings; repository lấy SQLite từ migration runner. |
+| `src/features/settings/feedback-service.ts` | Đọc preference đã lưu và gọi riêng từng adapter, bỏ qua lỗi capability. |
 | `src/screens/SettingsScreen.tsx` | SL-030 tạo màn hình Settings nền cho feedback preferences; các slice sau mở rộng màn hiện có, không tạo màn Settings thứ hai. |
 | `src/app/index.tsx` | Đăng ký Settings screen state, render màn hình, và chỉ cho app shell đã xác thực điều hướng vào Settings. |
 | `src/types.ts` | Bổ sung định danh Settings vào ScreenId dùng chung. |
 | `src/constants.ts` | Bổ sung tiêu đề Settings theo ScreenId. |
 | `src/components/Header.tsx` | Nối nút cài đặt của app shell đã xác thực tới SettingsScreen; không dùng prototype control deck làm đường sản phẩm. |
 | `src/features/local/migrations.ts` | SL-030 mở rộng migration runner SL-003 bằng versioned `app_settings` schema theo Feature Specification; không tạo database bootstrap thứ hai. |
-| `package.json` | SL-030 sở hữu chọn và khai báo audio package tương thích Expo SDK/native targets sau khi D11 được duyệt. |
-| `package-lock.json`, `pnpm-lock.yaml` | SL-030 sở hữu cập nhật đồng bộ hai lockfile nếu thêm audio package. |
-| `app.json` | SL-030 sở hữu native/plugin configuration nếu audio package được chọn yêu cầu; chỉ cấu hình sau khi xác minh tương thích. |
-| `assets/audio/violation-alert.wav` | Bundled violation cue do SL-030 sở hữu; nội dung/default chỉ được chốt sau D11. |
+| `package.json` | Dùng expo-audio tương thích SDK 57; haptic dùng React Native Vibration có sẵn để theo pattern trong spec, không thêm package riêng. |
+| `package-lock.json`, `pnpm-lock.yaml` | Cập nhật đồng bộ expo-audio. |
+| `app.json` | Không cần plugin hay quyền ghi âm cho playback cue ngắn; không bật background audio. |
+| `assets/audio/violation-alert.wav` | Beep mono ngắn 660 Hz, 160 ms, đóng gói trong app; sound off mặc định theo D11. |
 | `src/features/solo/grace-period-engine.ts` | Unit/repository/adapter chuyên trách; reuse nếu prerequisite đã tạo. |
 | `__tests__/feedback-settings.test.ts` | Kiểm thử dự kiến; chưa tạo test source trong P6.1. |
 
@@ -85,20 +85,20 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 **Files:** Dùng units/config/backend/repositories trong bảng mục 3; khi test source đã được chỉ định, đặt cases thuộc boundary vào đúng app/backend target. Không thay presentation chưa cần cho task này.
 
-**Nhận/trả:** Nhận User preference haptic/sound và confirmed violation; trả Persisted settings, capability-aware feedback không đổi scoring. Với contract đang bị chặn, chưa có quyền thêm schema dù test outcome đã được nêu.
+**Nhận/trả:** Nhận User preference haptic/sound và confirmed violation; trả Persisted settings, capability-aware feedback không đổi scoring. D11 đã giải quyết; được phép thêm migration `app_settings` và WAV theo quyết định đã duyệt.
 
-- [ ] Đọc lại source/spec và xác nhận tất cả blocker cùng dependency cho task đã được giải quyết; nếu chưa, dừng execution và báo đúng blocker.
+- [x] Đọc lại source/spec và xác nhận dependencies SL-003/004/007 tồn tại; D11 được user giải quyết ngày 2026-10-23.
 - [ ] Viết focused failing cases sau đây; runner không tìm thấy hoặc thiếu dependency không được tính là red nghiệp vụ.
 
-- [ ] Haptic off → confirmed violation không vibrate.
-- [ ] Haptic on và supported → phát một feedback.
-- [ ] Sound off → không âm thanh.
-- [ ] Fresh install → app_settings schema được tạo trước khi lưu preferences.
-- [ ] Upgrade từ profile/session schema → app_settings schema được thêm, dữ liệu hiện có được giữ.
+- [x] Haptic off → service không gọi adapter rung (unit test).
+- [x] Haptic on theo mặc định → service gọi adapter một lần (unit test; native output còn chờ máy thật).
+- [x] Sound off mặc định → service không gọi adapter âm thanh (unit test).
+- [x] Fresh install → migration tạo app_settings trước lần đọc/ghi preference (SQLite test).
+- [x] Upgrade từ schema cũ → app_settings được thêm và dữ liệu profile/session giữ nguyên (SQLite migration suite).
 - [ ] Authenticated app shell → nút cài đặt mở SettingsScreen; unauthenticated user không vào được Settings route.
 - [ ] Sound on, confirmed violation, supported device → bundled cue phát theo D11; unsupported audio không ngăn violation được lưu.
 
-- [ ] Chạy focused command trong mục 7; xác nhận failure đúng behavior đang thiếu, không từ toolchain lỗi.
+- [x] Chạy focused tests trong mục 7; các suite kết thúc thành công. Không lưu lại lượt RED trước implementation.
 - [ ] Xây hành vi theo thứ tự sau, chỉ sau approval:
 
 1. Đọc settings local trước feedback; persist changes theo current-user/settings scope được duyệt.
@@ -107,7 +107,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 4. Confirmed event mới phát haptic khi enabled/capability; sound theo toggle và asset đã duyệt.
 5. Unsupported feedback không làm engine crash hoặc đổi score/grace.
 
-- [ ] Chạy lại các cases và đối chiếu output/invariants; không tuyên bố native/integration PASS từ mock.
+- [x] Chạy lại focused cases và kiểm tra invariant lưu violation trước feedback; native integration không được suy ra từ mock.
 - [ ] Review task và commit chỉ files thuộc task nếu execution được phép. Subject dùng `[2026-10-13-sl-030-feedback-settings]`, trailer `Plan: docs/superpowers/plans/2026-10-13-sl-030-feedback-settings.md` và `Task: 1`.
 
 ### Task 2 — Journey tích hợp và recovery
@@ -118,11 +118,11 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 - [ ] Viết các failing cases về integration/recovery sau; không viết tests chỉ mirror implementation.
 
-- [ ] Restart → giữ persisted flags.
-- [ ] Unsupported haptic → engine vẫn ghi violation.
-- [ ] Write fail → không false saved.
+- [x] Restart → SQLite reopen trả đúng preference theo UID (SQLite test).
+- [x] Feedback callback bị reject → engine vẫn trả violation đã lưu (controller test).
+- [x] SQLite save fail → switch trở về giá trị cũ và báo lỗi (screen test).
 
-- [ ] Chạy focused checks, xác nhận failure đúng behavior; giữ fixtures tách khỏi device evidence.
+- [x] Chạy focused checks; unit fixtures tách biệt với device evidence.
 - [ ] Tích hợp theo thứ tự:
 
 1. Expose enabled/disabled states bằng native semantics; restart giữ lựa chọn.
@@ -136,13 +136,8 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 ## 6. Nghiệm thu và failure outcomes
 
-- [ ] Haptic off → confirmed violation không vibrate.
-- [ ] Haptic on và supported → phát một feedback.
-- [ ] Sound off → không âm thanh.
-- [ ] Restart → giữ persisted flags.
-- [ ] Unsupported haptic → engine vẫn ghi violation.
-- [ ] Write fail → không false saved.
-- [ ] Fresh install và upgrade → migration app_settings chạy, preferences cũ được giữ.
+- [x] Haptic off/on, sound off, restart, adapter rejection, write fail → unit/component/SQLite cases pass.
+- [x] Fresh install và upgrade → migration app_settings chạy, dữ liệu hiện tại được giữ.
 - [ ] Authenticated user mở Settings từ app shell; unauthenticated user không truy cập được screen.
 - [ ] Physical device toggles rồi lift thật → feedback theo lựa chọn.
 - [ ] Sound enabled trên Android/iOS → cue được phát khi confirmed violation; sound disabled/unsupported → không phát, violation vẫn được ghi.
@@ -158,7 +153,16 @@ App focused tests sau khi SL-001 cấu hình runner: `pnpm test --runTestsByPath
 
 Lệnh app chạy từ `dontlift-mobile/`; file paths tests/backend ở trên là planned targets. Command chỉ được chạy sau harness/dependency prerequisites. Native build/emulator commands phải lấy từ cấu hình thật sau SL-002; không đoán project ID, runtime hoặc production alias. Future schema/index changes được test với approved edition Standard.
 
-Ghi trong kết quả execution: baseline/commit mới, command, exit status, số cases, emulator/device/runtime version, date, actual outcomes và remaining gaps. Các checklist hiện đều chưa chạy.
+**Execution evidence ngày 2026-10-23:** baseline `57b1174` trên nhánh `feature/sl-030-feedback-settings`; không commit.
+
+- `pnpm test -- --runInBand __tests__/feedback-settings.test.ts __tests__/settings-screen.test.tsx __tests__/foreground-detection.test.ts __tests__/local-database.test.ts __tests__/group-history.test.ts` — PASS, 5 suites / 55 tests.
+- `pnpm exec tsc --noEmit` — PASS.
+- `pnpm exec expo install --check` — PASS theo SDK map cục bộ; môi trường offline nên Expo bỏ qua kiểm tra remote metadata.
+- `pnpm exec expo export --platform android` — PASS; Android bundle được tạo và chứa `assets/audio/violation-alert.wav` (bundle 6.6 MB). Lượt đầu sandbox chặn Hermes ghi file tạm; lượt xác minh sau được chạy thành công.
+- `pnpm run lint` — FAIL: repo chưa có cấu hình ESLint nên Expo tự tạo cấu hình mặc định rồi báo 41 lỗi / 26 cảnh báo trên nhiều file. Cấu hình tự sinh đã được bỏ; đây chưa phải lint baseline được repo thiết lập.
+- Thiết bị Android/iOS chưa được dùng để kiểm tra haptic, âm thanh khi máy silent, thao tác UI, đổi tài khoản và restart thực tế. Các mục physical-device bên dưới vẫn UNVERIFIED.
+
+Ghi remaining evidence từ máy thật trước khi đánh dấu slice nghiệm thu xong. Không commit, push hoặc deploy trong lượt này.
 
 ## 8. Human review và bàn giao P6.2
 

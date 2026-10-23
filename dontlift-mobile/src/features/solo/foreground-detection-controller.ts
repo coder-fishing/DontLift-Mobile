@@ -38,6 +38,7 @@ export class ForegroundDetectionController {
   constructor(
     private readonly session: { id: string; userId: string },
     private readonly repository: ForegroundViolationRepository,
+    private readonly onConfirmedViolation?: () => void | Promise<void>,
   ) {}
 
   async initialize(): Promise<ForegroundDetectionViewState> {
@@ -150,6 +151,12 @@ export class ForegroundDetectionController {
         };
         this.persistenceError = undefined;
         this.nextPersistenceAttemptAtUtcMs = 0;
+        // Chỉ phát phản hồi sau khi bản ghi vi phạm đã commit; lỗi native không cản scoring.
+        try {
+          void Promise.resolve(this.onConfirmedViolation?.()).catch(() => undefined);
+        } catch {
+          // Vi phạm đã lưu thành công; feedback không được làm đổi kết quả detection.
+        }
       } catch {
         this.persistenceError = 'Could not save the violation on this device. It will retry automatically.';
         this.nextPersistenceAttemptAtUtcMs = nowUtcMs + 1_000;
@@ -198,6 +205,7 @@ export class ForegroundDetectionController {
 export function createForegroundDetectionController(
   session: { id: string; userId: string },
   repository: ForegroundViolationRepository,
+  onConfirmedViolation?: () => void | Promise<void>,
 ): ForegroundDetectionController {
-  return new ForegroundDetectionController(session, repository);
+  return new ForegroundDetectionController(session, repository, onConfirmedViolation);
 }

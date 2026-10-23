@@ -2,7 +2,7 @@
 
 > **Approval 2026-10-23:** User duyệt [SL-031/032 payOS Premium](superpowers/plans/2026-10-23-sl-031-032-payos-premium.md) theo ADR-025: Express ngoài Firebase và Premium có hạn; giữ Spark. Activation/checksum cũ đã superseded.
 
-> **DRAFT v0.16 — backlog P6.0 và các slice chưa được duyệt vẫn là draft.** SL-002, SL-003, SL-013 và SL-018 đã được duyệt riêng. Những approval này không duyệt toàn bộ backlog.
+> **DRAFT v0.18 — backlog P6.0 và các slice chưa được duyệt vẫn là draft.** SL-002, SL-003, SL-013, SL-018 và SL-030 đã được duyệt riêng. Những approval này không duyệt toàn bộ backlog.
 
 > **Execution update 2026-10-14:** Human duyệt riêng SL-002 Android development runtime: reuse Firebase cloud config hiện có, iOS device verification tạm hoãn. [Plan SL-002](./superpowers/plans/2026-10-13-sl-002-native-firebase-runtime.md) ghi scope/evidence hiện tại; approval này không duyệt các slice khác hay toàn bộ backlog.
 
@@ -66,7 +66,7 @@ P0 là nền tảng/critical journey trước; P1 là cần hoàn tất MVP; P2 
 | SL-027 | [Host đánh dấu đã thanh toán](./superpowers/plans/2026-10-13-sl-027-manual-payment-status.md) | P1 | SL-026 | Không xác nhận riêng |
 | SL-028 | [Group history và phục hồi dữ liệu](./superpowers/plans/2026-10-13-sl-028-group-history.md) | P1 | SL-020, SL-012, SL-018, SL-021, SL-024 | D4 |
 | SL-029 | [Xem và sửa profile](./superpowers/plans/2026-10-13-sl-029-profile-edit.md) | P1 | SL-004 | Không xác nhận riêng |
-| SL-030 | [Settings cho haptic và sound](./superpowers/plans/2026-10-13-sl-030-feedback-settings.md) | P1 | SL-003, SL-004, SL-007 | D11 |
+| SL-030 | [Settings cho haptic và sound](./superpowers/plans/2026-10-13-sl-030-feedback-settings.md) | P1 | SL-003, SL-004, SL-007 | Không còn blocker |
 | SL-031 | [Premium payOS checkout](./superpowers/plans/2026-10-23-sl-031-032-payos-premium.md) | P1 | SL-003, SL-004, SL-006 | ADR-025 approved |
 | SL-032 | [payOS webhook và expiring Premium](./superpowers/plans/2026-10-23-sl-031-032-payos-premium.md) | P1 | SL-013, SL-014, SL-031 | ADR-025 approved |
 | SL-033 | [Retention local và server](./superpowers/plans/2026-10-13-sl-033-retention.md) | P1 | SL-012, SL-023, SL-028, SL-031, SL-032 | D10 |
@@ -91,14 +91,14 @@ SL-037 phụ thuộc bắt buộc SL-001–SL-036 vì phạm vi đã chọn gồ
 | D8 | Resolved for SL-025 on 2026-10-22: allow versioned Host overrides until the first member is marked paid; lock after any paid member. Spark Rules use a room-level counter maintained atomically by SL-027. See ADR-022. |
 | D9 | Resolved for SL-024 on 2026-10-22: non-zero base means a positive pre-round mathematical component; a final integer share may be zero after ADR-005 rounding for a small bill. No minimum per member. See ADR-021. |
 | D10 | Chốt max retry/retention horizon và receipt TTL; xác định bảo vệ unsynced data trước purge, failed-event retention và expired-read policy. |
-| D11 | Chốt default sound state, bundled violation alert asset và user scope của local preferences trước khi SL-030 tạo asset/defaults. |
+| D11 | **RESOLVED 2026-10-23 cho SL-030:** sound off mặc định; bật sound thì phát một beep ngắn trung tính; preferences lưu cục bộ riêng theo tài khoản trên thiết bị. Haptic on mặc định theo PRD/Feature Spec, có thể tắt. Xem plan SL-030. |
 | D12 | **RESOLVED 2026-10-20:** `Asia/Ho_Chi_Minh`; SL-013 Rules derive monthly bucket from server `request.time` (UTC+07:00), not device clock/timezone. |
 | D13 | **UPDATED 2026-10-20:** canonical payload `dontliftmobile://room/{PIN}`; new rooms use 8-digit PINs, legacy 4-digit invitations remain parseable. SL-013 encodes/renders and SL-015 parses the same contract. |
 | E1 | Cần Development Build, Android/iOS physical devices, toolchains và Emulator Suite để có native/integration evidence. |
 | E2 | Cloud release cần projects/config/billing/scheduled jobs được human cho phép; P6.1 authoring không deploy. |
 | E3 | Cần VietQR provider/format và năm banking apps trong cohort để kiểm chứng QR thật. |
 
-D1–D7 và E1/E2 đến từ backlog đề xuất; E3 ghi rõ test cohort đã nêu trong SL-026/037. D8 được giải quyết cho SL-025 theo ADR-022; D9 được giải quyết theo ADR-021. D10–D11 vẫn là gap chờ human quyết định. D12/D13 được human giải quyết ngày 2026-10-20; D12 thay đổi theo ADR-011 để Rules enforce được quota trên Spark. Giải quyết blocker còn lại bằng evidence/approved decision trước execution, không lấp bằng implementation giả.
+D1–D7 và E1/E2 đến từ backlog đề xuất; E3 ghi rõ test cohort đã nêu trong SL-026/037. D8 được giải quyết cho SL-025 theo ADR-022; D9 được giải quyết theo ADR-021. D10 vẫn là gap chờ human quyết định. D11 được giải quyết riêng cho SL-030 ngày 2026-10-23. D12/D13 được human giải quyết ngày 2026-10-20; D12 thay đổi theo ADR-011 để Rules enforce được quota trên Spark. Giải quyết blocker còn lại bằng evidence/approved decision trước execution, không lấp bằng implementation giả.
 
 D3 chỉ chặn command/event semantics chưa có wire rõ; không blanket-block contract create/join/bill đã có. Mỗi plan nêu phần áp dụng. D6 gồm hai quyết định độc lập về theme catalog và advanced behavior, không gộp approval tùy tiện.
 
@@ -206,6 +206,7 @@ Website mua Premium/code generation/email delivery là external operational prer
 
 - v0.16: Human duyệt riêng SL-013, chốt D12/D13 và chuyển `createRoom` sang client Firestore transaction được Security Rules authorize theo ADR-011 để giữ Firebase Spark. Ghi execution/test evidence và phần còn UNVERIFIED; không triển khai dịch vụ lên Cloud.
 - v0.17: Human duyệt riêng SL-018 theo ADR-015: Host approval server-time cutoff, eligibility theo violation end time, late eligible sync qua SL-020 reconciliation, Firestore Rules transaction trên Spark. Backlog và slice khác vẫn draft.
+- v0.18: Human duyệt riêng SL-030 và chốt D11: sound off mặc định, một beep ngắn trung tính khi bật, preferences cục bộ theo tài khoản trên thiết bị. Haptic on mặc định theo PRD/Feature Spec, có thể tắt. Chỉ mở execution của SL-030; backlog và slice khác vẫn draft.
 
 **Trạng thái corrections:** [SL-003 review](./superpowers/reviews/2026-10-13-sl-003-registration-profile-review-plan.md), [SL-005 review](./superpowers/reviews/2026-10-13-sl-005-sensor-availability-review-plan.md), [SL-007 review](./superpowers/reviews/2026-10-13-sl-007-foreground-detection-review-plan.md), [SL-009 review](./superpowers/reviews/2026-10-13-sl-009-android-recovery-review-plan.md), [SL-010 review](./superpowers/reviews/2026-10-13-sl-010-ios-recovery-review-plan.md), [SL-013 review](./superpowers/reviews/2026-10-13-sl-013-room-create-review-plan.md), [SL-016 review](./superpowers/reviews/2026-10-13-sl-016-room-lobby-start-review-plan.md), [SL-028 review](./superpowers/reviews/2026-10-13-sl-028-group-history-review-plan.md), [SL-029 review](./superpowers/reviews/2026-10-13-sl-029-profile-edit-review-plan.md), [SL-030 review](./superpowers/reviews/2026-10-13-sl-030-feedback-settings-review-plan.md), [SL-031 review](./superpowers/reviews/2026-10-13-sl-031-local-premium-review-plan.md), [SL-034 review](./superpowers/reviews/2026-10-13-sl-034-premium-themes-review-plan.md), [SL-037 review](./superpowers/reviews/2026-10-13-sl-037-mvp-release-review-plan.md).
 

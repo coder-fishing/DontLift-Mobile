@@ -83,6 +83,55 @@ describe('foreground grace period', () => {
 });
 
 describe('foreground detection persistence', () => {
+  test('emits feedback once only after a confirmed violation is committed', async () => {
+    const events: string[] = [];
+    const repository = {
+      start: jest.fn(async (input) => {
+        events.push('saved');
+        return {
+          eventId: 'event-feedback', sessionId: input.sessionId,
+          startedAtUtcMs: input.startedAtUtcMs, endedAtUtcMs: null, durationSeconds: 3,
+        };
+      }),
+      end: jest.fn(async () => true),
+      getSummary: jest.fn(async () => ({ count: 0, durationSeconds: 0 })),
+    };
+    const controller = createForegroundDetectionController(
+      { id: 'session-1', userId: 'owner-1' }, repository,
+      () => { events.push('feedback'); },
+    );
+    await controller.initialize();
+    await controller.observeOrientation('LIFTED', 1_000);
+    await controller.observeOrientation('LIFTED', 4_000);
+    await controller.tick(4_000);
+    await controller.observeOrientation('LIFTED', 5_000);
+    await Promise.resolve();
+
+    expect(events).toEqual(['saved', 'feedback']);
+  });
+
+  test('keeps the saved violation when the feedback adapter rejects', async () => {
+    const repository = {
+      start: jest.fn(async (input) => ({
+        eventId: 'event-feedback-error', sessionId: input.sessionId,
+        startedAtUtcMs: input.startedAtUtcMs, endedAtUtcMs: null, durationSeconds: 3,
+      })),
+      end: jest.fn(async () => true),
+      getSummary: jest.fn(async () => ({ count: 0, durationSeconds: 0 })),
+    };
+    const controller = createForegroundDetectionController(
+      { id: 'session-1', userId: 'owner-1' }, repository,
+      async () => { throw new Error('Haptics unavailable'); },
+    );
+    await controller.initialize();
+    await controller.observeOrientation('LIFTED', 1_000);
+    const confirmed = await controller.observeOrientation('LIFTED', 4_000);
+    await Promise.resolve();
+
+    expect(repository.start).toHaveBeenCalledTimes(1);
+    expect(confirmed).toMatchObject({ isViolationActive: true, violationsCount: 1, persistenceError: undefined });
+  });
+
   test('seals sensor transitions and leaves an active violation for atomic session finalization', async () => {
     const repository = {
       start: jest.fn(async (input) => ({
