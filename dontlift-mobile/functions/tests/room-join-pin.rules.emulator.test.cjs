@@ -14,6 +14,7 @@ async function seedRoom(env, { pin = '12345678', roomId = '10000000-0000-4000-80
     const now = serverTimestamp();
     await setDoc(doc(db, `users/${hostUid}`), {
       displayName: 'Host User', email: `${hostUid}@example.test`, isPremium: premium,
+      premiumExpiresAt: premium ? new Date(Date.now() + 86400000) : null,
       createdAt: now, updatedAt: now,
     });
     await setDoc(doc(db, `users/${memberUid}`), {
