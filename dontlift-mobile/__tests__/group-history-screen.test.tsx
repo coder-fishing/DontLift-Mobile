@@ -59,6 +59,18 @@ test('empty history and cloud errors remain recoverable', async () => {
   } finally { await renderer.act(() => screen?.unmount()); }
 });
 
+test('one Premium entitlement controls local and cloud origins', async () => {
+  for (const active of [true, false]) {
+    const repo = repository([]);
+    let screen: Rendered | undefined;
+    try {
+      await renderer.act(async () => { screen = renderer.create(<GroupHistoryScreen userId="member" repository={repo as unknown as GroupHistoryRepository}
+        serverPremium={active} onBack={jest.fn()} />); });
+      expect(repo.readPage).toHaveBeenCalledWith('member', expect.objectContaining({ localPremium: active, serverPremium: active }));
+    } finally { await renderer.act(() => screen?.unmount()); }
+  }
+});
+
 test('unpaid history opens a separate current-bill payment subscription and returns to the same session', async () => {
   const { AppState } = require('react-native') as typeof import('react-native');
   const old = AppState.currentState;

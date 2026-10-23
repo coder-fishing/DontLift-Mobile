@@ -169,3 +169,20 @@ test('only one concurrent join can take the final Free room slot', async t => {
   assert.equal(outcomes.filter(result => result.status === 'fulfilled').length, 1);
   assert.equal((await getDoc(doc(firstDb, `rooms/${roomId}`))).data().participantCount, 5);
 });
+
+for (const state of ['expired', 'missing']) {
+  test(`Premium boolean without active expiry cannot bypass capacity (${state})`, async t => {
+    const env = await createRulesEnvironment();
+    t.after(() => env.cleanup());
+    const roomId = await seedRoom(env, { count: 5, premium: true });
+    await env.withSecurityRulesDisabled(async context => {
+      await setDoc(doc(context.firestore(), 'users/room-host'), {
+        displayName: 'Host User', email: 'host@example.test', isPremium: true,
+        ...(state === 'expired' ? { premiumExpiresAt: new Date(0) } : {}),
+      });
+    });
+    await assertFails(join(env.authenticatedContext('room-member').firestore(), {
+      roomId, uid: 'room-member', requestId: '00000000-0000-4000-8000-000000000099',
+    }));
+  });
+}
