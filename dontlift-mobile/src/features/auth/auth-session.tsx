@@ -3,8 +3,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from '
 import { Platform } from 'react-native';
 import { createFirebaseAuthSessionController, getConfiguredFirebaseRuntime } from './firebase-adapters';
 import type { AuthSessionResult, AuthSessionState } from './auth-session-controller';
-import type { RegistrationUser } from './auth-controller';
-import type { RegistrationProfile } from './auth-controller';
+import type { RegistrationUser, RegistrationProfile } from './auth-controller';
 
 interface AuthSessionContextValue {
   state: AuthSessionState;
@@ -51,8 +50,8 @@ export function AuthSessionProvider({ children }: React.PropsWithChildren) {
     }
   }, []);
 
-  const value = useMemo<AuthSessionContextValue>(() => ({
-    state,
+  // Listener profile có thể cập nhật state liên tục; giữ actions ổn định để không subscribe vòng lặp.
+  const actions = useMemo<Omit<AuthSessionContextValue, 'state'>>(() => ({
     signIn: (email, password) => controller
       ? controller.signIn(email, password)
       : Promise.resolve({ kind: 'failed', message: unavailableMessage }),
@@ -63,7 +62,8 @@ export function AuthSessionProvider({ children }: React.PropsWithChildren) {
     signOut: () => controller
       ? controller.signOut()
       : Promise.resolve({ kind: 'failed', message: unavailableMessage }),
-  }), [controller, state]);
+  }), [controller]);
+  const value = useMemo<AuthSessionContextValue>(() => ({ state, ...actions }), [state, actions]);
 
   return <AuthSessionContext.Provider value={value}>{children}</AuthSessionContext.Provider>;
 }

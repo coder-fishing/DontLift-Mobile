@@ -1,6 +1,7 @@
 import type * as SQLite from 'expo-sqlite';
 import { getLocalDatabase } from '../local/database';
 import type { RegistrationProfile, RegistrationProfilePort } from './auth-controller';
+import { premiumIsActive } from '../premium/premium-entitlement';
 
 export async function upsertLocalProfile(
   database: SQLite.SQLiteDatabase,
@@ -8,16 +9,18 @@ export async function upsertLocalProfile(
 ): Promise<void> {
   await database.withExclusiveTransactionAsync(async (transaction) => {
     await transaction.runAsync(
-      `INSERT INTO local_profiles (uid, email, display_name, created_at_utc_ms)
-       VALUES (?, ?, ?, ?)
+      `INSERT INTO local_profiles (uid, email, display_name, created_at_utc_ms, premium_expires_at_utc_ms)
+       VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(uid) DO UPDATE SET
          email = excluded.email,
          display_name = excluded.display_name,
-         created_at_utc_ms = excluded.created_at_utc_ms`,
+         created_at_utc_ms = excluded.created_at_utc_ms,
+         premium_expires_at_utc_ms = excluded.premium_expires_at_utc_ms`,
       profile.uid,
       profile.email,
       profile.displayName,
       profile.createdAtUtcMs,
+      profile.premiumExpiresAtUtcMs ?? null,
     );
   });
 }
@@ -40,8 +43,9 @@ export async function getLocalProfile(
     email: string;
     display_name: string;
     created_at_utc_ms: number;
+    premium_expires_at_utc_ms: number | null;
   }>(
-    `SELECT uid, email, display_name, created_at_utc_ms
+    `SELECT uid, email, display_name, created_at_utc_ms, premium_expires_at_utc_ms
      FROM local_profiles WHERE uid = ?`,
     uid,
   );
@@ -51,7 +55,8 @@ export async function getLocalProfile(
     uid: row.uid,
     email: row.email,
     displayName: row.display_name,
-    isPremium: false,
+    isPremium: premiumIsActive(row.premium_expires_at_utc_ms),
+    premiumExpiresAtUtcMs: row.premium_expires_at_utc_ms,
     createdAtUtcMs: row.created_at_utc_ms,
   };
 }

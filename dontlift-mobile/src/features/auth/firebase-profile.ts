@@ -1,6 +1,7 @@
 import type { Auth } from 'firebase/auth';
 import { doc, getDocFromServer, runTransaction, serverTimestamp, type DocumentData, type Firestore } from 'firebase/firestore';
 import type { RegistrationProfile, RegistrationRequest, RegistrationResponse } from './auth-controller';
+import { premiumIsActive, readPremiumExpiry } from '../premium/premium-entitlement';
 
 export function readRegistrationProfile(uid: string, data: DocumentData): RegistrationProfile {
   const createdAt = data.createdAt;
@@ -11,7 +12,8 @@ export function readRegistrationProfile(uid: string, data: DocumentData): Regist
   }
   const createdAtUtcMs: number = createdAt.toMillis();
   if (!Number.isFinite(createdAtUtcMs)) throw new Error('The account profile timestamp is invalid.');
-  return { uid, email: data.email, displayName: data.displayName, isPremium: data.isPremium === true, createdAtUtcMs };
+  const premiumExpiresAtUtcMs = readPremiumExpiry(data.premiumExpiresAt);
+  return { uid, email: data.email, displayName: data.displayName, isPremium: premiumIsActive(premiumExpiresAtUtcMs), premiumExpiresAtUtcMs, createdAtUtcMs };
 }
 
 export async function completeRegistrationProfile(

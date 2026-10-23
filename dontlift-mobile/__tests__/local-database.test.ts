@@ -165,12 +165,13 @@ describe('local database initialization', () => {
     expect(roomMembersTable?.name).toBe('room_members');
     expect(sessionColumns.map(({ name }) => name)).toContain('user_id');
     expect(sessionColumns.map(({ name }) => name)).toContain('duration_seconds');
-    expect(version?.user_version).toBe(11);
+    expect(version?.user_version).toBe(13);
     expect(columns?.map(({ name }) => name)).toEqual([
       'uid',
       'email',
       'display_name',
       'created_at_utc_ms',
+      'premium_expires_at_utc_ms',
     ]);
   });
 
@@ -194,7 +195,7 @@ describe('local database initialization', () => {
       .toEqual({ uid: 'owner-1', display_name: 'Owner' });
     expect(await reopened.getFirstAsync('SELECT id, user_id FROM sessions WHERE id = ?', 'session-1'))
       .toEqual({ id: 'session-1', user_id: 'owner-1' });
-    expect(await reopened.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 11 });
+    expect(await reopened.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 13 });
     expect(await reopened.getFirstAsync("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sync_outbox'"))
       .toEqual({ name: 'sync_outbox' });
     await reopened.closeAsync();
@@ -355,7 +356,7 @@ describe('local database initialization', () => {
     const version = await reopened.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
 
     expect(profile).toEqual({ uid: 'owner-1', display_name: 'Owner' });
-    expect(version?.user_version).toBe(11);
+    expect(version?.user_version).toBe(13);
     await reopened.closeAsync();
   });
 
@@ -387,7 +388,7 @@ describe('local database initialization', () => {
 
     expect(profile).toEqual({ uid: 'owner-1', display_name: 'Owner' });
     expect(sessionsTable?.name).toBe('sessions');
-    expect(version?.user_version).toBe(11);
+    expect(version?.user_version).toBe(13);
     await upgraded.closeAsync();
   });
 
@@ -409,6 +410,8 @@ describe('local database initialization', () => {
         joined_at TEXT NOT NULL, PRIMARY KEY(room_id, uid)
       );
       CREATE INDEX idx_room_members_owner_status ON room_members(uid, status, room_id);
+      CREATE TABLE local_profiles (uid TEXT PRIMARY KEY NOT NULL, email TEXT NOT NULL,
+        display_name TEXT NOT NULL, created_at_utc_ms INTEGER NOT NULL);
       PRAGMA user_version = 7;
     `);
     await existing.runAsync(
@@ -487,7 +490,7 @@ test('adopts an existing profile table with a missing schema version without del
   const { getLocalDatabase } = await loadDatabaseModule();
   const database = await getLocalDatabase();
   expect(await database.getFirstAsync('SELECT uid, display_name FROM local_profiles')).toEqual({ uid: 'legacy-owner', display_name: 'Legacy Name' });
-  expect(await database.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 11 });
+  expect(await database.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 13 });
 });
 
 test('adopts existing profile and session tables if schema version metadata was reset', async () => {
@@ -499,7 +502,7 @@ test('adopts existing profile and session tables if schema version metadata was 
   const next = await loadDatabaseModule();
   const reopened = await next.getLocalDatabase();
   expect(await reopened.getFirstAsync('SELECT id FROM sessions')).toEqual({ id: 'saved-session' });
-  expect(await reopened.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 11 });
+  expect(await reopened.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 13 });
 });
 
 test('rejects an incompatible existing profile table without marking it migrated or dropping data', async () => {
@@ -512,4 +515,16 @@ test('rejects an incompatible existing profile table without marking it migrated
   const check = harness!.open();
   expect(await check.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 0 });
   expect(await check.getFirstAsync('SELECT display_name FROM local_profiles')).toEqual({ display_name: 'Keep this row' });
+});
+
+test('Premium expiry projection survives reopening and stays scoped to its account', async () => {
+  const { getLocalDatabase } = await loadDatabaseModule();
+  const database = await getLocalDatabase();
+  const { upsertLocalProfile, getLocalProfile } = require('../src/features/auth/local-profile-repository') as typeof import('../src/features/auth/local-profile-repository');
+  await upsertLocalProfile(database, { uid: 'premium-cache-owner', email: 'cache@example.test', displayName: 'Cache',
+    createdAtUtcMs: 1, isPremium: true, premiumExpiresAtUtcMs: 4102444800000 });
+  await database.closeAsync();
+  const reopened = await (await loadDatabaseModule()).getLocalDatabase();
+  expect(await getLocalProfile(reopened, 'premium-cache-owner')).toMatchObject({ premiumExpiresAtUtcMs: 4102444800000, isPremium: true });
+  expect(await getLocalProfile(reopened, 'another-account')).toBeNull();
 });
