@@ -1,19 +1,21 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { ScreenId } from '../types';
 import { SCREEN_TITLES } from '../constants';
+import { Colors } from '../constants/theme';
 
 interface HeaderProps {
   currentScreen: ScreenId;
   onNavigate: (screen: ScreenId) => void;
-  onOpenDrawer: () => void;
+  onOpenSettings: () => void;
 }
 
-export function Header({ currentScreen, onNavigate, onOpenDrawer }: HeaderProps) {
+export function Header({ currentScreen, onNavigate, onOpenSettings }: HeaderProps) {
   return (
     <View style={styles.headerContainer}>
-      <TouchableOpacity
-        activeOpacity={0.8}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Go to Solo Focus"
         onPress={() => onNavigate('02-solo-select')}
         style={styles.brandGroup}
       >
@@ -24,17 +26,18 @@ export function Header({ currentScreen, onNavigate, onOpenDrawer }: HeaderProps)
           <Text style={styles.brandTitle}>DontLift</Text>
           <Text style={styles.brandSubtitle}>{SCREEN_TITLES[currentScreen]}</Text>
         </View>
-      </TouchableOpacity>
+      </Pressable>
 
-      <View style={styles.rightGroup}>
-        <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={onOpenDrawer}
+      {currentScreen !== '17-settings' ? <View style={styles.rightGroup}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Open Settings"
+          onPress={onOpenSettings}
           style={styles.menuButton}
         >
-          <Text style={styles.menuIcon}>⚙️</Text>
-        </TouchableOpacity>
-      </View>
+          <Text style={[styles.menuText, { color: Colors.light.primary }]}>Settings</Text>
+        </Pressable>
+      </View> : null}
     </View>
   );
 }
@@ -91,16 +94,18 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   menuButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    minWidth: 76,
+    minHeight: 44,
+    borderRadius: 14,
     backgroundColor: 'rgba(255, 255, 255, 0.8)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.9)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  menuIcon: {
-    fontSize: 16,
+  menuText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#004AC6',
   },
 });

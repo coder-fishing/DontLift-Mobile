@@ -26,7 +26,7 @@ export function BottomNav({ currentScreen, onNavigate }: BottomNavProps) {
     currentScreen === '08-vietqr-settlement' ||
     currentScreen === '14-settlement-details' ||
     currentScreen === '15-group-history';
-  const isAccount = currentScreen === '16-profile';
+  const isAccount = currentScreen === '16-profile' || currentScreen === '17-settings';
 
   return (
     <View

@@ -10,7 +10,7 @@ type ExpectedColumn = { type: 'TEXT' | 'INTEGER'; notnull: number; pk: number };
 
 async function validateExistingSchema(
   database: SQLite.SQLiteDatabase,
-  table: 'local_profiles' | 'sessions' | 'violation_logs' | 'sync_outbox' | 'lifecycle_candidates',
+  table: 'local_profiles' | 'sessions' | 'violation_logs' | 'sync_outbox' | 'lifecycle_candidates' | 'app_settings',
   expected: Record<string, ExpectedColumn>,
 ): Promise<void> {
   const columns = await database.getAllAsync<{ name: string; type: string; notnull: number; pk: number }>(
@@ -341,6 +341,22 @@ const migrations: LocalMigration[] = [
       if (!columns.some(column => column.name === 'terminal_confirmed')) {
         await database.execAsync('ALTER TABLE group_history ADD COLUMN terminal_confirmed INTEGER NOT NULL DEFAULT 0');
       }
+    },
+  },
+  {
+    version: 12,
+    async migrate(database) {
+      // Cài đặt chỉ chứa lựa chọn không nhạy cảm; key có namespace UID để dùng chung máy an toàn.
+      await database.execAsync(`
+        CREATE TABLE IF NOT EXISTS app_settings (
+          key TEXT PRIMARY KEY NOT NULL,
+          value TEXT NOT NULL
+        );
+      `);
+      await validateExistingSchema(database, 'app_settings', {
+        key: { type: 'TEXT', notnull: 1, pk: 1 },
+        value: { type: 'TEXT', notnull: 1, pk: 0 },
+      });
     },
   },
 ];
