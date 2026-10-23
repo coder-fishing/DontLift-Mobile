@@ -640,7 +640,8 @@ service cloud.firestore {
     }
 
     function isServerPremium(uid) {
-      return get(profilePath(uid)).data.isPremium == true;
+      let expiry = get(profilePath(uid)).data.get('premiumExpiresAt', null);
+      return expiry is timestamp && request.time < expiry;
     }
 
     function hasRoomCreateLinks(roomId, uid, pin, requestId) {
@@ -1403,7 +1404,7 @@ service cloud.firestore {
       // Profile edit chỉ đổi tên và server timestamp; entitlement/email giữ nguyên.
       allow update: if isOwner(uid)
         && request.resource.data.keys().hasAll(['displayName', 'email', 'isPremium', 'createdAt', 'updatedAt'])
-        && request.resource.data.keys().hasOnly(['displayName', 'email', 'isPremium', 'createdAt', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['displayName', 'email', 'isPremium', 'createdAt', 'updatedAt', 'premiumExpiresAt'])
         && request.resource.data.diff(resource.data).affectedKeys().hasAll(['displayName', 'updatedAt'])
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'updatedAt'])
         && validProfileDisplayName(request.resource.data.displayName)
