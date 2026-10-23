@@ -69,6 +69,16 @@ test('offline history opens real metrics and returns to list and Solo', async ()
   expect(repository.readCloudPage).not.toHaveBeenCalled();
 });
 
+test('one Premium state controls both local and cloud history visibility', async () => {
+  for (const active of [true, false]) {
+    const readLocalPage = jest.fn().mockResolvedValue({ items: [], cursor: null, hasMore: false });
+    await renderer.act(async () => { mounted = renderer.create(<HistoryScreen userId="owner" serverPremium={active}
+      repository={{ readLocalPage, readCloudPage: jest.fn() }} onBack={jest.fn()} />); });
+    expect(readLocalPage).toHaveBeenCalledWith(null, expect.objectContaining({ localPremium: active, serverPremium: active }));
+    await renderer.act(() => mounted?.unmount()); mounted = undefined;
+  }
+});
+
 test('History keeps the existing five bottom tabs', async () => {
   await renderer.act(() => { mounted = renderer.create(<BottomNav currentScreen="11-solo-history" onNavigate={jest.fn()} />); });
   const tree = JSON.stringify(mounted!.toJSON());

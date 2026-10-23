@@ -42,6 +42,25 @@ async function getServerTime(db, uid) {
   return clock.data().checkedAt.toMillis();
 }
 
+for (const active of [true, false]) {
+  test(`room quota uses expiring Premium instead of boolean (${active ? 'active' : 'expired'})`, async t => {
+    const env = await createRulesEnvironment();
+    t.after(() => env.cleanup());
+    const uid = 'quota-premium-owner';
+    await seedProfile(env, uid);
+    await env.withSecurityRulesDisabled(async context => {
+      await setDoc(doc(context.firestore(), `users/${uid}`), { isPremium: true,
+        premiumExpiresAt: new Date(active ? Date.now() + 86400000 : 0) }, { merge: true });
+    });
+    const db = env.authenticatedContext(uid).firestore();
+    const bucketStart = monthStart(await getServerTime(db, uid));
+    await seedUsage(env, uid, 7, bucketStart);
+    const attempt = createRoom(db, { uid, bucketStart, count: 8, pin: '87654321',
+      roomId: '10000000-0000-4000-8000-000000000098', requestId: '00000000-0000-4000-8000-000000000098' });
+    await (active ? assertSucceeds(attempt) : assertFails(attempt));
+  });
+}
+
 async function createRoom(db, { uid, requestId, roomId, pin, bucketStart, count, omitStartMarker = false }) {
   const userRef = doc(db, `users/${uid}`);
   const usageRef = doc(db, `users/${uid}/usage/current`);

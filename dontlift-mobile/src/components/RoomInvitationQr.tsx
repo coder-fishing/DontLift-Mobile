@@ -4,7 +4,7 @@ import Svg, { Path } from 'react-native-svg';
 import { toQR } from 'toqr';
 import { Colors } from '../constants/theme';
 
-export function RoomInvitationQr({ value, size = 200 }: { value: string; size?: number }) {
+export function RoomInvitationQr({ value, size = 200, accessibilityLabel = 'Room invitation QR code' }: { value: string; size?: number; accessibilityLabel?: string }) {
   const result = useMemo(() => {
     try {
       // URI contract chỉ chứa ASCII; truyền bytes trực tiếp để không phụ thuộc TextEncoder của Hermes.
@@ -26,7 +26,7 @@ export function RoomInvitationQr({ value, size = 200 }: { value: string; size?: 
   if (!result) return <Text accessibilityRole="alert">Không tạo được mã QR. Dùng đường dẫn lời mời hiển thị bên dưới.</Text>;
 
   return (
-    <Svg width={size} height={size} viewBox={`-4 -4 ${result.dimension + 8} ${result.dimension + 8}`} accessibilityLabel="Room invitation QR code">
+    <Svg width={size} height={size} viewBox={`-4 -4 ${result.dimension + 8} ${result.dimension + 8}`} accessibilityLabel={accessibilityLabel}>
       <Path d={`M-4 -4h${result.dimension + 8}v${result.dimension + 8}H-4z`} fill={Colors.light.qrBackground} />
       <Path d={result.path} fill={Colors.light.qrForeground} />
     </Svg>
