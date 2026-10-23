@@ -13,8 +13,13 @@ test('checkout sends package identity and fresh token, without a client price', 
   const getIdToken = jest.fn().mockResolvedValue('test-id-token');
   const auth = { currentUser: { uid: 'account-a', getIdToken } };
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ version: 1, orderCode: 42, requestId: 'request-1', packageId: 'MONTH_3', amountVnd: 178000,
-    status: 'CREATING', checkoutUrl: null, qrCode: null, premiumExpiresAtUtcMs: null }) });
+  globalThis.fetch = jest.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    headers: { get: jest.fn().mockReturnValue('application/json') },
+    text: async () => JSON.stringify({ version: 1, orderCode: 42, requestId: 'request-1', packageId: 'MONTH_3', amountVnd: 178000,
+      status: 'CREATING', checkoutUrl: null, qrCode: null, premiumExpiresAtUtcMs: null }),
+  });
   try {
     await createPremiumApi(auth as never, 'https://premium.example.invalid').create('request-1', 'MONTH_3');
     expect(getIdToken).toHaveBeenCalledTimes(1);

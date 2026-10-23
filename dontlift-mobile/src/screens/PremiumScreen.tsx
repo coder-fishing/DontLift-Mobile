@@ -71,7 +71,11 @@ export function PremiumScreen({ uid, api, expiresAtUtcMs }: { uid: string; api: 
       if (cached && alive.current) {
         const value: unknown = JSON.parse(cached);
         if (value && typeof value === 'object' && 'requestId' in value && 'packageId' in value
-          && typeof value.requestId === 'string' && typeof value.packageId === 'string') { pendingRef.current = value as Pending; setPending(pendingRef.current); }
+          && typeof value.requestId === 'string' && typeof value.packageId === 'string') {
+          pendingRef.current = value as Pending;
+          setPending(pendingRef.current);
+          setSelected(pendingRef.current.packageId);
+        }
       }
       const offers = await api.packages();
       if (!alive.current) return;
