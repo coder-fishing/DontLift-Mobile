@@ -37,7 +37,8 @@ import { GroupSummaryScreen } from '../screens/GroupSummaryScreen';
 import { BillAllocationScreen } from '../screens/BillAllocationScreen';
 import { VietQRSettlementScreen } from '../screens/VietQRSettlementScreen';
 import { SettlementDetailsScreen } from '../screens/SettlementDetailsScreen';
-import { ActivationScreen } from '../screens/ActivationScreen';
+import { PremiumScreen } from '../screens/PremiumScreen';
+import { createPremiumApi } from '../features/premium/premium-api';
 import { HardwareDiagnosticsScreen } from '../screens/HardwareDiagnosticsScreen';
 import { useAuthSession } from '../features/auth/auth-session';
 import { useSensorAvailability } from '../features/sensors/use-sensor-availability';
@@ -192,6 +193,22 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     auth: roomRuntime.auth,
   }), [roomRuntime]);
   const acceptCanonicalProfile = session.acceptCanonicalProfile;
+  const premiumApi = useMemo(() => createPremiumApi(roomRuntime.auth), [roomRuntime.auth]);
+  useEffect(() => profileRepository.listen(profile.uid, (canonical, fromCache) => {
+    if (!fromCache) acceptCanonicalProfile(canonical);
+  }, () => undefined), [profileRepository, profile.uid, acceptCanonicalProfile]);
+  useEffect(() => {
+    if (!profile.premiumExpiresAtUtcMs) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const check = () => {
+      const remaining = profile.premiumExpiresAtUtcMs! - Date.now();
+      if (remaining <= 0) {
+        if (profile.isPremium) acceptCanonicalProfile({ ...profile, isPremium: false });
+      } else timer = setTimeout(check, Math.min(remaining, 86400000));
+    };
+    check();
+    return () => clearTimeout(timer);
+  }, [profile, acceptCanonicalProfile]);
   const handleProfileUpdated = useCallback((canonical: RegistrationProfile) => {
     acceptCanonicalProfile(canonical);
   }, [acceptCanonicalProfile]);
@@ -2005,6 +2022,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
         {currentScreen === '16-profile' ? (
           <ProfileScreen key={profile.uid} profile={profile} repository={profileRepository}
             onProfileUpdated={handleProfileUpdated} onSignOut={session.signOut}
+            onPremium={() => navigateToScreen('09-activation')}
             onBack={() => navigateToScreen('02-solo-select')} />
         ) : currentScreen === '15-group-history' ? (
           <GroupHistoryScreen key={profile.uid} userId={profile.uid} serverPremium={profile.isPremium}
@@ -2228,7 +2246,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
             onBack={() => setCurrentScreen('07-bill-allocation')} />
         )}
 
-        {currentScreen === '09-activation' && <ActivationScreen />}
+        {currentScreen === '09-activation' && <PremiumScreen key={profile.uid} uid={profile.uid} api={premiumApi} expiresAtUtcMs={profile.premiumExpiresAtUtcMs} />}
 
         {currentScreen === '10-hardware-diagnostics' && (
           <HardwareDiagnosticsScreen

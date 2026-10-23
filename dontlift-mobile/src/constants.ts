@@ -53,7 +53,7 @@ export const SCREEN_TITLES: Record<ScreenId, string> = {
   '06-group-active': 'Group Session Active',
   '07-bill-allocation': 'Host Bill Split',
   '08-vietqr-settlement': 'VietQR Settlement',
-  '09-activation': 'Pro Activation',
+  '09-activation': 'Premium',
   '10-hardware-diagnostics': 'Hardware Health',
   '11-solo-history': 'Solo History',
   '12-join-room': 'Join Room',
