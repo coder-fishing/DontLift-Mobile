@@ -21,7 +21,7 @@ export function HistoryScreen({ userId, serverPremium, repository, onBack }: His
   const list = useRef<FlatList<SoloHistoryEntry>>(null);
   const [, render] = useState(0);
   const controller = useMemo(() => createHistoryController(repository, {
-    userId, serverPremium, localPremium: false, nowUtcMs: Date.now(),
+    userId, serverPremium, localPremium: serverPremium, nowUtcMs: Date.now(),
   }, () => render(value => value + 1)), [repository, serverPremium, userId]);
   const state = controller.getState();
   useEffect(() => {

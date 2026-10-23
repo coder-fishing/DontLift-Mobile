@@ -1,5 +1,7 @@
 # DontLift — Product Design Record
 
+> **Override 2026-10-23 — ADR-025:** SL-031/032 chuyển sang mua Premium online bằng payOS + Express ngoài Firebase, một entitlement có hạn `premiumExpiresAt`. Giá 89.000/178.000/356.000/623.000 VND nhận 1/3/6/12 tháng lịch. Activation/checksum, Local Premium riêng và redeemActivationCode đã superseded. Firebase giữ Spark; [ADR-025](decisions/ADR-025-payos-expiring-premium.md) và [plan mới](superpowers/plans/2026-10-23-sl-031-032-payos-premium.md) là nguồn hiện hành cho phạm vi này.
+
 > **Status:** APPROVED (Post-Interactive Prototype Review P4.5)  
 > **Source Artifacts:** PRD v1.6.0 · Feature Spec v1.1.0 · Project Context v1.0.0 · Product Design Brief v1.0.0 · Liquid Acrylic Concept Final  
 > **Version:** 1.1.0  

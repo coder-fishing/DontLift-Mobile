@@ -1,5 +1,7 @@
 # P6.1 — Mục lục kế hoạch DontLift
 
+> **Approval 2026-10-23:** User duyệt [SL-031/032 payOS Premium](superpowers/plans/2026-10-23-sl-031-032-payos-premium.md) theo ADR-025: Express ngoài Firebase và Premium có hạn; giữ Spark. Activation/checksum cũ đã superseded.
+
 > **DRAFT v0.18 — backlog P6.0 và các slice chưa được duyệt vẫn là draft.** SL-002, SL-003, SL-013, SL-018 và SL-030 đã được duyệt riêng. Những approval này không duyệt toàn bộ backlog.
 
 > **Execution update 2026-10-14:** Human duyệt riêng SL-002 Android development runtime: reuse Firebase cloud config hiện có, iOS device verification tạm hoãn. [Plan SL-002](./superpowers/plans/2026-10-13-sl-002-native-firebase-runtime.md) ghi scope/evidence hiện tại; approval này không duyệt các slice khác hay toàn bộ backlog.
@@ -65,8 +67,8 @@ P0 là nền tảng/critical journey trước; P1 là cần hoàn tất MVP; P2 
 | SL-028 | [Group history và phục hồi dữ liệu](./superpowers/plans/2026-10-13-sl-028-group-history.md) | P1 | SL-020, SL-012, SL-018, SL-021, SL-024 | D4 |
 | SL-029 | [Xem và sửa profile](./superpowers/plans/2026-10-13-sl-029-profile-edit.md) | P1 | SL-004 | Không xác nhận riêng |
 | SL-030 | [Settings cho haptic và sound](./superpowers/plans/2026-10-13-sl-030-feedback-settings.md) | P1 | SL-003, SL-004, SL-007 | Không còn blocker |
-| SL-031 | [Activation offline và Local Premium](./superpowers/plans/2026-10-13-sl-031-local-premium.md) | P1 | SL-003, SL-004, SL-006 | D5 |
-| SL-032 | [Redeem online và Server Premium](./superpowers/plans/2026-10-13-sl-032-server-premium.md) | P1 | SL-013, SL-014, SL-031 | D5 |
+| SL-031 | [Premium payOS checkout](./superpowers/plans/2026-10-23-sl-031-032-payos-premium.md) | P1 | SL-003, SL-004, SL-006 | ADR-025 approved |
+| SL-032 | [payOS webhook và expiring Premium](./superpowers/plans/2026-10-23-sl-031-032-payos-premium.md) | P1 | SL-013, SL-014, SL-031 | ADR-025 approved |
 | SL-033 | [Retention local và server](./superpowers/plans/2026-10-13-sl-033-retention.md) | P1 | SL-012, SL-023, SL-028, SL-031, SL-032 | D10 |
 | SL-034 | [Chọn custom theme](./superpowers/plans/2026-10-13-sl-034-premium-themes.md) | P1 | SL-005, SL-008, SL-012, SL-015, SL-019, SL-020, SL-024, SL-026, SL-028, SL-029, SL-030, SL-031 | D6 |
 | SL-035 | [Quảng cáo đúng tier và màn hình](./superpowers/plans/2026-10-13-sl-035-free-tier-ads.md) | P1 | SL-006, SL-012, SL-013, SL-016, SL-030, SL-031 | D7 |
@@ -83,7 +85,7 @@ SL-037 phụ thuộc bắt buộc SL-001–SL-036 vì phạm vi đã chọn gồ
 | D2 | Đã giải quyết cho SL-003: ADR-009 (human approved 2026-10-06) và API `completeRegistrationProfile` §8 đã được đưa vào tài liệu canonical. Không yêu cầu duyệt lại behavior đã chấp thuận; nếu thay đổi behavior thì cần quyết định mới. |
 | D3 | Chốt wire/schema/error/concurrency cho start/early-exit/vote/heartbeat nếu slice dùng chúng; chốt syncEvents cho violation đang kéo dài; chốt early-exit cutoff/eligible events với room-completion pending set và ACK. SL-022 heartbeat/abort và local-only cutoff policy được resolved riêng bằng ADR-019; phần D3 của slice khác vẫn mở. |
 | D4 | Duyệt local completion/cutoff trigger, recovery/schema/identity và destination/projection/query/retention cho history nhóm và GROUP_SESSION_LOCAL_SUMMARY; local summary không tự complete room. |
-| D5 | Duyệt checksum cụ thể, test vectors, nguồn code hợp lệ và operational contract cấp code. Website/email mua Premium là external prerequisite, không tự implement. |
+| D5 | Superseded bởi ADR-025: bỏ activation/checksum, dùng payOS online + Express. Live checkout cần merchant credentials, Firebase Admin identity và host HTTPS; không mở Firebase billing. |
 | D6 | Duyệt theme catalog/default/downgrade và behavior advanced leaderboard; analytics nâng cao vẫn deferred. D6 tiếp tục chặn nghiệm thu SL-034/036 và downstream SL-037 cho tới khi các hành vi liên quan được chốt. |
 | D7 | Duyệt provider ads, test credentials, placements và consent. Giải quyết rõ xung đột PRD: FR-06 bắt buộc Home/Lobby/History/Settings, còn ví dụ US-18 và Product Design có Profile nhưng thiếu Home; áp dụng FR-06 trừ khi có quyết định human mới hơn. |
 | D8 | Resolved for SL-025 on 2026-10-22: allow versioned Host overrides until the first member is marked paid; lock after any paid member. Spark Rules use a room-level counter maintained atomically by SL-027. See ADR-022. |

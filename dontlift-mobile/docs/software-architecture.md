@@ -1,5 +1,7 @@
 # Kiến trúc phần mềm DontLift
 
+> **Override 2026-10-23 — ADR-025:** SL-031/032 chuyển sang mua Premium online bằng payOS + Express ngoài Firebase, một entitlement có hạn `premiumExpiresAt`. Giá 89.000/178.000/356.000/623.000 VND nhận 1/3/6/12 tháng lịch. Activation/checksum, Local Premium riêng và redeemActivationCode đã superseded. Firebase giữ Spark; [ADR-025](decisions/ADR-025-payos-expiring-premium.md) và [plan mới](superpowers/plans/2026-10-23-sl-031-032-payos-premium.md) là nguồn hiện hành cho phạm vi này.
+
 > Runtime update 2026-10-18: [ADR-010](decisions/ADR-010-expo-go-firebase-js.md) replaces native Firebase with Firebase JS SDK / Expo Go and replaces callable registration bootstrap with create-only Firestore Rules. Other planned authoritative commands below remain future work.
 >
 > Settlement update 2026-10-22: [ADR-021](decisions/ADR-021-spark-default-bill.md) adds Host-calculated SL-024 share publication on Spark; Rules do not verify the math or roster completeness.

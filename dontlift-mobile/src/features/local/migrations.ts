@@ -359,6 +359,15 @@ const migrations: LocalMigration[] = [
       });
     },
   },
+  {
+    version: 13,
+    async migrate(database) {
+      const columns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(local_profiles)');
+      if (!columns.some(column => column.name === 'premium_expires_at_utc_ms')) {
+        await database.execAsync('ALTER TABLE local_profiles ADD COLUMN premium_expires_at_utc_ms INTEGER');
+      }
+    },
+  },
 ];
 
 const latestSchemaVersion = migrations.at(-1)?.version ?? 0;

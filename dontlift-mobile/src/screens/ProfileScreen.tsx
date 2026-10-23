@@ -15,6 +15,7 @@ type Props = {
   onProfileUpdated: (profile: RegistrationProfile) => void;
   onSignOut: () => Promise<{ kind: 'signed-out' } | { kind: 'failed'; message: string }>;
   onBack: () => void;
+  onPremium?: () => void;
 };
 
 function saveError(error: unknown): string {
@@ -26,7 +27,7 @@ function saveError(error: unknown): string {
   return 'Could not confirm the save. Reconnect and try again.';
 }
 
-export function ProfileScreen({ profile, repository, onProfileUpdated, onSignOut, onBack }: Props) {
+export function ProfileScreen({ profile, repository, onProfileUpdated, onSignOut, onBack, onPremium }: Props) {
   const colors = Colors.light;
   const insets = useSafeAreaInsets();
   const [name, setName] = useState(profile.displayName);
@@ -137,6 +138,8 @@ export function ProfileScreen({ profile, repository, onProfileUpdated, onSignOut
         </View>
 
         <View style={styles.divider} />
+        {profile.premiumExpiresAtUtcMs != null ? <Text style={[styles.helper, { color: colors.textSecondary }]}>Premium until {new Date(profile.premiumExpiresAtUtcMs).toLocaleDateString('vi-VN')}</Text> : null}
+        {onPremium ? <Pressable accessibilityRole="button" onPress={onPremium} style={{ minHeight: 44, justifyContent: 'center' }}><Text style={[styles.label, { color: colors.primary }]}>{profile.isPremium ? 'Extend Premium' : 'Explore Premium'}</Text></Pressable> : null}
 
         <Text accessibilityRole="header" style={[styles.sectionTitle, { color: colors.text }]}>Display name</Text>
         <Text style={[styles.helper, { color: colors.textSecondary }]}>This name appears to people in your group rooms.</Text>

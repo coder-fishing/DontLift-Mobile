@@ -9,7 +9,8 @@ jest.mock('firebase/firestore', () => ({
 
 const firestore = {} as never;
 const auth = { currentUser: { uid: 'user-a' } } as never;
-const profile = { uid: 'user-a', email: 'a@example.test', displayName: 'Before', isPremium: true, createdAtUtcMs: 1234 };
+const premiumExpiresAtUtcMs = 4102444800000;
+const profile = { uid: 'user-a', email: 'a@example.test', displayName: 'Before', isPremium: true, premiumExpiresAtUtcMs, createdAtUtcMs: 1234 };
 
 describe('profile editing', () => {
   beforeEach(() => jest.clearAllMocks());
@@ -26,7 +27,8 @@ describe('profile editing', () => {
     const update = jest.fn();
     jest.mocked(runTransaction).mockImplementation(async (_db, callback) => callback({
       get: async () => ({ exists: () => true, data: () => ({
-        displayName: 'Before', email: 'a@example.test', isPremium: true, createdAt: { toMillis: () => 1234 },
+        displayName: 'Before', email: 'a@example.test', isPremium: false,
+        premiumExpiresAt: { toMillis: () => premiumExpiresAtUtcMs }, createdAt: { toMillis: () => 1234 },
       }) }), update,
     } as never));
     const persistLocal = jest.fn().mockResolvedValue(undefined);
@@ -41,7 +43,8 @@ describe('profile editing', () => {
     const update = jest.fn();
     jest.mocked(runTransaction).mockImplementation(async (_db, callback) => callback({
       get: async () => ({ exists: () => true, data: () => ({
-        displayName: 'After', email: profile.email, isPremium: true, createdAt: { toMillis: () => 1234 },
+        displayName: 'After', email: profile.email, isPremium: false,
+        premiumExpiresAt: { toMillis: () => premiumExpiresAtUtcMs }, createdAt: { toMillis: () => 1234 },
       }) }), update,
     } as never));
     const persistLocal = jest.fn().mockResolvedValue(undefined);
@@ -72,7 +75,8 @@ describe('profile editing', () => {
     const onSnapshotProfile = jest.mocked(onSnapshot).mock.calls[0][2] as unknown as (snapshot: unknown) => void;
     const cachedSnapshot = {
       exists: () => true,
-      data: () => ({ displayName: 'Canonical', email: profile.email, isPremium: true, createdAt: { toMillis: () => 1234 } }),
+      data: () => ({ displayName: 'Canonical', email: profile.email, isPremium: false,
+        premiumExpiresAt: { toMillis: () => premiumExpiresAtUtcMs }, createdAt: { toMillis: () => 1234 } }),
       metadata: { fromCache: true },
     };
     onSnapshotProfile(cachedSnapshot);

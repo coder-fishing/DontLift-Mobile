@@ -1,5 +1,7 @@
 # ADR-007: Hai lớp Premium entitlement
 
+> **Superseded 2026-10-23:** [ADR-025](ADR-025-payos-expiring-premium.md) thay cơ chế activation/checksum và hai entitlement bằng Premium online có hạn. Nội dung bên dưới giữ làm lịch sử quyết định.
+
 ## Status
 
 Accepted

@@ -6,6 +6,7 @@ import {
 import type * as SQLite from 'expo-sqlite';
 import { getRandomBytes } from 'expo-crypto';
 import { encodeRoomInvitation } from './room-invite-contract';
+import { premiumIsActive, readPremiumExpiry } from '../premium/premium-entitlement';
 export { persistEarlyExitProjection, persistRoomLobbyProjection, persistTerminalRoomProjection, restoreCachedActiveRoom } from './room-lobby-projection';
 import { mapRoomCreateError, RoomCreateError, type RoomCreateStage } from './room-create-error';
 export { RoomCreateError } from './room-create-error';
@@ -245,7 +246,10 @@ export function createRoomRepository(dependencies: RoomCreateDependencies) {
           const existingCount = usageData?.bucketStart instanceof Timestamp
             && usageData.bucketStart.isEqual(bucketStart) ? Number(usageData.count) : 0;
           const nextCount = existingCount + 1;
-          if (profile.data().isPremium !== true && nextCount > 7) {
+          const premiumActiveAtServerCheck = premiumIsActive(
+            readPremiumExpiry(profile.data().premiumExpiresAt), checkedAt.toMillis(),
+          );
+          if (!premiumActiveAtServerCheck && nextCount > 7) {
             throw new RoomCreateError('quota-exhausted');
           }
 

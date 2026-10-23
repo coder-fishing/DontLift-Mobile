@@ -6,6 +6,7 @@ export interface RegistrationProfile {
   email: string;
   displayName: string;
   isPremium: boolean;
+  premiumExpiresAtUtcMs?: number | null;
   createdAtUtcMs: number;
 }
 

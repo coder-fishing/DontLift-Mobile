@@ -1,0 +1,5 @@
+premium-api/node_modules/
+premium-api/.env
+premium-api/.env.*
+!premium-api/.env.example
+premium-api/*service-account*.json

@@ -37,11 +37,14 @@ test('actual JS SDK profile bootstrap is owner-only, create-only and retryable w
   assert.equal(snapshot.data().updatedAt.toMillis(), first.profile.createdAtUtcMs);
   const retried = await completeRegistrationProfile(auth, database, { ...request, requestId: randomUUID(), displayName: 'Changed' });
   assert.deepEqual(retried.profile, first.profile);
+  const premiumExpiresAt = new Date(Date.now() + 86400000);
   await environment.withSecurityRulesDisabled(async (context) => {
-    await context.firestore().doc('users/' + user.uid).update({ isPremium: true });
+    // Entitlement comes from the active expiry, even when the legacy boolean is false.
+    await context.firestore().doc('users/' + user.uid).update({ premiumExpiresAt });
   });
   const existingPremium = await completeRegistrationProfile(auth, database, request);
   assert.equal(existingPremium.profile.isPremium, true);
+  assert.equal(existingPremium.profile.premiumExpiresAtUtcMs, premiumExpiresAt.getTime());
   assert.equal(existingPremium.profile.createdAtUtcMs, first.profile.createdAtUtcMs);
   await assert.rejects(completeRegistrationProfile(auth, database, { ...request, displayName: ' '.repeat(3) }), /name/);
   await signOut(auth);
