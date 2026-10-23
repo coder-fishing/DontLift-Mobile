@@ -200,7 +200,12 @@ export function PremiumScreen({ uid, api, expiresAtUtcMs }: { uid: string; api: 
       orderRef.current = result;
       setOrder(result);
       selectionTouched.current = false;
-      if (['PAID', 'CANCELLED', 'EXPIRED'].includes(result.status)) { await refresh(); return; }
+      if (['PAID', 'CANCELLED', 'EXPIRED'].includes(result.status)) {
+        // Xóa identity của request terminal trước; refresh sau đó mới có thể nhận đơn mới hơn.
+        await applyOrder(result);
+        await refresh();
+        return;
+      }
       if (result.checkoutUrl) {
         if (!/^https:\/\/pay\.payos\.vn\//.test(result.checkoutUrl)) throw new Error('The checkout link is invalid.');
       }

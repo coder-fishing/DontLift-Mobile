@@ -12,7 +12,7 @@ import { mergeGroupHistory, type GroupHistoryCursor, type GroupHistoryEntry } fr
 type Props = { userId: string; repository: GroupHistoryRepository; serverPremium: boolean; localPremium?: boolean; onBack: () => void };
 type HistoryListRow = { kind: 'history'; entry: GroupHistoryEntry }
   | { kind: 'member'; member: GroupHistoryDetail['members'][number] };
-export function GroupHistoryScreen({ userId, repository, serverPremium, localPremium = false, onBack }: Props) {
+export function GroupHistoryScreen({ userId, repository, serverPremium, localPremium = serverPremium, onBack }: Props) {
   const colors = Colors.light;
   const [items, setItems] = useState<GroupHistoryEntry[]>([]);
   const [selected, setSelected] = useState<GroupHistoryEntry | null>(null);
