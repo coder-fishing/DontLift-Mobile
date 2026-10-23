@@ -72,7 +72,7 @@ export function PremiumScreen({ uid, api, expiresAtUtcMs }: { uid: string; api: 
 
     // Luôn đọc trạng thái của QR đang hiển thị; nếu chưa có mã đơn thì retry cùng requestId để phục hồi.
     const checkout = knownCheckout.orderCode != null
-      ? await api.get(knownCheckout.orderCode)
+      ? await api.get(knownCheckout.orderCode, forceRefresh)
       : await api.create(knownCheckout.requestId, knownCheckout.packageId)
         .then(saved => api.get(saved.orderCode));
     if (checkout.requestId !== knownCheckout.requestId) {

@@ -191,8 +191,12 @@ export function createPremiumApi(
         throw new Error("The current payment could not be cancelled.");
       return result.order === null ? null : checkedOrder(result.order);
     },
-    get: async (code: number) =>
-      checkedOrder(await request(`/v1/premium/orders/${code}`)),
+    get: async (code: number, forceRefresh = false) =>
+      checkedOrder(
+        await request(
+          `/v1/premium/orders/${code}${forceRefresh ? "?refresh=1" : ""}`,
+        ),
+      ),
   };
 }
 export type PremiumApi = ReturnType<typeof createPremiumApi>;
