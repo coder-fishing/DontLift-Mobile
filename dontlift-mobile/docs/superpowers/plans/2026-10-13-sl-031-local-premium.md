@@ -1,5 +1,7 @@
 # Kế hoạch triển khai P6.1 — SL-031: Activation offline và Local Premium
 
+> **SUPERSEDED:** User duyệt luồng payOS online ngày 2026-10-23. Thực thi [plan SL-031/032 mới](2026-10-23-sl-031-032-payos-premium.md) và [ADR-025](../../decisions/ADR-025-payos-expiring-premium.md). Checklist activation/redeem dưới đây chỉ là lịch sử; D5 checksum không còn áp dụng cho flow mới.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use the qskill-executing-plans skill to implement this plan task-by-task. Steps use checkbox tracking.
 > Kế hoạch chỉ mô tả file, unit, hành vi, quy tắc, đầu ra và test cases; không có implementation code hoặc signatures. Đọc source thật trước mỗi task.
 > **Gate:** Không execute kế hoạch khi trạng thái còn DRAFT hoặc khi blocker/dependency chưa giải quyết. Việc tạo file này không phê duyệt backlog hay P6.2.

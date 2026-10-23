@@ -1,5 +1,25 @@
 # DontLift Firebase Command Contracts
 
+# SL-031/032 payOS override — ADR-025
+
+For Premium, this boundary supersedes section 7 activation/redeem. Firebase remains Spark; Express runs on an external host. All JSON responses include version 1. Authenticated endpoints verify Bearer Firebase ID token and derive UID from it.
+
+- `GET /v1/premium/packages`: packages with id, amountVnd, paidMonths, grantedMonths.
+- `POST /v1/premium/orders`: body version 1, UUIDv4 requestId, packageId. Reject client amount, UID and callback URLs. Same owner/requestId/payload reuses orderCode; changed payload returns conflict. Reserve identity before upstream network; a lost create response keeps retry identity.
+- `GET /v1/premium/orders/current`: latest owner's order or null. `?refresh=1` requests an immediate PayOS status check, bypassing the background-poll throttle. `GET /v1/premium/orders/:code`: owner-only order; unknown/other owner returns 404.
+- `POST /v1/premium/orders/current/cancel`: body `{version: 1}` only. The backend verifies the current order with PayOS, cancels it, then confirms a terminal `CANCELLED`/`EXPIRED` result before the app may create a different package order. If PayOS reports it already paid, the backend grants Premium and returns `PAID`; unresolved outcomes remain errors so a still-live QR cannot silently coexist with a replacement order.
+- Order result: version, requestId, orderCode, packageId, amountVnd, status CREATING/PENDING/PAID/CANCELLED/EXPIRED, nullable checkoutUrl and premiumExpiresAtUtcMs. A paid order's expiry is its immutable receipt; later purchases can have a newer active expiry.
+- `POST /webhooks/payos`: SDK signature verification followed by exact amount/currency/link matching and authenticated payOS PAID read. Transaction writes PAID receipt and profile expiry together. Replays do not extend twice. Signed unknown-order probes return 2xx without a grant; provider/DB failures return non-2xx for retry.
+- `/checkout/return` and `/checkout/cancel`: public browser pages without payment side effects; redirect never grants access. `/health` exposes process readiness only.
+
+Backend-only collections are premiumOrders, premiumOrderRequests and premiumCurrentOrders. Client reads/status go through authenticated Express, and direct writes are denied. `users/{uid}.premiumExpiresAt` is server-owned; Rules check `request.time < premiumExpiresAt`, independently of old isPremium boolean. Profile name updates preserve entitlement fields.
+
+MONTH_1 costs 89,000 VND for 1 month; MONTH_3 178,000 for 3; MONTH_6 356,000 for 6; MONTH_12 623,000 for 12. Calendar months follow Asia/Ho_Chi_Minh with end-of-month clamp. Grant stacks from max(backend now, existing expiry), without auto-renewal. No offline purchase queue.
+
+Backend needs payOS client ID/API key/checksum key, Firebase Admin identity and public HTTPS origin. Mobile receives only EXPO_PUBLIC_PREMIUM_API_URL. Provider errors are sanitized in version/code errors; no credentials in responses. Live hosting/configuration requires user credentials; this does not enable Firebase billing.
+
+
+
 > Runtime update 2026-10-18: [ADR-010](decisions/ADR-010-expo-go-firebase-js.md) replaces native Firebase with Firebase JS SDK / Expo Go and replaces callable registration bootstrap with create-only Firestore Rules. Other planned authoritative commands below remain future work.
 
 > Room-creation update 2026-10-20: [ADR-011](decisions/ADR-011-spark-room-creation.md) replaces the `createRoom` callable with one authenticated Firestore client transaction guarded by Security Rules. This exception is designed for Firebase Spark and does not change the remaining callable contracts.
