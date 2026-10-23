@@ -6,6 +6,7 @@ import type * as SQLite from 'expo-sqlite';
 import type { FirebaseRuntime } from '../auth/firebase-adapters';
 import { getLocalDatabase } from '../local/database';
 import { getCompletedSoloSessionSummary } from '../solo/summary-service';
+import { premiumIsActive, readPremiumExpiry } from '../premium/premium-entitlement';
 import type { HistoryRepository } from './history-controller';
 import {
   FREE_HISTORY_WINDOW_MS, HISTORY_PAGE_SIZE, mergeHistoryEntries, readCloudHistoryEntry,
@@ -86,10 +87,12 @@ export function createSoloHistoryRepository(runtime: FirebaseRuntime): HistoryRe
     async readCloudPage(cursor, context) {
       assertOwner(context.userId);
       if (!cursor) {
-        // Chỉ profile từ server cấp quyền giữ cloud history lâu dài; Local Premium không cấp quyền này.
+        // Dùng expiry từ profile server làm quyền chuẩn; cờ isPremium cũ không còn cấp quyền.
         const profile = await getDocFromServer(doc(runtime.firestore, 'users', context.userId));
         assertOwner(context.userId);
-        verifiedServerPremium = profile.exists() && profile.data().isPremium === true;
+        verifiedServerPremium = profile.exists() && premiumIsActive(
+          readPremiumExpiry(profile.data().premiumExpiresAt), context.nowUtcMs,
+        );
       }
       const constraints: QueryConstraint[] = [orderBy('completedAt', 'desc'), orderBy(documentId(), 'desc')];
       if (!verifiedServerPremium) constraints.push(where('completedAt', '>=', Timestamp.fromMillis(context.nowUtcMs - FREE_HISTORY_WINDOW_MS)));
