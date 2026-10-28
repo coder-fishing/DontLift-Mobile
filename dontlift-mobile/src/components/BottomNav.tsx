@@ -1,141 +1,216 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ScreenId } from '../types';
+import React from "react";
+import { View, Text, Pressable, StyleSheet, Platform } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  GlassView,
+  isLiquidGlassAvailable,
+  isGlassEffectAPIAvailable,
+} from "expo-glass-effect";
+import { ScreenId } from "../types";
 
 interface BottomNavProps {
   currentScreen: ScreenId;
   onNavigate: (screen: ScreenId) => void;
 }
 
+const TABS = [
+  {
+    label: "Solo",
+    icon: "timer-outline" as const,
+    activeIcon: "timer" as const,
+    screen: "02-solo-select" as ScreenId,
+    screens: [
+      "02-solo-select",
+      "03-solo-timer",
+      "04-solo-summary",
+      "11-solo-history",
+    ],
+  },
+  {
+    label: "Group",
+    icon: "people-outline" as const,
+    activeIcon: "people" as const,
+    screen: "05-group-lobby" as ScreenId,
+    screens: [
+      "05-group-lobby",
+      "12-join-room",
+      "06-group-active",
+      "13-group-summary",
+      "07-bill-allocation",
+      "08-vietqr-settlement",
+      "14-settlement-details",
+      "15-group-history",
+    ],
+  },
+  // {
+  //   label: 'Sensors',
+  //   icon: 'hardware-chip-outline' as const,
+  //   activeIcon: 'hardware-chip' as const,
+  //   screen: '10-hardware-diagnostics' as ScreenId,
+  //   screens: ['10-hardware-diagnostics'],
+  // },
+  {
+    label: "Pro",
+    icon: "diamond-outline" as const,
+    activeIcon: "diamond" as const,
+    screen: "09-activation" as ScreenId,
+    screens: ["09-activation"],
+  },
+  {
+    label: "Account",
+    icon: "person-outline" as const,
+    activeIcon: "person" as const,
+    screen: "16-profile" as ScreenId,
+    screens: ["16-profile", "17-settings"],
+  },
+];
+
 export function BottomNav({ currentScreen, onNavigate }: BottomNavProps) {
   const insets = useSafeAreaInsets();
 
-  const isSolo =
-    currentScreen === '02-solo-select' ||
-    currentScreen === '03-solo-timer' ||
-    currentScreen === '04-solo-summary' ||
-    currentScreen === '11-solo-history';
-
-  const isGroup =
-    currentScreen === '05-group-lobby' ||
-    currentScreen === '12-join-room' ||
-    currentScreen === '06-group-active' ||
-    currentScreen === '13-group-summary' ||
-    currentScreen === '07-bill-allocation' ||
-    currentScreen === '08-vietqr-settlement' ||
-    currentScreen === '14-settlement-details' ||
-    currentScreen === '15-group-history';
-  const isAccount = currentScreen === '16-profile' || currentScreen === '17-settings';
+  // Only check the native Liquid Glass API on iOS.
+  const useLiquidGlass =
+    Platform.OS === "ios" &&
+    isLiquidGlassAvailable() &&
+    isGlassEffectAPIAvailable();
 
   return (
     <View
-      style={[
-        styles.bottomNavContainer,
-        {
-          paddingBottom: Math.max(insets.bottom, 10),
-        },
-      ]}
+      style={[styles.wrapper, { paddingBottom: Math.max(insets.bottom, 10) }]}
     >
-      <TouchableOpacity
-        activeOpacity={0.7}
-        onPress={() => onNavigate('02-solo-select')}
-        style={[styles.navTab, isSolo && styles.navTabActive]}
+      <View
+        style={[
+          styles.bar,
+          useLiquidGlass ? styles.nativeGlassBar : styles.fallbackBar,
+        ]}
       >
-        <Text style={[styles.navIcon, isSolo && styles.navIconActive]}>⏱</Text>
-        <Text style={[styles.navLabel, isSolo && styles.navLabelActive]}>Solo</Text>
-      </TouchableOpacity>
+        {useLiquidGlass && (
+          <GlassView
+            pointerEvents="none"
+            glassEffectStyle="regular"
+            style={StyleSheet.absoluteFill}
+          />
+        )}
 
-      <TouchableOpacity
-        activeOpacity={0.7}
-        onPress={() => onNavigate('05-group-lobby')}
-        style={[styles.navTab, isGroup && styles.navTabActive]}
-      >
-        <Text style={[styles.navIcon, isGroup && styles.navIconActive]}>👥</Text>
-        <Text style={[styles.navLabel, isGroup && styles.navLabelActive]}>Group</Text>
-      </TouchableOpacity>
+        {TABS.map((tab) => {
+          const active = tab.screens.includes(currentScreen);
 
-      <TouchableOpacity
-        activeOpacity={0.7}
-        onPress={() => onNavigate('10-hardware-diagnostics')}
-        style={[styles.navTab, currentScreen === '10-hardware-diagnostics' && styles.navTabActive]}
-      >
-        <Text style={[styles.navIcon, currentScreen === '10-hardware-diagnostics' && styles.navIconActive]}>
-          📡
-        </Text>
-        <Text
-          style={[styles.navLabel, currentScreen === '10-hardware-diagnostics' && styles.navLabelActive]}
-        >
-          Sensors
-        </Text>
-      </TouchableOpacity>
+          return (
+            <Pressable
+              key={tab.label}
+              accessibilityRole="button"
+              accessibilityLabel={tab.label}
+              accessibilityState={{ selected: active }}
+              hitSlop={0}
+              onPress={() => onNavigate(tab.screen)}
+              style={({ pressed }) => [
+                styles.tab,
+                active && styles.activeTab,
+                pressed && styles.pressedTab,
+              ]}
+            >
+              <View pointerEvents="none" style={styles.tabContent}>
+                <View style={styles.iconSlot}>
+                  <Ionicons
+                    name={active ? tab.activeIcon : tab.icon}
+                    size={24}
+                    color={active ? "#2563EB" : "#64748B"}
+                  />
+                </View>
 
-      <TouchableOpacity
-        activeOpacity={0.7}
-        onPress={() => onNavigate('09-activation')}
-        style={[styles.navTab, currentScreen === '09-activation' && styles.navTabActive]}
-      >
-        <Text style={[styles.navIcon, currentScreen === '09-activation' && styles.navIconActive]}>
-          👑
-        </Text>
-        <Text style={[styles.navLabel, currentScreen === '09-activation' && styles.navLabelActive]}>
-          Pro
-        </Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        activeOpacity={0.7}
-        onPress={() => onNavigate('16-profile')}
-        style={[styles.navTab, isAccount && styles.navTabActive]}
-      >
-        <Text style={[styles.navIcon, isAccount && styles.navIconActive]}>
-          👤
-        </Text>
-        <Text style={[styles.navLabel, isAccount && styles.navLabelActive]}>
-          Account
-        </Text>
-      </TouchableOpacity>
+                <Text style={[styles.label, active && styles.activeLabel]}>
+                  {tab.label}
+                </Text>
+              </View>
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  bottomNavContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    backgroundColor: 'rgba(255, 255, 255, 0.92)',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.95)',
-    paddingTop: 8,
-    paddingHorizontal: 8,
-  },
-  navTab: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 4,
+  wrapper: {
     paddingHorizontal: 10,
-    borderRadius: 12,
-    minWidth: 54,
+    paddingTop: 8,
   },
-  navTabActive: {
-    backgroundColor: 'rgba(37, 99, 235, 0.12)',
+
+  bar: {
+    position: "relative",
+    flexDirection: "row",
+    alignItems: "stretch",
+    justifyContent: "space-around",
+    borderRadius: 28,
+    paddingHorizontal: 5,
+    paddingVertical: 6,
+    borderWidth: 1,
+    overflow: "hidden",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 8,
   },
-  navIcon: {
-    fontSize: 20,
-    opacity: 0.5,
+
+  nativeGlassBar: {
+    backgroundColor: "transparent",
+    borderColor: "rgba(255,255,255,0.35)",
   },
-  navIconActive: {
-    opacity: 1,
+
+  fallbackBar: {
+    backgroundColor: "rgba(255,255,255,0.94)",
+    borderColor: "rgba(255,255,255,0.85)",
   },
-  navLabel: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#64748B',
-    marginTop: 2,
+
+  tab: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 64,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 2,
+    marginHorizontal: 0,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: "transparent",
+    gap: 2,
   },
-  navLabelActive: {
-    color: '#2563EB',
-    fontWeight: '800',
+
+  iconSlot: {
+    width: 26,
+    height: 26,
+    alignItems: "center",
+    justifyContent: "center",
   },
+
+  activeTab: {
+    backgroundColor: "rgba(37,99,235,0.14)",
+    borderColor: "rgba(37,99,235,0.12)",
+  },
+
+  pressedTab: {
+    opacity: 0.72,
+  },
+
+  label: {
+    width: "100%",
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: "600",
+    color: "#64748B",
+    textAlign: "center",
+    includeFontPadding: false,
+  },
+
+  activeLabel: {
+    color: "#2563EB",
+    fontWeight: "800",
+  },
+
+  tabContent: {
+    
+  }
 });
