@@ -18,10 +18,11 @@ import * as Network from 'expo-network';
 import * as Crypto from 'expo-crypto';
 import { ScreenId } from '../types';
 import { Header } from '../components/Header';
+import { AppBackground } from '../components/AppBackground';
 import { BottomNav } from '../components/BottomNav';
 
 // 10 Core Screens
-import { LoginScreen, LoginScreenBackground } from '../screens/LoginScreen';
+import { LoginScreen } from '../screens/LoginScreen';
 import { SoloSelectScreen } from '../screens/SoloSelectScreen';
 import { SoloTimerScreen } from '../screens/SoloTimerScreen';
 import { SoloSummaryScreen } from '../screens/SoloSummaryScreen';
@@ -138,6 +139,15 @@ function billPublishErrorMessage(error: unknown): string {
 }
 
 export default function HomeScreen() {
+  return (
+    <View style={styles.container}>
+      <AppBackground />
+      <HomeContent />
+    </View>
+  );
+}
+
+function HomeContent() {
   const session = useAuthSession();
 
   if (session.state.kind === 'loading') {
@@ -169,7 +179,6 @@ function LoginGate({ state, recoveryUser }: { state: AuthSessionState; recoveryU
   return (
     <View style={[styles.loginGate, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#EEF2FF" />
-      <LoginScreenBackground />
       <ScrollView contentContainerStyle={styles.loginGateContent} keyboardShouldPersistTaps="handled">
         <LoginScreen
           onAuthenticated={() => { void session.refreshProfile(); }}
@@ -2030,7 +2039,6 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
 
       {/* Main Body */}
       <View style={styles.mainBody}>
-        {currentScreen === '01-login' && <LoginScreenBackground />}
         {currentScreen === '17-settings' ? (
           <SettingsScreen key={profile.uid} userId={profile.uid} repository={settingsRepository}
             onBack={() => setCurrentScreen(settingsReturnScreen.current)} />
@@ -2288,12 +2296,11 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
 }
 
 const styles = StyleSheet.create({
-  authLoading: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#EEF2FF' },
-  loginGate: { flex: 1, position: 'relative', backgroundColor: '#EEF2FF' },
+  authLoading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  loginGate: { flex: 1, position: 'relative' },
   loginGateContent: { flexGrow: 1, justifyContent: 'center', padding: 16 },
   container: {
     flex: 1,
-    backgroundColor: '#EEF2FF',
   },
   mainBody: {
     flex: 1,

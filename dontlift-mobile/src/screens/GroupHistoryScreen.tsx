@@ -107,7 +107,7 @@ export function GroupHistoryScreen({ userId, repository, serverPremium, localPre
   const ownShare = detail?.bill?.shares.find(share => share.uid === userId);
   if (paymentRoomId) return <HistoryPaymentScreen key={`${userId}/${paymentRoomId}`} userId={userId} roomId={paymentRoomId}
     repository={repository} onBack={closeHistoryPayment} />;
-  return <FlatList ref={list} testID="group-history-list" style={{ backgroundColor: colors.authBackdrop }}
+  return <FlatList ref={list} testID="group-history-list"
     contentContainerStyle={styles.content} data={rows}
     keyExtractor={item => item.kind === 'member' ? `member/${item.member.uid}` : `${item.entry.summary.actorUid}/${item.entry.summary.roomId}`}
     refreshing={loading && items.length > 0} onRefresh={() => { void refresh.current(); detailRefresh.current(); }}

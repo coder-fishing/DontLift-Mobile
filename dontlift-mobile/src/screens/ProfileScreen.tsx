@@ -111,7 +111,7 @@ export function ProfileScreen({ profile, repository, onProfileUpdated, onSignOut
     } },
   ]);
 
-  return <KeyboardAvoidingView style={[styles.root, { backgroundColor: colors.authBackdrop, paddingBottom: Math.max(insets.bottom, 8) }]}
+  return <KeyboardAvoidingView style={[styles.root, { paddingBottom: Math.max(insets.bottom, 8) }]}
     behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
       <Pressable accessibilityRole="button" accessibilityLabel="Return to the main screen" onPress={onBack} hitSlop={8} style={styles.back}>

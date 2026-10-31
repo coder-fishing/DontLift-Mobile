@@ -35,18 +35,6 @@ interface LoginScreenProps {
 
 type RegistrationController = ReturnType<typeof createFirebaseRegistrationController>;
 
-export function LoginScreenBackground() {
-  const colorScheme = useColorScheme() ?? 'light';
-  const colors = colorScheme === 'dark' ? Colors.dark : Colors.light;
-
-  return (
-    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      <View style={[styles.glow, styles.glowPrimary, { backgroundColor: colors.authGlow }]} />
-      <View style={[styles.glow, styles.glowSecondary, { backgroundColor: colors.authGlowSecondary }]} />
-    </View>
-  );
-}
-
 function FieldError({ message, color }: { message?: string; color: string }) {
   if (!message) return null;
   return (
@@ -470,9 +458,6 @@ export function LoginScreen({ onAuthenticated, onSignIn, recoveryUser, authentic
 const styles = StyleSheet.create({
   container: { flex: 1, gap: 16, paddingVertical: 12 },
   content: { gap: 16 },
-  glow: { position: 'absolute', borderRadius: 999 },
-  glowPrimary: { width: 240, height: 240, top: -90, right: -80 },
-  glowSecondary: { width: 200, height: 200, bottom: 120, left: -100 },
   heroSection: { alignItems: 'center', paddingVertical: 10, paddingHorizontal: 12 },
   iconCircle: {
     width: 64,

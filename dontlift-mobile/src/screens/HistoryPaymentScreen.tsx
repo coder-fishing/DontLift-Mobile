@@ -4,7 +4,6 @@ import * as Network from 'expo-network';
 import { VietQRSettlementScreen } from './VietQRSettlementScreen';
 import { emptyHistoryPayment, type HistoryPaymentState } from '../features/history/history-payment-state';
 import type { GroupHistoryRepository } from '../features/history/group-history-repository';
-import { Colors } from '../constants/theme';
 
 type Props = { roomId: string; userId: string; repository: GroupHistoryRepository; onBack: () => void };
 export function HistoryPaymentScreen({ roomId, userId, repository, onBack }: Props) {
@@ -41,10 +40,10 @@ export function HistoryPaymentScreen({ roomId, userId, repository, onBack }: Pro
     return () => { active = false; stop(); };
   }, [repository, userId, roomId, revision, online]);
   const state = received?.revision === revision ? received.state : emptyHistoryPayment();
-  return <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+  return <ScrollView contentContainerStyle={styles.content}>
     <VietQRSettlementScreen roomId={roomId} roomPin={state.roomPin} actorUid={userId} member={state.member}
       billState={state.billState} detailsState={state.detailsState} isOnline={online}
       onRefresh={() => setRevision(value => value + 1)} onBack={onBack} backLabel="Group session" />
   </ScrollView>;
 }
-const styles = StyleSheet.create({ container: { backgroundColor: Colors.light.authBackdrop }, content: { padding: 20, paddingBottom: 32 } });
+const styles = StyleSheet.create({ content: { padding: 20, paddingBottom: 32 } });
