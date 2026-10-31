@@ -1,15 +1,13 @@
 import React from 'react';
-import { StyleSheet, useColorScheme, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Colors } from '../constants/theme';
 
 export function AppBackground() {
-  const colors = useColorScheme() === 'dark' ? Colors.dark : Colors.light;
-
   return (
     <View pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
       style={[StyleSheet.absoluteFill, styles.background]}>
-      <View style={[styles.glow, styles.primary, { backgroundColor: colors.authGlow }]} />
-      <View style={[styles.glow, styles.secondary, { backgroundColor: colors.authGlowSecondary }]} />
+      <View style={[styles.glow, styles.primary, { backgroundColor: Colors.light.authGlow }]} />
+      <View style={[styles.glow, styles.secondary, { backgroundColor: Colors.light.authGlowSecondary }]} />
     </View>
   );
 }

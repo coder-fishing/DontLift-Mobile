@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Network from 'expo-network';
 import * as Crypto from 'expo-crypto';
 import { ScreenId } from '../types';
+import { Colors } from '../constants/theme';
 import { Header } from '../components/Header';
 import { AppBackground } from '../components/AppBackground';
 import { BottomNav } from '../components/BottomNav';
@@ -153,8 +154,8 @@ function HomeContent() {
   if (session.state.kind === 'loading') {
     return (
       <View style={styles.authLoading}>
-        <StatusBar barStyle="dark-content" backgroundColor="#EEF2FF" />
-        <ActivityIndicator accessibilityLabel="Restoring account session" size="large" color="#004AC6" />
+        <StatusBar barStyle="dark-content" backgroundColor={Colors.light.background} />
+        <ActivityIndicator accessibilityLabel="Restoring account session" size="large" color={Colors.light.primary} />
       </View>
     );
   }
@@ -178,7 +179,7 @@ function LoginGate({ state, recoveryUser }: { state: AuthSessionState; recoveryU
 
   return (
     <View style={[styles.loginGate, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-      <StatusBar barStyle="dark-content" backgroundColor="#EEF2FF" />
+      <StatusBar barStyle="dark-content" backgroundColor={Colors.light.background} />
       <ScrollView contentContainerStyle={styles.loginGateContent} keyboardShouldPersistTaps="handled">
         <LoginScreen
           onAuthenticated={() => { void session.refreshProfile(); }}
@@ -1830,7 +1831,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       setSoloStartError(code === 'sensor-not-ready'
         ? 'Accelerometer check must be ready before a focus session can start.'
         : code === 'invalid-duration'
-          ? 'Choose a duration from 5 to 180 minutes in 5-minute steps.'
+          ? 'Choose a duration from 5 to 720 minutes in 5-minute steps.'
           : 'Could not save or restore this session on the device. Your choices are kept; retry when local storage is available.');
     } finally {
       if (!attachedLifecycle) startupSubscription?.remove();
@@ -2028,11 +2029,13 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="dark-content" backgroundColor="#EEF2FF" />
+      <StatusBar barStyle="dark-content" backgroundColor={Colors.light.background} />
 
       {/* Header */}
       <Header
         currentScreen={currentScreen}
+        displayName={profile.displayName}
+        email={profile.email}
         onNavigate={navigateToScreen}
         onOpenSettings={openSettings}
       />

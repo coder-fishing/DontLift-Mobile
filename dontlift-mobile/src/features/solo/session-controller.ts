@@ -1,5 +1,9 @@
 export type SoloSessionMode = 'COUNTDOWN' | 'STOPWATCH';
 
+export const MIN_COUNTDOWN_DURATION_MINUTES = 5;
+export const MAX_COUNTDOWN_DURATION_MINUTES = 720;
+export const COUNTDOWN_DURATION_STEP_MINUTES = 5;
+
 export type SoloSession = {
   id: string;
   userId: string;
@@ -59,8 +63,8 @@ export function createSoloSessionController(repository: SoloSessionRepositoryPor
       let durationSeconds = 0;
       if (input.mode === 'COUNTDOWN') {
         const minutes = input.durationMinutes;
-        if (!Number.isInteger(minutes) || minutes === undefined || minutes < 5 || minutes > 180 || minutes % 5 !== 0) {
-          throw sessionStartError('invalid-duration', 'Countdown duration must be between 5 and 180 minutes in 5-minute steps.');
+        if (!Number.isInteger(minutes) || minutes === undefined || minutes < MIN_COUNTDOWN_DURATION_MINUTES || minutes > MAX_COUNTDOWN_DURATION_MINUTES || minutes % COUNTDOWN_DURATION_STEP_MINUTES !== 0) {
+          throw sessionStartError('invalid-duration', 'Countdown duration must be between 5 and 720 minutes in 5-minute steps.');
         }
         durationSeconds = minutes * 60;
       }

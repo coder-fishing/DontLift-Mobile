@@ -8,6 +8,7 @@ import {
   isGlassEffectAPIAvailable,
 } from "expo-glass-effect";
 import { ScreenId } from "../types";
+import { Colors } from "../constants/theme";
 
 interface BottomNavProps {
   currentScreen: ScreenId;
@@ -115,7 +116,7 @@ export function BottomNav({ currentScreen, onNavigate }: BottomNavProps) {
                   <Ionicons
                     name={active ? tab.activeIcon : tab.icon}
                     size={24}
-                    color={active ? "#2563EB" : "#64748B"}
+                    color={active ? Colors.light.primary : Colors.light.textSecondary}
                   />
                 </View>
 
@@ -160,7 +161,7 @@ const styles = StyleSheet.create({
   },
 
   fallbackBar: {
-    backgroundColor: "rgba(255,255,255,0.94)",
+    backgroundColor: "rgba(255,255,255,0.88)",
     borderColor: "rgba(255,255,255,0.85)",
   },
 
@@ -176,7 +177,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     borderWidth: 1,
     borderColor: "transparent",
-    gap: 2,
+    gap: 6,
   },
 
   iconSlot: {
@@ -187,7 +188,7 @@ const styles = StyleSheet.create({
   },
 
   activeTab: {
-    backgroundColor: "rgba(37,99,235,0.14)",
+    backgroundColor: "rgba(37,99,235,0.10)",
     borderColor: "rgba(37,99,235,0.12)",
   },
 
@@ -200,13 +201,13 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 14,
     fontWeight: "600",
-    color: "#64748B",
+    color: Colors.light.textSecondary,
     textAlign: "center",
     includeFontPadding: false,
   },
 
   activeLabel: {
-    color: "#2563EB",
+    color: Colors.light.primary,
     fontWeight: "800",
   },
 

@@ -44,7 +44,7 @@ DontLift is designed to solve phone distraction in focus and social contexts thr
 ## 3. Solo Focus Mode UX
 
 ### 3.1 Mode Selection
-- User selects **Countdown Timer** (presets: 25m Pomodoro Sprint, 45m Deep Work Flow, 60m Total Immersion, or Custom Stepper ±5m bounded 5m–180m) or **Open-ended Stopwatch**.
+- User selects **Countdown Timer** (presets: 25m Pomodoro Sprint, 45m Deep Work Flow, 60m Total Immersion, or a Custom Duration slider in 5m steps bounded from 5m to 720m) or **Open-ended Stopwatch**.
 - Tapping "Start Focus" creates a session row in local SQLite (`status = 'ACTIVE'`, `started_at = NOW()`) and starts sensor monitoring.
 
 ### 3.2 Phone-Down Detection & 3-Second Grace Period
