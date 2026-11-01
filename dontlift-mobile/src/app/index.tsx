@@ -1956,10 +1956,6 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     );
   };
 
-  const handleEndSoloSession = () => {
-    setCurrentScreen('02-solo-select');
-  };
-
   const soloSecondsLeft = activeSoloSession
     ? getSoloSessionTime(activeSoloSession, soloNow).displayedSeconds
     : 0;
@@ -2142,7 +2138,6 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
             violationDurationSeconds={foregroundDetection.violationDurationSeconds}
             detectionError={foregroundDetection.persistenceError}
             completionError={soloCompletionError}
-            onEndSession={handleEndSoloSession}
             onFinishSession={requestFinishSoloSession}
             onCancelSession={confirmCancelSoloSession}
             isCancelling={isCancellingSolo}
