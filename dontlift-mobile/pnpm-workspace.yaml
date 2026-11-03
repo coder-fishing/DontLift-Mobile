@@ -1,5 +1,6 @@
 nodeLinker: hoisted
 allowBuilds:
   '@firebase/util': false
+  '@parcel/watcher': false
   protobufjs: false
   unrs-resolver: false

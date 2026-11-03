@@ -48,7 +48,13 @@
         {
           "motionPermission": "DontLift uses motion data to check your accelerometer before starting a focus session."
         }
-      ]
+      ],
+      "expo-audio",
+      "expo-font",
+      "expo-image",
+      "expo-sqlite",
+      "expo-status-bar",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
