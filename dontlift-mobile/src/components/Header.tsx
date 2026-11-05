@@ -133,7 +133,7 @@ export function Header({ currentScreen, displayName, email, avatarUri, onNavigat
 }
 
 const styles = StyleSheet.create({
-  wrapper: { paddingHorizontal: 14, paddingTop: 6 },
+  wrapper: { position: 'relative', zIndex: 10, paddingHorizontal: 18, paddingTop: 6 },
   headerContainer: { position: 'relative', overflow: 'hidden', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 24, borderWidth: 1 },
   glassLayer: { ...StyleSheet.absoluteFill, borderRadius: 24 },
   nativeGlass: { backgroundColor: 'transparent', borderColor: 'rgba(255,255,255,0.48)' },

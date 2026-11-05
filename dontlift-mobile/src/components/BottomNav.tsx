@@ -4,8 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   GlassView,
-  isLiquidGlassAvailable,
-  isGlassEffectAPIAvailable,
+   isGlassEffectAPIAvailable,
 } from "expo-glass-effect";
 import { ScreenId } from "../types";
 import { Colors } from "../constants/theme";
@@ -70,14 +69,14 @@ const TABS = [
 export function BottomNav({ currentScreen, onNavigate }: BottomNavProps) {
   const insets = useSafeAreaInsets();
 
-  // Only check the native Liquid Glass API on iOS.
+  // Render native glass whenever the iOS runtime exposes UIGlassEffect.
   const useLiquidGlass =
     Platform.OS === "ios" &&
-    isLiquidGlassAvailable() &&
     isGlassEffectAPIAvailable();
 
   return (
     <View
+      pointerEvents="box-none"
       style={[styles.wrapper, { paddingBottom: Math.max(insets.bottom, 10) }]}
     >
       <View
@@ -90,7 +89,7 @@ export function BottomNav({ currentScreen, onNavigate }: BottomNavProps) {
           <GlassView
             pointerEvents="none"
             glassEffectStyle="regular"
-            style={StyleSheet.absoluteFill}
+            style={[StyleSheet.absoluteFill, { borderRadius: 28 }]}
           />
         )}
 
@@ -134,8 +133,15 @@ export function BottomNav({ currentScreen, onNavigate }: BottomNavProps) {
 
 const styles = StyleSheet.create({
   wrapper: {
-    paddingHorizontal: 10,
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 18,
     paddingTop: 8,
+    backgroundColor: "transparent",
+    borderTopWidth: 0,
+    elevation: 0,
   },
 
   bar: {
@@ -148,6 +154,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderWidth: 1,
     overflow: "hidden",
+    zIndex: 50,
     shadowColor: "#0F172A",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.12,
@@ -161,8 +168,8 @@ const styles = StyleSheet.create({
   },
 
   fallbackBar: {
-    backgroundColor: "rgba(255,255,255,0.88)",
-    borderColor: "rgba(255,255,255,0.85)",
+    backgroundColor: Colors.light.bottomNavSurface,
+    borderColor: Colors.light.bottomNavBorder,
   },
 
   tab: {

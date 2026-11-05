@@ -1,5 +1,6 @@
 import React from 'react';
-import { TouchableOpacity, Text, TouchableOpacityProps, StyleSheet, View } from 'react-native';
+import { TouchableOpacity, Text, type TouchableOpacityProps, StyleSheet, View } from 'react-native';
+import { Colors } from '../constants/theme';
 
 interface PrimaryButtonProps extends TouchableOpacityProps {
   title: string;
@@ -16,16 +17,14 @@ export function PrimaryButton({
   icon,
   variant = 'primary',
   style,
+  disabled,
+  accessibilityState,
   ...props
 }: PrimaryButtonProps) {
   const isSecondary = variant === 'secondary';
   const isDanger = variant === 'danger';
 
-  const buttonStyle = [
-    styles.button,
-    isSecondary ? styles.buttonSecondary : isDanger ? styles.buttonDanger : styles.buttonPrimary,
-    style,
-  ];
+  const variantStyle = isSecondary ? styles.buttonSecondary : isDanger ? styles.buttonDanger : styles.buttonPrimary;
 
   const textStyle = [
     styles.buttonText,
@@ -33,7 +32,19 @@ export function PrimaryButton({
   ];
 
   return (
-    <TouchableOpacity activeOpacity={0.8} style={buttonStyle} {...props}>
+    <TouchableOpacity
+      activeOpacity={0.82}
+      accessibilityRole="button"
+      accessibilityState={{ ...accessibilityState, disabled: Boolean(disabled) }}
+      disabled={disabled}
+      style={[
+        styles.button,
+        variantStyle,
+        disabled ? styles.buttonDisabled : null,
+        style,
+      ]}
+      {...props}
+    >
       {icon && <View style={styles.iconContainer}>{icon}</View>}
       <Text style={textStyle}>{title}</Text>
     </TouchableOpacity>
@@ -49,25 +60,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 20,
-    shadowColor: '#2563EB',
+    shadowColor: Colors.light.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 3,
   },
   buttonPrimary: {
-    backgroundColor: '#2563EB',
+    backgroundColor: Colors.light.primary,
   },
   buttonSecondary: {
-    backgroundColor: 'rgba(255, 255, 255, 0.65)',
-    borderColor: 'rgba(255, 255, 255, 0.9)',
+    backgroundColor: Colors.light.glassSurface,
+    borderColor: Colors.light.glassBorder,
     borderWidth: 1,
     shadowColor: '#000',
     shadowOpacity: 0.05,
   },
   buttonDanger: {
-    backgroundColor: '#DC2626',
-    shadowColor: '#DC2626',
+    backgroundColor: Colors.light.error,
+    shadowColor: Colors.light.error,
   },
   buttonText: {
     fontSize: 15,
@@ -77,11 +88,12 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   textSecondary: {
-    color: '#0F172A',
+    color: Colors.light.text,
   },
   textDanger: {
-    color: '#FFFFFF',
+    color: Colors.light.onPrimary,
   },
+  buttonDisabled: { opacity: 0.48, elevation: 0, shadowOpacity: 0 },
   iconContainer: {
     marginRight: 8,
   },

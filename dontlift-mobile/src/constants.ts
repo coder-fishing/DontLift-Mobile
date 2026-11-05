@@ -49,7 +49,7 @@ export const SCREEN_TITLES: Record<ScreenId, string> = {
   '02-solo-select': 'Solo Focus',
   '03-solo-timer': 'Solo Session Active',
   '04-solo-summary': 'Focus Summary',
-  '05-group-lobby': 'Group Room #8821',
+  '05-group-lobby': 'Group Lobby',
   '06-group-active': 'Group Session Active',
   '07-bill-allocation': 'Host Bill Split',
   '08-vietqr-settlement': 'VietQR Settlement',

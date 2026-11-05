@@ -1,8 +1,13 @@
 import React from 'react';
-import { ActivityIndicator, Share, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/theme';
 import { PrimaryButton } from '../components/PrimaryButton';
-import { RoomInvitationQr } from '../components/RoomInvitationQr';
+import { RoomInviteCard } from '../components/RoomInviteCard';
+import { RoomRoster } from '../components/RoomRoster';
+import { GroupHomeDashboard, type RecentSessionsState } from '../components/GroupHomeDashboard';
+import type { GroupHistoryEntry } from '../features/history/group-history-model';
+import type { GroupRoomRosterPreview } from '../features/history/group-history-repository';
 import type { RoomLobbyState } from '../features/rooms/room-listener';
 
 type LobbyRoom = { roomId: string; pin: string; invitation: string; hostUid: string; hostDisplayName?: string; createdAt: string | null; localCacheSaved: boolean };
@@ -20,100 +25,152 @@ interface GroupLobbyScreenProps {
   startError?: string;
   onStartRoom?: () => void;
   onOpenHistory?: () => void;
+  onLeaveRoom?: () => void;
+  isLeaving?: boolean;
+  leaveError?: string;
+  onRemoveMember?: (uid: string, displayName: string) => void;
+  removingMemberUid?: string;
+  removeError?: string;
+  recentSessions?: GroupHistoryEntry[];
+  recentMemberPreviews?: Record<string, GroupRoomRosterPreview | null>;
+  recentSessionsState?: RecentSessionsState;
+  onOpenRecentSession?: (roomId: string) => void;
+  onRetryRecentSessions?: () => void;
 }
 
-export function GroupLobbyScreen({ room, isCreating, errorMessage, onCreateRoom, onJoinRoom, onCancelCreate, lobbyState, isHost, isStarting, startError, onStartRoom, onOpenHistory }: GroupLobbyScreenProps) {
-  // Snapshot của phòng trước không được lóe lên giữa lần đổi room và effect cleanup.
+export function GroupLobbyScreen({ room, isCreating, errorMessage, onCreateRoom, onJoinRoom, onCancelCreate, lobbyState, isHost, isStarting, startError, onStartRoom, onOpenHistory, onLeaveRoom, isLeaving, leaveError, onRemoveMember, removingMemberUid, removeError, recentSessions = [], recentMemberPreviews = {}, recentSessionsState = 'loading', onOpenRecentSession, onRetryRecentSessions }: GroupLobbyScreenProps) {
   const visibleLobbyState = lobbyState?.snapshot && lobbyState.snapshot.roomId !== room?.roomId ? null : lobbyState;
+  const busy = Boolean(isLeaving || isStarting || removingMemberUid);
+  const canLeaveRoom = Boolean(onLeaveRoom && visibleLobbyState?.kind === 'live' && visibleLobbyState.snapshot.status === 'WAITING');
+
   if (!room) {
     return (
-      <View style={styles.container}>
-        <View style={styles.card}>
-          <Text style={styles.eyebrow}>GROUP ROOM</Text>
-          {onOpenHistory ? <PrimaryButton title="Group history" variant="secondary" onPress={onOpenHistory} /> : null}
-          <Text style={styles.title}>Tạo phòng tập trung</Text>
-          <Text style={styles.body}>Tạo phòng đang chờ. PIN và mã QR chỉ xuất hiện sau khi lưu thành công trên Firebase.</Text>
-          {errorMessage ? <Text accessibilityRole="alert" style={styles.error}>{errorMessage}</Text> : null}
-          {isCreating ? (
-            <>
-              <View style={styles.loading}>
-                <ActivityIndicator color={Colors.light.primary} />
-                <Text style={styles.body}>Đang tạo phòng…</Text>
-              </View>
-              <PrimaryButton title="Hủy tạo, chuyển sang tham gia" variant="secondary" onPress={onCancelCreate} />
-            </>
-          ) : (
-            <>
-              <PrimaryButton title="Create Room" onPress={onCreateRoom} />
-              <PrimaryButton title="Tham gia bằng PIN" variant="secondary" onPress={onJoinRoom} />
-            </>
-          )}
-        </View>
-      </View>
+      <GroupHomeDashboard
+        isCreating={isCreating}
+        errorMessage={errorMessage}
+        recentSessions={recentSessions}
+        recentMemberPreviews={recentMemberPreviews}
+        recentSessionsState={recentSessionsState}
+        onCreateRoom={onCreateRoom}
+        onJoinRoom={onJoinRoom}
+        onCancelCreate={onCancelCreate}
+        onOpenHistory={onOpenHistory}
+        onOpenRecentSession={onOpenRecentSession}
+        onRetryRecentSessions={onRetryRecentSessions}
+      />
     );
   }
 
   return (
     <View style={styles.container}>
-      <View style={styles.card}>
-        <Text style={styles.eyebrow}>ROOM ĐANG CHỜ</Text>
-        {onOpenHistory ? <PrimaryButton title="Group history" variant="secondary" onPress={onOpenHistory} /> : null}
-        <Text style={styles.title}>Phòng đã sẵn sàng</Text>
-        <Text style={styles.body}>Chia sẻ mã mời để người khác tham gia. Danh sách bên dưới được cập nhật trực tiếp từ Firebase.</Text>
-        <View style={styles.qrCard} accessibilityLabel="Mã QR lời mời phòng">
-          <RoomInvitationQr value={room.invitation} size={200} />
+      <View style={styles.intro}>
+        <Text style={styles.title}>Your room is ready</Text>
+        <Text style={styles.body}>Share the PIN or QR code to invite friends.</Text>
+      </View>
+
+      <RoomInviteCard pin={room.pin} invitation={room.invitation} />
+
+      {!visibleLobbyState || visibleLobbyState.kind === 'loading' ? (
+        <View style={styles.loadingState}>
+          <ActivityIndicator color={Colors.light.primary} />
+          <Text style={styles.body}>Loading members…</Text>
         </View>
-        <Text style={styles.pinLabel}>PIN PHÒNG</Text>
-        <Text selectable style={styles.pin}>{room.pin}</Text>
-        <Text selectable style={styles.invitation}>{room.invitation}</Text>
-        {!visibleLobbyState || visibleLobbyState.kind === 'loading' ? <Text style={styles.body}>Đang tải danh sách thành viên…</Text> : null}
-        {visibleLobbyState?.kind === 'cached' ? <Text style={styles.body}>Đang hiển thị dữ liệu đã lưu trên máy; chờ kết nối Firebase để cập nhật trực tiếp.</Text> : null}
-        {visibleLobbyState?.kind === 'error' ? <Text accessibilityRole="alert" style={styles.error}>Mất kết nối tới danh sách realtime. Đang giữ dữ liệu gần nhất.</Text> : null}
-        {visibleLobbyState?.snapshot ? (
-          <View style={styles.roster} accessibilityLabel="Danh sách thành viên trong phòng">
-            <Text style={styles.pinLabel}>{visibleLobbyState.snapshot.status === 'ACTIVE' ? 'PHÒNG ĐÃ BẮT ĐẦU' : 'ĐANG CHỜ'} · {visibleLobbyState.snapshot.participantCount} NGƯỜI</Text>
-            {visibleLobbyState.snapshot.members.map(member => (
-              <Text key={member.uid} style={styles.member}>{member.displayName}{member.uid === room.hostUid ? ' · Host' : ''}</Text>
-            ))}
+      ) : null}
+      {visibleLobbyState?.kind === 'cached' ? <Text style={styles.stateMessage}>Showing saved members. Live updates resume when connected.</Text> : null}
+      {visibleLobbyState?.kind === 'error' ? <Text accessibilityRole="alert" style={styles.error}>Could not update members. Showing the latest saved list.</Text> : null}
+      {visibleLobbyState?.snapshot ? (
+        <RoomRoster
+          members={visibleLobbyState.snapshot.members}
+          participantCount={visibleLobbyState.snapshot.participantCount}
+          isActive={visibleLobbyState.snapshot.status === 'ACTIVE'}
+          hostUid={visibleLobbyState.snapshot.hostUid}
+          isLive={visibleLobbyState.kind === 'live'}
+          onRemoveMember={isHost && !isLeaving && !isStarting && visibleLobbyState.kind === 'live'
+            && visibleLobbyState.snapshot.status === 'WAITING' ? onRemoveMember : undefined}
+          removingMemberUid={removingMemberUid}
+        />
+      ) : null}
+
+      {isHost && onStartRoom && visibleLobbyState?.kind === 'live' && visibleLobbyState.snapshot.status === 'WAITING' ? (
+        <View style={styles.startAction}>
+          {startError ? <Text accessibilityRole="alert" style={styles.error}>{startError}</Text> : null}
+          <PrimaryButton
+            title={isStarting ? 'Starting…' : 'Start Session'}
+            icon={isStarting ? <ActivityIndicator color={Colors.light.onPrimary} /> : <Ionicons name="play" size={17} color={Colors.light.onPrimary} />}
+            onPress={onStartRoom}
+            disabled={busy}
+          />
+        </View>
+      ) : null}
+      {!isHost && visibleLobbyState?.kind === 'live' && visibleLobbyState.snapshot.status === 'WAITING' ? (
+        <View style={styles.waitingNotice}>
+          <Ionicons name="hourglass-outline" size={18} color={Colors.light.primary} />
+          <Text style={styles.waitingText}>Waiting for the Host to start the session</Text>
+        </View>
+      ) : null}
+
+      {!room.localCacheSaved && room.createdAt === null ? <Text accessibilityRole="alert" style={styles.stateMessage}>Room created. Finishing the save on this device.</Text> : null}
+      {!room.localCacheSaved && room.createdAt !== null ? <Text accessibilityRole="alert" style={styles.error}>Room created, but could not save it on this device.</Text> : null}
+      {leaveError ? <Text accessibilityRole="alert" style={styles.error}>{leaveError}</Text> : null}
+      {removeError ? <Text accessibilityRole="alert" style={styles.error}>{removeError}</Text> : null}
+
+      <View style={styles.footerActions}>
+        <View style={[styles.footerColumn, !canLeaveRoom ? styles.footerColumnFull : null]}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Share Invite"
+            accessibilityState={{ disabled: Boolean(isLeaving) }}
+            style={({ pressed }) => [styles.footerButton, styles.shareButton, pressed ? styles.pressed : null]}
+            disabled={Boolean(isLeaving)}
+            onPress={() => { void Share.share({ message: `Join my DontLift room ${room.pin}: ${room.invitation}` }); }}
+          >
+            <View pointerEvents="none" style={styles.footerContent}>
+              <Ionicons name="share-outline" size={19} color={Colors.light.primary} />
+              <Text numberOfLines={1} style={styles.shareText}>Share Invite</Text>
+            </View>
+          </Pressable>
+        </View>
+        {canLeaveRoom ? (
+          <View style={styles.footerColumn}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Leave Room"
+              accessibilityState={{ disabled: busy, busy: Boolean(isLeaving) }}
+              disabled={busy}
+              onPress={onLeaveRoom}
+              style={({ pressed }) => [styles.footerButton, styles.leaveButton, pressed ? styles.pressed : null]}
+            >
+              <View pointerEvents="none" style={styles.footerContent}>
+                <Ionicons name="exit-outline" size={19} color={Colors.light.error} />
+                <Text numberOfLines={1} style={styles.leaveText}>{isLeaving ? 'Leaving…' : 'Leave Room'}</Text>
+              </View>
+            </Pressable>
           </View>
         ) : null}
-        {isHost && visibleLobbyState?.kind === 'live' && visibleLobbyState.snapshot.status === 'WAITING' ? (
-          <>
-            {startError ? <Text accessibilityRole="alert" style={styles.error}>{startError}</Text> : null}
-            <PrimaryButton title={isStarting ? 'Đang bắt đầu…' : 'Bắt đầu phòng'} onPress={onStartRoom ?? (() => {})} disabled={isStarting} />
-          </>
-        ) : null}
-        {!room.localCacheSaved && room.createdAt === null ? (
-          <Text accessibilityRole="alert" style={styles.body}>Phòng đã lưu trên Firebase. Thời gian máy chủ đang chờ xác nhận nên chưa lưu cache cục bộ.</Text>
-        ) : null}
-        {!room.localCacheSaved && room.createdAt !== null ? (
-          <Text accessibilityRole="alert" style={styles.error}>Phòng đã lưu trên Firebase, nhưng cache trên thiết bị chưa ghi được.</Text>
-        ) : null}
-        <PrimaryButton
-          title="Chia sẻ lời mời"
-          onPress={() => { void Share.share({ message: `Tham gia phòng DontLift ${room.pin}: ${room.invitation}` }); }}
-        />
-        <PrimaryButton title="Tham gia phòng khác" variant="secondary" onPress={onJoinRoom} />
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { gap: 14 },
-  card: {
-    alignItems: 'center', gap: 14, padding: 20, borderRadius: 24,
-    backgroundColor: Colors.light.glassSurface, borderColor: Colors.light.glassBorder, borderWidth: 1,
-  },
-  eyebrow: { color: Colors.light.textSecondary, fontSize: 11, fontWeight: '800', letterSpacing: 1 },
-  title: { color: Colors.light.text, fontSize: 22, fontWeight: '800', textAlign: 'center' },
-  body: { color: Colors.light.textSecondary, fontSize: 14, lineHeight: 20, textAlign: 'center' },
-  error: { color: Colors.light.error, fontSize: 13, textAlign: 'center' },
-  loading: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  qrCard: { backgroundColor: Colors.light.qrBackground, padding: 14, borderRadius: 16 },
-  pinLabel: { color: Colors.light.textSecondary, fontSize: 11, fontWeight: '800' },
-  pin: { color: Colors.light.text, fontSize: 30, fontWeight: '900', letterSpacing: 5, fontVariant: ['tabular-nums'] },
-  invitation: { color: Colors.light.primary, fontSize: 13, textAlign: 'center' },
-  roster: { width: '100%', gap: 8, padding: 14, borderRadius: 16, backgroundColor: Colors.light.backgroundElement },
-  member: { color: Colors.light.text, fontSize: 14, textAlign: 'center' },
+  container: { gap: 16 },
+  intro: { alignItems: 'center', gap: 6, paddingTop: 6, paddingBottom: 2 },
+  title: { color: Colors.light.text, fontSize: 24, lineHeight: 30, fontWeight: '800', textAlign: 'center', letterSpacing: -0.4 },
+  body: { color: Colors.light.roomSecondaryText, fontSize: 14, lineHeight: 20, textAlign: 'center' },
+  loadingState: { minHeight: 60, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  stateMessage: { color: Colors.light.roomSecondaryText, fontSize: 12, lineHeight: 17, textAlign: 'center' },
+  error: { color: Colors.light.error, fontSize: 13, lineHeight: 18, textAlign: 'center' },
+  startAction: { gap: 8 },
+  waitingNotice: { minHeight: 50, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, paddingHorizontal: 14, borderRadius: 17, backgroundColor: Colors.light.roomUtilitySurface, borderWidth: 1, borderColor: Colors.light.glassBorder },
+  waitingText: { color: Colors.light.roomSecondaryText, fontSize: 13, fontWeight: '600', flexShrink: 1 },
+  footerActions: { width: '100%', flexDirection: 'row', alignItems: 'stretch', justifyContent: 'space-between', gap: 12, paddingTop: 2 },
+  footerColumn: { flex: 1, minWidth: 0 },
+  footerColumnFull: { flexBasis: '100%' },
+  footerButton: { width: '100%', minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 99, borderWidth: 1 },
+  footerContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  shareButton: { backgroundColor: Colors.light.roomShareSurface, borderColor: Colors.light.roomShareBorder },
+  leaveButton: { backgroundColor: Colors.light.roomLeaveSurface, borderColor: Colors.light.roomLeaveBorder },
+  shareText: { color: Colors.light.primary, fontSize: 13, fontWeight: '700' },
+  leaveText: { color: Colors.light.error, fontSize: 13, fontWeight: '700' },
+  pressed: { opacity: 0.74 },
 });
