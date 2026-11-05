@@ -91,29 +91,29 @@ function mapRoomStartError(error: unknown): RoomStartError {
 }
 
 export function roomStartErrorMessage(error: unknown): string {
-  if (!(error instanceof RoomStartError)) return 'Không thể bắt đầu phòng lúc này. Hãy thử lại.';
+  if (!(error instanceof RoomStartError)) return 'Could not start the session. Please try again.';
   switch (error.code) {
-    case 'unauthenticated': return 'Phiên đăng nhập không còn hiệu lực. Hãy đăng nhập lại rồi thử lại.';
-    case 'invalid-argument': return 'Yêu cầu bắt đầu phòng không hợp lệ.';
-    case 'not-found': return 'Không tìm thấy phòng này.';
-    case 'failed-precondition': return 'Phòng đã được bắt đầu hoặc không còn ở trạng thái chờ.';
-    case 'unavailable': return 'Không có kết nối tới Firebase. Phòng chưa được bắt đầu; hãy kết nối rồi thử lại.';
-    case 'rejected': return 'Firebase từ chối bắt đầu phòng. Hãy xác nhận bạn vẫn là Host của phòng đang chờ.';
-    default: return 'Không thể bắt đầu phòng lúc này. Hãy thử lại.';
+    case 'unauthenticated': return 'Your session has expired. Sign in again and retry.';
+    case 'invalid-argument': return 'Invalid session start request.';
+    case 'not-found': return 'Room not found.';
+    case 'failed-precondition': return 'This room has already started or is no longer waiting.';
+    case 'unavailable': return 'No connection. The session has not started. Reconnect and retry.';
+    case 'rejected': return 'Could not start the session. Check that you are still the host of this waiting room.';
+    default: return 'Could not start the session. Please try again.';
   }
 }
 
 export function roomJoinErrorMessage(error: unknown): string {
-  if (!(error instanceof RoomJoinError)) return 'Không thể tham gia phòng lúc này. Hãy thử lại.';
+  if (!(error instanceof RoomJoinError)) return 'Could not join the room. Please try again.';
   switch (error.code) {
-    case 'unauthenticated': return 'Phiên đăng nhập không còn hiệu lực. Hãy đăng nhập lại rồi thử lại.';
-    case 'invalid-argument': return 'Mã phòng không hợp lệ. Hãy kiểm tra mã và thử lại.';
-    case 'not-found': return 'Không tìm thấy phòng đang chờ với mã này. Hãy kiểm tra mã và thử lại.';
-    case 'failed-precondition': return 'Phòng này không còn nhận người tham gia.';
-    case 'unavailable': return 'Không có kết nối tới Firebase. Mã vẫn được giữ để bạn thử lại.';
-    case 'rejected': return 'Không thể tham gia phòng. Phòng có thể đã đủ người hoặc không còn ở trạng thái chờ.';
-    case 'already-exists': return 'Yêu cầu này đã được dùng với mã khác. Hãy gửi lại mã phòng.';
-    default: return 'Không thể tham gia phòng lúc này. Hãy thử lại.';
+    case 'unauthenticated': return 'Your session has expired. Sign in again and retry.';
+    case 'invalid-argument': return 'Invalid room PIN. Check the PIN and try again.';
+    case 'not-found': return 'No waiting room found with this PIN. Check the PIN and try again.';
+    case 'failed-precondition': return 'This room is no longer accepting members.';
+    case 'unavailable': return 'No connection. Your PIN is saved so you can retry.';
+    case 'rejected': return 'Could not join. The room may be full or no longer waiting.';
+    case 'already-exists': return 'This request was used with another PIN. Enter the room PIN again.';
+    default: return 'Could not join the room. Please try again.';
   }
 }
 

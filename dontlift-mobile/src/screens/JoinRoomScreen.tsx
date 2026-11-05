@@ -68,11 +68,11 @@ export function JoinRoomScreen({
         const permission = await requestCameraPermission();
         if (!permission.granted) {
           setCameraDeniedPermanently(!permission.canAskAgain);
-          setScanError('Chưa có quyền camera. Bạn vẫn có thể nhập PIN để tham gia.');
+          setScanError('Camera access is required to scan. You can still join with a PIN.');
           return;
         }
       } catch {
-        setScanError('Không kiểm tra được quyền camera. Bạn vẫn có thể nhập PIN để tham gia.');
+        setScanError('Could not check camera access. You can still join with a PIN.');
         return;
       }
     }
@@ -88,7 +88,7 @@ export function JoinRoomScreen({
 
     const scannedPin = scanned.type === 'qr' ? parseRoomInvitation(scanned.data) : null;
     if (!scannedPin) {
-      setScanError('Mã QR này không phải lời mời vào phòng hợp lệ.');
+      setScanError('This QR code is not a valid room invitation.');
       return;
     }
 
@@ -111,7 +111,7 @@ export function JoinRoomScreen({
       <View style={styles.topRow}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={isScannerOpen ? 'Quay về nhập PIN' : 'Quay lại'}
+          accessibilityLabel={isScannerOpen ? 'Back to PIN entry' : 'Go back'}
           disabled={isJoining}
           onPress={() => {
             if (isScannerOpen) {
@@ -137,17 +137,17 @@ export function JoinRoomScreen({
       <View style={styles.titleSection}>
         <Text style={[styles.sectionTitle, { color: colors.text }]}>
           {result
-            ? 'Đã tham gia phòng'
+            ? 'Room joined'
             : isScannerOpen
-              ? 'Quét mã QR phòng'
-              : 'Nhập mã PIN phòng'}
+              ? 'Scan a Room QR Code'
+              : 'Enter Room PIN'}
         </Text>
         <Text style={[styles.sectionDesc, { color: colors.textSecondary }]}>
           {result
-            ? 'Bạn đã vào phòng đang chờ. Mã PIN được lưu trên thiết bị để mở lại phòng.'
+            ? 'You joined the lobby. The PIN is saved on this device so you can return.'
             : isScannerOpen
-              ? 'Canh mã QR trong khung để quét lời mời vào phòng.'
-              : 'Nhập mã trên lời mời để tham gia cùng nhóm.'}
+              ? 'Align the invitation QR code within the frame.'
+              : 'Enter the invitation PIN to join your group.'}
         </Text>
       </View>
 
@@ -174,7 +174,7 @@ export function JoinRoomScreen({
               style={styles.modeIcon}
             />
             <Text style={[styles.modeText, !isScannerOpen && styles.modeTextActive]}>
-              Mã PIN
+              PIN
             </Text>
           </Pressable>
 
@@ -194,7 +194,7 @@ export function JoinRoomScreen({
               style={styles.modeIcon}
             />
             <Text style={[styles.modeText, isScannerOpen && styles.modeTextActive]}>
-              Quét mã QR
+              Scan QR Code
             </Text>
           </Pressable>
         </View>
@@ -206,24 +206,24 @@ export function JoinRoomScreen({
         <View style={styles.resultCard}>
           <View style={styles.successBadge}>
             <Ionicons name="checkmark-circle" size={16} color={colors.success} />
-            <Text style={styles.successBadgeText}>PHÒNG ĐÃ SẴN SÀNG</Text>
+            <Text style={styles.successBadgeText}>ROOM READY</Text>
           </View>
 
           <View style={styles.pinDisplayBox}>
-            <Text style={styles.pinBoxLabel}>MÃ PIN PHÒNG</Text>
+            <Text style={styles.pinBoxLabel}>ROOM PIN</Text>
             <Text selectable style={styles.pinValue}>
               {formattedPinResult}
             </Text>
             <View style={styles.rosterPill}>
               <Ionicons name="people" size={15} color={colors.primary} />
               <Text style={styles.rosterText}>
-                Hiện có {result.participantCount} người trong phòng
+                Members: {result.participantCount}
               </Text>
             </View>
           </View>
 
           <PrimaryButton
-            title="Mở sảnh chờ"
+            title="Open Lobby"
             icon={<Ionicons name="enter-outline" size={18} color="#FFFFFF" />}
             onPress={onOpenLobby ?? onCancel}
             style={styles.startCallToAction}
@@ -233,7 +233,7 @@ export function JoinRoomScreen({
             <View style={styles.warningBanner} accessibilityRole="alert">
               <Ionicons name="information-circle-outline" size={16} color={colors.textSecondary} />
               <Text style={styles.warningBannerText}>
-                Đã vào phòng nhưng chưa lưu được trên thiết bị. Bạn có thể nhập lại mã này để thử lại.
+                You joined, but the room could not be saved on this device. Enter the PIN again to retry.
               </Text>
             </View>
           ) : null}
@@ -246,14 +246,14 @@ export function JoinRoomScreen({
             onMountError={() => {
               scannedRef.current = true;
               setScannerOpen(false);
-              setScanError('Không mở được camera. Bạn vẫn có thể nhập PIN để tham gia.');
+              setScanError('Could not open the camera. You can still join with a PIN.');
             }}
           />
 
           <PrimaryButton
-            title="Đóng máy quét · Nhập mã tay"
+            title="Close Scanner · Enter PIN"
             variant="secondary"
-            icon={<Ionicons name="keypad-outline" size={18} color={colors.primary} />}
+            // icon={<Ionicons name="keypad-outline" size={18} color={colors.primary} />}
             onPress={() => {
               scannedRef.current = true;
               setScannerOpen(false);
@@ -266,12 +266,12 @@ export function JoinRoomScreen({
           <View style={styles.cardHeaderRow}>
             <View style={styles.cardHeaderLeft}>
               <Ionicons name="lock-closed-outline" size={15} color={colors.primary} />
-              <Text style={styles.cardHeaderTitle}>MÃ PHÒNG CHỜ</Text>
+              <Text style={styles.cardHeaderTitle}>ROOM PIN</Text>
             </View>
             {pin.length > 0 && !isJoining ? (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Xóa mã PIN đã nhập"
+                accessibilityLabel="Clear entered PIN"
                 onPress={() => {
                   setPin('');
                   textInputRef.current?.focus();
@@ -279,7 +279,7 @@ export function JoinRoomScreen({
                 style={({ pressed }) => [styles.clearButton, pressed && styles.clearButtonPressed]}
               >
                 <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
-                <Text style={styles.clearButtonText}>Xóa</Text>
+                <Text style={styles.clearButtonText}>Clear</Text>
               </Pressable>
             ) : null}
           </View>
@@ -343,14 +343,14 @@ export function JoinRoomScreen({
             {/* Native TextInput overlayed for touch & keyboard accessibility */}
             <TextInput
               ref={textInputRef}
-              accessibilityLabel="Mã PIN phòng"
-              accessibilityHint="Nhập mã gồm 8 số. Mã 4 số cũ vẫn được chấp nhận."
+              accessibilityLabel="Room PIN"
+              accessibilityHint="Enter an 8-digit PIN. Older 4-digit PINs are also accepted."
               autoComplete="off"
               autoCorrect={false}
               keyboardType="number-pad"
               maxLength={8}
               onChangeText={(value) => setPin(value.replace(/\D/g, '').slice(0, 8))}
-              placeholder="Nhập mã PIN"
+              placeholder="Enter PIN"
               placeholderTextColor="transparent"
               returnKeyType="done"
               style={styles.realHiddenInput}
@@ -369,18 +369,18 @@ export function JoinRoomScreen({
             {pin.length === 8 ? (
               <View style={styles.statusBadgeSuccess}>
                 <Ionicons name="checkmark-circle" size={14} color={colors.success} />
-                <Text style={styles.statusTextSuccess}>Mã 8 số chuẩn · Sẵn sàng</Text>
+                <Text style={styles.statusTextSuccess}>8-digit PIN · Ready</Text>
               </View>
             ) : pin.length === 4 ? (
               <View style={styles.statusBadgeInfo}>
                 <Ionicons name="checkmark-circle" size={14} color={colors.primary} />
-                <Text style={styles.statusTextInfo}>Mã 4 số cũ · Sẵn sàng</Text>
+                <Text style={styles.statusTextInfo}>Legacy 4-digit PIN · Ready</Text>
               </View>
             ) : pin.length > 0 ? (
-              <Text style={styles.counterText}>Đã nhập {pin.length}/8 chữ số</Text>
+              <Text style={styles.counterText}>{pin.length}/8 digits entered</Text>
             ) : (
               <Text style={styles.hintSubtext}>
-                Hỗ trợ mã 8 số (hoặc 4 số cũ) từ chủ phòng
+                Use the host’s 8-digit PIN or an older 4-digit PIN
               </Text>
             )}
           </View>
@@ -389,11 +389,11 @@ export function JoinRoomScreen({
           {isJoining ? (
             <View style={[styles.loadingBox, styles.startCallToAction]}>
               <ActivityIndicator color="#FFFFFF" size="small" />
-              <Text style={styles.loadingButtonText}>Đang kiểm tra mã…</Text>
+              <Text style={styles.loadingButtonText}>Checking PIN…</Text>
             </View>
           ) : (
             <PrimaryButton
-              title="Tham gia phòng"
+              title="Join Room"
               disabled={!isPinValid}
               onPress={() => onJoin(pin)}
               icon={<Ionicons name="arrow-forward" size={18} color="#FFFFFF" />}
@@ -404,29 +404,20 @@ export function JoinRoomScreen({
           {/* Divider */}
           <View style={styles.divider}>
             <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>HOẶC</Text>
+            {/* <Text style={styles.dividerText}>OR</Text> */}
             <View style={styles.dividerLine} />
           </View>
 
-          {/* Secondary Action: Quét mã QR */}
-          <PrimaryButton
-            title="Quét mã QR"
-            variant="secondary"
-            icon={<Ionicons name="qr-code-outline" size={18} color={colors.primary} />}
-            onPress={() => {
-              void openScanner();
-            }}
-            disabled={isJoining}
-          />
+
 
           {cameraDeniedPermanently ? (
             <PrimaryButton
-              title="Mở cài đặt quyền camera"
+              title="Open Camera Settings"
               variant="secondary"
               icon={<Ionicons name="settings-outline" size={18} color={colors.text} />}
               onPress={() => {
                 void Linking.openSettings().catch(() =>
-                  setScanError('Không mở được cài đặt. Bạn vẫn có thể nhập PIN để tham gia.')
+                  setScanError('Could not open settings. You can still join with a PIN.')
                 );
               }}
               disabled={isJoining}
@@ -453,7 +444,7 @@ export function JoinRoomScreen({
       {/* Subtle Footer Hint */}
       {!isScannerOpen && !result ? (
         <Text style={styles.footerHint}>
-          Mã PIN do chủ phòng cung cấp. Hỗ trợ mã 8 số và mã 4 số cũ.
+          Ask the host for the PIN. Both 8-digit and older 4-digit PINs are accepted.
         </Text>
       ) : null}
     </View>
