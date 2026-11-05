@@ -711,6 +711,45 @@ service cloud.firestore {
         && hasRoomJoinLinks(data.roomId, uid, data.pin, requestId);
     }
 
+    // ADR-026: an atomic, online-only departure from a WAITING room.
+    function validLobbyLeave(roomId) {
+      let before = get(roomPath(roomId)).data;
+      let after = getAfter(roomPath(roomId)).data;
+      let actorPath = hostMemberPath(roomId, request.auth.uid);
+      return signedIn() && before.status == 'WAITING'
+        && exists(actorPath) && get(actorPath).data.status == 'ACTIVE' && !existsAfter(actorPath)
+        && after.diff(before).affectedKeys().hasOnly(['hostId', 'participantCount', 'updatedAt', 'lastLeaveUid', 'status', 'endedAt'])
+        && after.lastLeaveUid == request.auth.uid && after.updatedAt == request.time
+        && after.participantCount is int && after.participantCount >= 0
+        && after.participantCount == before.participantCount - 1
+        && (before.hostId == request.auth.uid
+          ? (get(actorPath).data.role == 'HOST' && (before.participantCount == 1
+            ? (after.hostId == before.hostId && after.status == 'CANCELLED' && after.endedAt == request.time)
+            : (after.hostId != before.hostId && after.status == 'WAITING' && after.endedAt == before.endedAt
+              && exists(hostMemberPath(roomId, after.hostId))
+              && get(hostMemberPath(roomId, after.hostId)).data.role == 'MEMBER'
+              && get(hostMemberPath(roomId, after.hostId)).data.status == 'ACTIVE'
+              && getAfter(hostMemberPath(roomId, after.hostId)).data.role == 'HOST'
+              && getAfter(hostMemberPath(roomId, after.hostId)).data.diff(get(hostMemberPath(roomId, after.hostId)).data).affectedKeys().hasOnly(['role']))))
+          : (before.participantCount > 1 && get(actorPath).data.role == 'MEMBER' && after.hostId == before.hostId
+            && after.status == 'WAITING' && after.endedAt == before.endedAt));
+    }
+
+    function validLobbyKick(roomId) {
+      let before = get(roomPath(roomId)).data;
+      let after = getAfter(roomPath(roomId)).data;
+      let hostPath = hostMemberPath(roomId, request.auth.uid);
+      let target = hostMemberPath(roomId, after.lastKickUid);
+      return signedIn() && before.status == 'WAITING' && before.hostId == request.auth.uid
+        && exists(hostPath) && get(hostPath).data.role == 'HOST' && get(hostPath).data.status == 'ACTIVE'
+        && after.diff(before).affectedKeys().hasOnly(['participantCount', 'lastKickUid', 'updatedAt'])
+        && after.lastKickUid is string && after.lastKickUid != request.auth.uid
+        && before.participantCount > 1 && after.participantCount is int
+        && after.participantCount == before.participantCount - 1 && after.updatedAt == request.time
+        && exists(target) && get(target).data.role == 'MEMBER' && get(target).data.status == 'ACTIVE'
+        && !existsAfter(target);
+    }
+
     function canReadRoom(roomId) {
       return signedIn() && (
         exists(hostMemberPath(roomId, request.auth.uid))
@@ -1588,7 +1627,9 @@ service cloud.firestore {
           && getAfter(terminationBallotPath(roomId, request.auth.uid)).data.choice == 'YES'
           && (!exists(terminationBallotPath(roomId, request.auth.uid))
             || get(terminationBallotPath(roomId, request.auth.uid)).data.voteId != get(terminationVotePath(roomId)).data.voteId)
-        ) || validHostHeartbeat(roomId)
+        ) || validLobbyLeave(roomId)
+        || validLobbyKick(roomId)
+        || validHostHeartbeat(roomId)
         || validStaleRoomAbort(roomId)
         || validEarlyExitRoomUpdate(roomId)
         || validRoomCompletion(roomId)
@@ -1637,8 +1678,16 @@ service cloud.firestore {
           validGroupViolationMemberUpdate(roomId, memberUid)
           || validMemberSyncAcknowledgment(roomId, memberUid)
           || validEarlyExitMemberApproval(roomId, memberUid)
+          || (validLobbyLeave(roomId)
+            && get(roomPath(roomId)).data.hostId == request.auth.uid
+            && getAfter(roomPath(roomId)).data.hostId == memberUid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role'])
+            && resource.data.role == 'MEMBER' && request.resource.data.role == 'HOST')
         );
-        allow delete: if false;
+        allow delete: if signedIn() && (
+          (memberUid == request.auth.uid && validLobbyLeave(roomId))
+          || (getAfter(roomPath(roomId)).data.get('lastKickUid', '') == memberUid && validLobbyKick(roomId))
+        );
       }
 
       match /earlyExitRequests/{memberUid} {

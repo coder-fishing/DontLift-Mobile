@@ -21,6 +21,9 @@ When documents conflict, use this precedence:
 
 Current architectural overrides:
 
+- ADR-026 permits the exact Rules-checked WAITING lobby departure transaction: self membership deletion, count decrement, eligible Host transfer, or last-Host cancellation. Active-session exits retain their existing contracts.
+- ADR-027 permits the exact Host-only WAITING Member-removal transaction: target membership deletion linked to count decrement and lastKickUid. This does not authorize active-session removal or permanent bans.
+
 - ADR-025 supersedes ADR-007 activation/checksum: one expiring Premium entitlement bought online through payOS and an external Express API. Firebase stays Spark. Server rights require premiumExpiresAt later than request.time; isPremium alone never grants access. No client entitlement writes or secrets in mobile config.
 
 - ADR-010 supersedes the native runtime: Firebase JS SDK owns Auth persistence through its AsyncStorage adapter in Expo Go. Do not manually copy ID/refresh tokens into app tables or implement token refresh. Profile bootstrap is create-only through Firestore Rules; authoritative commands remain server-owned except exact Spark transactions approved by ADR-011 through ADR-018 and ADR-020 through ADR-024.

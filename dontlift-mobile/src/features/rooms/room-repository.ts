@@ -398,9 +398,11 @@ export function createRoomRepository(dependencies: RoomCreateDependencies) {
             }
             const roomSnapshot = await transaction.get(doc(dependencies.firestore, 'rooms', saved.roomId));
             if (!roomSnapshot.exists()) throw new RoomJoinError('not-found');
+            const membership = await transaction.get(doc(dependencies.firestore, 'rooms', saved.roomId, 'members', uid));
+            if (!membership.exists()) throw new RoomJoinError('failed-precondition');
             return {
               roomId: saved.roomId,
-              hostUid: saved.hostId,
+              hostUid: String(roomSnapshot.data().hostId),
               participantCount: Number(roomSnapshot.data().participantCount),
               alreadyMember: true,
             };

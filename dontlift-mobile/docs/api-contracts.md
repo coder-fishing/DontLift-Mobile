@@ -420,3 +420,9 @@ Both client and Function trim and validate `displayName`. The Function is author
 - Security tests verify that direct writes cannot reproduce any transaction output owned by a Function.
 - Property tests verify bill-share non-negativity and `sumShareVnd == totalBillVnd` for default and override calculations, including totals not divisible by 1,000.
 - Emulator tests verify `HOST_OVERRIDE` audit append, late-event exclusion, settlement-details membership reads and 30-day deletion eligibility.
+
+# WAITING lobby departure (ADR-026)
+
+`createLobbyLeaveRepository(...).leave(roomId)` runs online through the authenticated Firestore JS client, without Functions. Member departure atomically deletes the caller's membership and decrements the count. Host departure also transfers `hostId` and promotes an existing ACTIVE Member. The client picks the earliest joined remaining member (UID tie-breaker); Rules validate the eligible recipient, not roster ordering. A lone Host closes the lobby as CANCELLED with server endedAt. There is no active focus session to finalize.
+
+An absent membership confirms a previous successful departure and permits local cleanup. A new join requires a fresh join request; an old receipt does not re-create membership. Offline/failed requests retain the local room. The UI clears the room after confirmed cloud success and consumes Host changes through realtime snapshots. ACTIVE room departures use the existing early-exit and termination contracts.
