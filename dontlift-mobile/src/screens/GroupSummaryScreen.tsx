@@ -18,6 +18,7 @@ type Props = {
   onSyncAndAcknowledge: () => void;
   onFinalizeWithOverride: (unsyncedMemberUids: string[]) => void;
   onOpenSettlementDetails: () => void;
+  onOpenGroupHistory: () => void;
   billState: PublishedBillState;
   onOpenBillAllocation: () => void;
   onReturnToGroupHome: () => void;
@@ -25,7 +26,7 @@ type Props = {
 
 export function GroupSummaryScreen({ snapshot, actorUid, isOnline, isSyncing, errorMessage,
   isFinalizingOverride, overrideErrorMessage, onSyncAndAcknowledge, onFinalizeWithOverride,
-  onOpenSettlementDetails, billState, onOpenBillAllocation, onReturnToGroupHome }: Props) {
+  onOpenSettlementDetails, onOpenGroupHistory, billState, onOpenBillAllocation, onReturnToGroupHome }: Props) {
   const ownMember = snapshot.members.find(member => member.uid === actorUid);
   const acknowledged = ownMember?.syncAcknowledgedAtUtcMs != null;
   const pendingMembers = snapshot.members.filter(member => member.syncAcknowledgedAtUtcMs == null);
@@ -154,6 +155,16 @@ export function GroupSummaryScreen({ snapshot, actorUid, isOnline, isSyncing, er
       {finalized ? <Text style={styles.finalNote}>{hostOverrideFinalized
         ? 'The Host finalized the scores before every member synced. Late eligible lifts stay in history and do not change these scores or payment.'
         : 'The room scores are final. The Host can now publish the room bill split.'}</Text> : null}
+      {ownMember && snapshot.status === 'COMPLETED' ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="View this session in group history"
+          onPress={onOpenGroupHistory}
+          style={({ pressed }) => [styles.historyButton, pressed && styles.pressed]}
+        >
+          <Text style={styles.historyButtonText}>View Group History</Text>
+        </Pressable>
+      ) : null}
       {finalized && !isHost ? (
         <GlassCard style={styles.billCard}>
           <Text style={styles.sectionTitle}>Room bill</Text>
@@ -221,6 +232,9 @@ const styles = StyleSheet.create({
   settlementButton: { minHeight: 48, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16,
     borderRadius: 12, backgroundColor: Colors.light.primary },
   settlementButtonText: { color: Colors.light.onPrimary, fontWeight: '800' },
+  historyButton: { minHeight: 48, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16,
+    borderRadius: 12, borderWidth: 1, borderColor: Colors.light.border, backgroundColor: Colors.light.glassSurface },
+  historyButtonText: { color: Colors.light.primary, fontWeight: '800' },
   secondaryAction: { minHeight: 48, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16,
     borderRadius: 12, borderWidth: 1, borderColor: Colors.light.border },
   secondaryActionText: { color: Colors.light.primary, fontWeight: '800' },

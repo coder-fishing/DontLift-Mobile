@@ -1,5 +1,5 @@
 import { collection, doc, documentId, getDocFromServer, getDocsFromServer, limit, orderBy, query,
-  runTransaction, serverTimestamp, startAfter, where, type Firestore } from 'firebase/firestore';
+  runTransaction, serverTimestamp, startAfter, Timestamp, where, type Firestore, type QueryConstraint } from 'firebase/firestore';
 import type * as SQLite from 'expo-sqlite';
 import type { Auth } from 'firebase/auth';
 import { getLocalDatabase } from '../local/database';
@@ -12,12 +12,41 @@ import { listenToHistoryPayment, type HistoryPaymentState } from './group-histor
 
 export type GroupHistoryDetail = {
   roomStatus: string; reconciliation: string | null; finalizationReason: string | null;
-  members: { uid: string; name: string; status: string; score: number }[];
+  members: { uid: string; name: string; status: string; score: number; avatarUri?: string }[];
   excludedCount: number; excludedHasMore: boolean; bill: PublishedBill | null; billError: boolean;
+};
+export type GroupRoomRosterPreview = {
+  totalCount: number;
+  members: { uid: string; displayName: string; avatarUri?: string }[];
 };
 type HistoryRow = { summary_json: string; sync_status: 'PENDING' | 'SYNCED' | 'FAILED' };
 function decodeSummary(json: string, uid: string, roomId?: string): GroupLocalSummary | null {
   try { return readGroupSummary(JSON.parse(json), uid, roomId); } catch { return null; }
+}
+function isUnavailableRead(error: unknown): boolean {
+  const code = error instanceof Error && 'code' in error ? String(error.code).replace(/^firestore\//, '') : '';
+  return !['permission-denied', 'not-found'].includes(code);
+}
+async function readIndexedRoomSummary(firestore: Firestore, uid: string, roomId: string): Promise<GroupHistoryEntry | null> {
+  const [roomSnapshot, memberSnapshot] = await Promise.all([
+    getDocFromServer(doc(firestore, 'rooms', roomId)),
+    getDocFromServer(doc(firestore, 'rooms', roomId, 'members', uid)),
+  ]);
+  if (!roomSnapshot.exists() || !memberSnapshot.exists()) return null;
+  const room = roomSnapshot.data(); const member = memberSnapshot.data();
+  if (!['ACTIVE', 'EARLY_EXIT'].includes(String(member.status))
+    || !['COMPLETED', 'CANCELLED', 'ABORTED'].includes(String(room.status))
+    || !(room.startedAt instanceof Timestamp) || !(room.endedAt instanceof Timestamp)) return null;
+  const earlyExitAt = member.earlyExitAt instanceof Timestamp ? member.earlyExitAt.toMillis() : null;
+  const completedAtUtcMs = earlyExitAt == null ? room.endedAt.toMillis() : Math.min(room.endedAt.toMillis(), earlyExitAt);
+  const summary = readGroupSummary({
+    version: 1, eventId: roomId, actorUid: uid, roomId,
+    status: earlyExitAt == null ? room.status : 'EARLY_EXIT',
+    startedAtUtcMs: room.startedAt.toMillis(), completedAtUtcMs,
+    liftCount: Number(member.liftCount), violationDurationSeconds: Number(member.violationDurationSeconds),
+    penaltyScore: Number(member.penaltyScore),
+  }, uid, roomId);
+  return summary ? { summary, syncStatus: 'SYNCED', source: 'ROOM' } : null;
 }
 export type GroupHistoryPage = { items: GroupHistoryEntry[]; cursor: GroupHistoryCursor | null; hasMore: boolean; cloudError: boolean };
 export function sameGroupSummary(a: GroupLocalSummary, b: GroupLocalSummary): boolean {
@@ -138,9 +167,20 @@ export function createGroupHistoryRepository(dependencies: {
         uid, options.localPremium ? 1 : 0, options.serverPremium ? 1 : 0, cutoff, before, before, beforeId, GROUP_HISTORY_PAGE_SIZE + 1);
       const local: GroupHistoryEntry[] = localRows.flatMap(row => {
         const summary = decodeSummary(row.summary_json, uid);
-        return summary ? [{ summary, syncStatus: row.sync_status }] : [];
+        return summary ? [{ summary, syncStatus: row.sync_status, source: 'PERSONAL' as const }] : [];
+      });
+      const cachedRoomRows = await db.getAllAsync<{ summary_json: string }>(
+        `SELECT summary_json FROM group_room_history_cache WHERE actor_uid = ?
+         AND (? = 1 OR completed_at_utc_ms >= ?)
+         AND (completed_at_utc_ms < ? OR (completed_at_utc_ms = ? AND room_id < ?))
+         ORDER BY completed_at_utc_ms DESC, room_id DESC LIMIT ?`,
+        uid, options.serverPremium ? 1 : 0, cutoff, before, before, beforeId, GROUP_HISTORY_PAGE_SIZE + 1);
+      const cachedRooms: GroupHistoryEntry[] = cachedRoomRows.flatMap(row => {
+        const summary = decodeSummary(row.summary_json, uid);
+        return summary ? [{ summary, syncStatus: 'SYNCED', source: 'ROOM' as const }] : [];
       });
       let cloud: GroupHistoryEntry[] = [];
+      let sharedRooms: GroupHistoryEntry[] = [];
       let cloudError = false;
       if (options.online) {
         try {
@@ -151,7 +191,8 @@ export function createGroupHistoryRepository(dependencies: {
           if (!isActor(uid)) throw new Error('account-changed');
           cloud = result.docs.flatMap(d => {
             const summary = readGroupSummary(d.data(), uid, d.id);
-            return summary && (options.serverPremium || summary.completedAtUtcMs >= cutoff) ? [{ summary, syncStatus: 'SYNCED' as const }] : [];
+            return summary && (options.serverPremium || summary.completedAtUtcMs >= cutoff)
+              ? [{ summary, syncStatus: 'SYNCED' as const, source: 'PERSONAL' as const }] : [];
           });
           await db.withExclusiveTransactionAsync(async tx => {
             for (const entry of cloud) await tx.runAsync(`INSERT INTO group_history
@@ -160,18 +201,119 @@ export function createGroupHistoryRepository(dependencies: {
               WHERE group_history.source = 'CLOUD'`, uid, entry.summary.roomId, entry.summary.completedAtUtcMs, JSON.stringify(entry.summary));
           });
         } catch { cloudError = true; }
+        try {
+          // Backfill only rooms already known to this device; no cross-room collection query is used.
+          const known = await db.getAllAsync<{ room_id: string; joined_at: string }>(
+            `SELECT m.room_id, m.joined_at FROM room_members m WHERE m.uid = ? AND m.status IN ('ACTIVE', 'EARLY_EXIT')
+             ORDER BY m.joined_at DESC`, uid);
+          for (const item of known) {
+            if (!isActor(uid)) throw new Error('account-changed');
+            if (!options.serverPremium && Date.parse(item.joined_at) < cutoff) continue;
+            try {
+              await runTransaction(dependencies.firestore, async tx => {
+                const indexRef = doc(dependencies.firestore, 'users', uid, 'groupRooms', item.room_id);
+                const memberRef = doc(dependencies.firestore, 'rooms', item.room_id, 'members', uid);
+                const [index, member] = await Promise.all([tx.get(indexRef), tx.get(memberRef)]);
+                if (index.exists() || !member.exists() || !['ACTIVE', 'EARLY_EXIT'].includes(String(member.data().status))) return;
+                const joinedAt = member.data().joinedAt;
+                if (!(joinedAt instanceof Timestamp)) return;
+                tx.set(indexRef, { roomId: item.room_id, joinedAt });
+              });
+            } catch (error) { if (isUnavailableRead(error)) cloudError = true; }
+          }
+          const indexCollection = collection(dependencies.firestore, 'users', uid, 'groupRooms');
+          const indexConstraints: QueryConstraint[] = [orderBy('joinedAt', 'desc')];
+          if (!options.serverPremium) indexConstraints.push(where('joinedAt', '>=', Timestamp.fromMillis(cutoff)));
+          const indexes = await getDocsFromServer(query(indexCollection, ...indexConstraints));
+          const indexData = indexes.docs.filter(index => index.data().roomId === index.id
+            && index.data().joinedAt instanceof Timestamp
+            && (options.serverPremium || index.data().joinedAt.toMillis() >= cutoff));
+          const fetched = await Promise.all(indexData.map(async index => {
+            try {
+              const entry = await readIndexedRoomSummary(dependencies.firestore, uid, index.id);
+              return entry && (options.serverPremium || entry.summary.completedAtUtcMs >= cutoff)
+                && (entry.summary.completedAtUtcMs < before
+                  || (entry.summary.completedAtUtcMs === before && entry.summary.roomId < beforeId)) ? entry : null;
+            } catch (error) {
+              if (isUnavailableRead(error)) cloudError = true;
+              return null;
+            }
+          }));
+          if (!isActor(uid)) throw new Error('account-changed');
+          sharedRooms = fetched.filter((entry): entry is GroupHistoryEntry => entry !== null);
+          await db.withExclusiveTransactionAsync(async tx => {
+            for (const entry of sharedRooms) await tx.runAsync(`INSERT INTO group_room_history_cache
+              (actor_uid, room_id, completed_at_utc_ms, summary_json) VALUES (?, ?, ?, ?)
+              ON CONFLICT(actor_uid, room_id) DO UPDATE SET completed_at_utc_ms=excluded.completed_at_utc_ms,
+                summary_json=excluded.summary_json`, uid, entry.summary.roomId,
+            entry.summary.completedAtUtcMs, JSON.stringify(entry.summary));
+          });
+        } catch (error) {
+          if (!(error instanceof Error) || error.message !== 'account-changed') cloudError = true;
+          else throw error;
+        }
       }
-      const merged = mergeGroupHistory(local, cloud);
+      const merged = mergeGroupHistory([...local, ...cachedRooms], [...cloud, ...sharedRooms]);
       const items = merged.slice(0, GROUP_HISTORY_PAGE_SIZE);
       return { items, cursor: items.length ? summaryCursor(items[items.length - 1]) : options.cursor,
         hasMore: merged.length > GROUP_HISTORY_PAGE_SIZE, cloudError };
     },
     async readEntry(uid: string, roomId: string): Promise<GroupHistoryEntry | null> {
       if (!isActor(uid)) return null;
-      const row = await (await database()).getFirstAsync<HistoryRow>(
+      const db = await database();
+      const row = await db.getFirstAsync<HistoryRow>(
         'SELECT summary_json, sync_status FROM group_history WHERE actor_uid = ? AND room_id = ?', uid, roomId);
       const summary = row ? decodeSummary(row.summary_json, uid, roomId) : null;
-      return summary && row ? { summary, syncStatus: row.sync_status } : null;
+      if (summary && row) return { summary, syncStatus: row.sync_status, source: 'PERSONAL' };
+      const shared = await db.getFirstAsync<{ summary_json: string }>(
+        'SELECT summary_json FROM group_room_history_cache WHERE actor_uid = ? AND room_id = ?', uid, roomId);
+      const roomSummary = shared ? decodeSummary(shared.summary_json, uid, roomId) : null;
+      return roomSummary ? { summary: roomSummary, syncStatus: 'SYNCED', source: 'ROOM' } : null;
+    },
+    async readRoomRosterPreview(uid: string, roomId: string, online: boolean): Promise<GroupRoomRosterPreview | null> {
+      if (!isActor(uid)) return null;
+      let cachedJson: string | null = null;
+      try {
+        const local = await database();
+        const [personal, shared] = await Promise.all([
+          local.getFirstAsync<{ detail_json: string | null }>(
+            'SELECT detail_json FROM group_history WHERE actor_uid = ? AND room_id = ?', uid, roomId),
+          local.getFirstAsync<{ detail_json: string | null }>(
+            'SELECT detail_json FROM group_room_history_cache WHERE actor_uid = ? AND room_id = ?', uid, roomId),
+        ]);
+        cachedJson = personal?.detail_json ?? shared?.detail_json ?? null;
+      } catch { /* The online roster read can still succeed if the local cache is unavailable. */ }
+      if (cachedJson && !online) {
+        try {
+          const detail = JSON.parse(cachedJson) as GroupHistoryDetail;
+          if (Array.isArray(detail.members) && detail.members.length > 0) {
+            return { totalCount: detail.members.length, members: detail.members.slice(0, 3).map(member => ({
+              uid: member.uid, displayName: member.name,
+              ...(typeof member.avatarUri === 'string' ? { avatarUri: member.avatarUri } : {}),
+            })) };
+          }
+        } catch { /* Ignore malformed offline roster cache. */ }
+      }
+      if (!online) return null;
+      try {
+        const roomRef = doc(dependencies.firestore, 'rooms', roomId);
+        const ownRef = doc(dependencies.firestore, 'rooms', roomId, 'members', uid);
+        const [room, own] = await Promise.all([getDocFromServer(roomRef), getDocFromServer(ownRef)]);
+        if (!isActor(uid) || !room.exists() || !own.exists()
+          || !['ACTIVE', 'EARLY_EXIT'].includes(String(own.data().status))
+          || !['COMPLETED', 'CANCELLED', 'ABORTED'].includes(String(room.data().status))) return null;
+        const roster = await getDocsFromServer(query(
+          collection(dependencies.firestore, 'rooms', roomId, 'members'), orderBy('joinedAt', 'asc'), limit(3)));
+        if (!isActor(uid)) return null;
+        const members = roster.docs.flatMap(member => {
+          const data = member.data();
+          if (!['ACTIVE', 'EARLY_EXIT'].includes(String(data.status))) return [];
+          return [{ uid: member.id, displayName: String(data.displayName ?? 'Member'),
+            ...(typeof data.avatarUri === 'string' && data.avatarUri.trim() ? { avatarUri: data.avatarUri } : {}) }];
+        });
+        const count = Number(room.data().participantCount);
+        return { totalCount: Number.isSafeInteger(count) && count >= members.length ? count : members.length, members };
+      } catch { return null; }
     },
     async readDetail(uid: string, roomId: string): Promise<GroupHistoryDetail> {
       if (!isActor(uid)) throw new Error('unauthenticated');
@@ -193,19 +335,25 @@ export function createGroupHistoryRepository(dependencies: {
       }
       const detail: GroupHistoryDetail = { roomStatus: data.status, reconciliation: data.reconciliationStatus ?? null,
         finalizationReason: data.finalizationReason ?? null, members: members.docs.map(m => ({ uid: m.id,
-          name: m.data().displayName, status: m.data().status, score: m.data().penaltyScore })),
+          name: m.data().displayName, status: m.data().status, score: m.data().penaltyScore,
+          ...(typeof m.data().avatarUri === 'string' && m.data().avatarUri.trim() ? { avatarUri: m.data().avatarUri } : {}) })),
         excludedCount: Math.min(excluded?.size ?? 0, 100),
         excludedHasMore: (excluded?.size ?? 0) > 100, bill, billError };
       const local = await database();
       if (!isActor(uid)) throw new Error('account-changed');
       await local.runAsync('UPDATE group_history SET detail_json = ? WHERE actor_uid = ? AND room_id = ?', JSON.stringify(detail), uid, roomId);
+      await local.runAsync('UPDATE group_room_history_cache SET detail_json = ? WHERE actor_uid = ? AND room_id = ?', JSON.stringify(detail), uid, roomId);
       return detail;
     },
     async cachedDetail(uid: string, roomId: string): Promise<GroupHistoryDetail | null> {
       if (!isActor(uid)) return null;
-      const row = await (await database()).getFirstAsync<{ detail_json: string | null }>(
+      const db = await database();
+      const row = await db.getFirstAsync<{ detail_json: string | null }>(
         'SELECT detail_json FROM group_history WHERE actor_uid = ? AND room_id = ?', uid, roomId);
-      return row?.detail_json ? JSON.parse(row.detail_json) as GroupHistoryDetail : null;
+      if (row?.detail_json) return JSON.parse(row.detail_json) as GroupHistoryDetail;
+      const shared = await db.getFirstAsync<{ detail_json: string | null }>(
+        'SELECT detail_json FROM group_room_history_cache WHERE actor_uid = ? AND room_id = ?', uid, roomId);
+      return shared?.detail_json ? JSON.parse(shared.detail_json) as GroupHistoryDetail : null;
     },
   };
   return repository;

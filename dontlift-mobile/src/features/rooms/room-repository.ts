@@ -184,6 +184,23 @@ async function saveJoinedRoomProjection(database: SQLite.SQLiteDatabase, room: J
   });
 }
 
+async function ensureGroupRoomIndex(firestore: Firestore, auth: Auth, uid: string, roomId: string): Promise<void> {
+  if (auth.currentUser?.uid !== uid) throw new RoomJoinError('unauthenticated');
+  const roomRef = doc(firestore, 'rooms', roomId);
+  const memberRef = doc(firestore, 'rooms', roomId, 'members', uid);
+  const indexRef = doc(firestore, 'users', uid, 'groupRooms', roomId);
+  await runTransaction(firestore, async transaction => {
+    if (auth.currentUser?.uid !== uid) throw new RoomJoinError('unauthenticated');
+    const [room, member, index] = await Promise.all([
+      transaction.get(roomRef), transaction.get(memberRef), transaction.get(indexRef),
+    ]);
+    if (!room.exists() || !member.exists() || !['ACTIVE', 'EARLY_EXIT'].includes(String(member.data().status)) || index.exists()) return;
+    const joinedAt = member.data().joinedAt;
+    if (!(joinedAt instanceof Timestamp)) throw new RoomJoinError('unavailable');
+    transaction.set(indexRef, { roomId, joinedAt });
+  });
+}
+
 export function createRoomRepository(dependencies: RoomCreateDependencies) {
   return {
     startCommand(roomId: string): RoomStartCommand {
@@ -293,6 +310,9 @@ export function createRoomRepository(dependencies: RoomCreateDependencies) {
           createdAt,
           localCacheSaved: false,
         };
+
+        // Indexing is a follow-up write so an undeployed Rules update cannot block room creation.
+        await ensureGroupRoomIndex(firestore, dependencies.auth, uid, persistedRoomId).catch(() => undefined);
 
         let localCacheSaved = false;
         if (createdAt !== null) {
@@ -437,6 +457,7 @@ export function createRoomRepository(dependencies: RoomCreateDependencies) {
           status: 'WAITING', participantCount: outcome.participantCount, roomCreatedAt, roomUpdatedAt, joinedAt,
           alreadyMember: outcome.alreadyMember, localCacheSaved: false,
         };
+        await ensureGroupRoomIndex(dependencies.firestore, dependencies.auth, uid, outcome.roomId).catch(() => undefined);
         if (roomCreatedAt && roomUpdatedAt && joinedAt) {
           try {
             await saveJoinedRoomProjection(await dependencies.database, result, uid,

@@ -28,7 +28,7 @@ Current architectural overrides:
 - SL-023 settlement details use the Host-only Spark transaction and membership-scoped, expiry-limited read in ADR-020; do not add a Cloud Function, billing dependency, local bank-detail projection, or physical cleanup promise to this slice.
 - SL-024 default bill shares use the Host-calculated Spark transaction in ADR-021. Rules authorize the Host and finalized room state but do not verify share math or roster completeness; never describe published values as server-verified.
 - SL-025 versioned bill overrides use the Host-calculated Spark transaction in ADR-022 and lock after the first payment. SL-027 uses ADR-023: current share, immutable receipt and room-level paid counter update atomically.
-- SL-028 uses ADR-024: atomic local group-summary/outbox and owner-only Spark history sync; summaries are device-reported and never replace canonical scores or bill. No Functions or server deletion promise.
+- SL-028 personal summaries continue to use ADR-024: atomic local group-summary/outbox and owner-only Spark history sync; summaries are device-reported and never replace canonical scores or bill. ADR-028 adds an owner-scoped room index so every eligible member can discover shared terminal room history in their own History tab. No Functions or server deletion promise.
 - `rooms/{roomId}/members/{uid}` is the room membership authority; do not use an unbounded `participantIds` array.
 - ADR-008 governs Android/iOS background transitions and the 3-Second Grace Period.
 - Local Premium and Server Premium are separate entitlements as defined by ADR-007.

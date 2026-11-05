@@ -90,6 +90,8 @@ The app first writes `users/{uid}/roomQuotaClock/current` with a server timestam
 
 **Errors:** unauthenticated; permission denied for a failed Rules invariant, including PIN collision; resource exhausted when the current server bucket has reached 7; unavailable for retryable network/service failure; already exists for request-ID collision. The client may pre-check quota for a clear message, but Rules remain authoritative if concurrent creates race. The client never reports success before commit.
 
+After the create transaction commits, the client creates `users/{uid}/groupRooms/{roomId}` as a separate best-effort index write. It contains only `roomId` and the canonical Host `joinedAt`; an index failure must not turn a successful room creation into a failure. History refresh may repair the index after Rules are deployed.
+
 ## 3. `startRoom` — Firestore transaction (Spark)
 
 The authenticated Expo Go client executes one online Firestore transaction guarded by Security Rules. No UID is accepted from the request. This is the SL-016-only lifecycle exception in [ADR-013](decisions/ADR-013-spark-room-start.md); it does not deploy Cloud Functions or require Cloud Billing.
@@ -186,6 +188,8 @@ The ballot and counters are written atomically. If every eligible member has vot
 
 **Transaction outputs:** resolve the PIN reservation, validate room/capacity, create membership only when absent, update `participantCount` and store command receipt atomically. The room's `lastJoinRequestId` links the count update to the exact member and receipt written in that transaction; Rules reject another count update once that UID already has membership. Under the Spark client transaction exception (ADR-012), the authenticated client reads one reservation document by PIN; collection listing remains denied. Eight digits reduce guessing probability, but Firestore Rules cannot enforce a read-attempt rate limit, so this lookup is not a complete anti-enumeration control.
 
+After join succeeds, the client creates `users/{uid}/groupRooms/{roomId}` with only `roomId` and the canonical member `joinedAt`. This is a separate best-effort owner index, guarded by Rules against the matching room membership. A failed index write does not roll back a successful join; History may repair it from the local room projection.
+
 ## 5. `syncEvents`
 
 **Request schema**
@@ -239,6 +243,14 @@ Identity: actorUid/roomId with a durable UUID event ID. Write the local summary 
 Owner query: completedAtUtcMs DESC, document ID DESC, cursor pair and page size 20. Local/cache merge deduplicates by actor/room and keeps pending local state. Independent startup/reconnect/foreground retry does not depend on the current room or screen. Account changes cancel old callbacks. Second-device recovery includes records already uploaded, not never-uploaded sessions.
 
 Retention: Free UI shows seven days, pending/failed local records remain visible. Local Premium extends local-origin visibility; verified Server Premium extends cloud-origin visibility. This is an application visibility policy, not server-enforced deletion. SL-033 owns purge. No bank account or QR cache. Existing per-room canonical detail permissions and settlement expiry remain unchanged.
+
+### 5.3 Shared group-room History index — ADR-028
+
+`users/{uid}/groupRooms/{roomId}` is a per-owner lookup index for rooms joined by that account. It contains only `roomId` and `joinedAt`; it is not a score or payment source. Rules allow the owner to list the index and require any create to match an existing ACTIVE/EARLY_EXIT membership and its canonical `joinedAt`. No client may write another UID's index.
+
+History reads the current user's index, then loads each room and own membership. It shows terminal rooms only while the caller remains ACTIVE/EARLY_EXIT. Shared detail continues to use the existing room, member, published-bill and payment-detail boundaries. If no personal device summary exists, a list entry can be projected from the caller's canonical member counters and server room timestamps; it is labeled as a shared room result and never creates/ACKs an outbox event. Personal local pending/failed summaries take precedence for the caller's own device stats. Index data is not public and does not provide discovery of arbitrary rooms.
+
+On a new device, rooms are discoverable after the owner index has synced. Previously completed sessions lacking an owner index can only be backfilled when the current device already has their room/member projection. No Cloud Function, broad collection query, or cross-owner history read is introduced.
 
 
 ## 6. Room completion and reconciliation transactions

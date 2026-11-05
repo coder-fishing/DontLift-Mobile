@@ -4,7 +4,7 @@ export type GroupLocalSummary = {
   startedAtUtcMs: number; completedAtUtcMs: number;
   liftCount: number; violationDurationSeconds: number; penaltyScore: number;
 };
-export type GroupHistoryEntry = { summary: GroupLocalSummary; syncStatus: 'PENDING' | 'SYNCED' | 'FAILED' };
+export type GroupHistoryEntry = { summary: GroupLocalSummary; syncStatus: 'PENDING' | 'SYNCED' | 'FAILED'; source?: 'PERSONAL' | 'ROOM' };
 export type GroupHistoryCursor = { completedAtUtcMs: number; roomId: string };
 export const GROUP_HISTORY_PAGE_SIZE = 20;
 export const GROUP_HISTORY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
@@ -29,9 +29,14 @@ export function summaryCursor(entry: GroupHistoryEntry): GroupHistoryCursor {
 }
 export function mergeGroupHistory(local: GroupHistoryEntry[], cloud: GroupHistoryEntry[]): GroupHistoryEntry[] {
   const map = new Map<string, GroupHistoryEntry>();
-  for (const item of local) map.set(`${item.summary.actorUid}/${item.summary.roomId}`, item);
+  for (const item of local) {
+    const key = `${item.summary.actorUid}/${item.summary.roomId}`;
+    const previous = map.get(key);
+    if (!previous || (previous.source === 'ROOM' && item.source !== 'ROOM')) map.set(key, item);
+  }
   for (const item of cloud) {
     const key = `${item.summary.actorUid}/${item.summary.roomId}`;
+    if (map.get(key)?.source === 'PERSONAL' && item.source === 'ROOM') continue;
     // Bản server đã sửa cutoff được ưu tiên khi local không còn pending.
     if (!map.has(key) || map.get(key)!.syncStatus === 'SYNCED') map.set(key, item);
   }

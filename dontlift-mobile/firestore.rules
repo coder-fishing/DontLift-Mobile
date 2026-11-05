@@ -1386,6 +1386,22 @@ service cloud.firestore {
         && data.penaltyScore == data.liftCount * 10 + data.violationDurationSeconds
         && data.uploadedAt == request.time;
     }
+
+    // Room index stays owner-scoped; it only links an account to a room it joined.
+    function validGroupRoomIndex(uid, roomId, data) {
+      let memberPath = hostMemberPath(roomId, uid);
+      return isOwner(uid)
+        && roomId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
+        && data.keys().hasAll(['roomId', 'joinedAt'])
+        && data.keys().hasOnly(['roomId', 'joinedAt'])
+        && data.roomId == roomId
+        && data.joinedAt is timestamp
+        && existsAfter(roomPath(roomId))
+        && existsAfter(memberPath)
+        && getAfter(memberPath).data.status in ['ACTIVE', 'EARLY_EXIT']
+        && getAfter(memberPath).data.joinedAt is timestamp
+        && data.joinedAt == getAfter(memberPath).data.joinedAt;
+    }
     match /users/{uid} {
       // Hồ sơ chỉ được tạo một lần; client không thể tự cấp Premium hay sửa hồ sơ người khác.
       allow get: if isOwner(uid);
@@ -1429,6 +1445,13 @@ service cloud.firestore {
             || (request.resource.data.liftCount == resource.data.liftCount
               && request.resource.data.violationDurationSeconds == resource.data.violationDurationSeconds));
         allow delete: if false;
+      }
+
+      // Per-account lookup index; the actual session result remains room-scoped.
+      match /groupRooms/{roomId} {
+        allow get, list: if isOwner(uid);
+        allow create: if validGroupRoomIndex(uid, roomId, request.resource.data);
+        allow update, delete: if false;
       }
       // Solo summary được ghi bởi syncEvents; owner chỉ đọc history của chính mình.
       match /sessions/{sessionId} {

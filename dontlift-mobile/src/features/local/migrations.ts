@@ -368,6 +368,23 @@ const migrations: LocalMigration[] = [
       }
     },
   },
+  {
+    version: 14,
+    async migrate(database) {
+      await database.execAsync(`
+        CREATE TABLE IF NOT EXISTS group_room_history_cache (
+          actor_uid TEXT NOT NULL,
+          room_id TEXT NOT NULL,
+          completed_at_utc_ms INTEGER NOT NULL,
+          summary_json TEXT NOT NULL,
+          detail_json TEXT,
+          PRIMARY KEY(actor_uid, room_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_group_room_history_owner_completed
+          ON group_room_history_cache(actor_uid, completed_at_utc_ms DESC, room_id DESC);
+      `);
+    },
+  },
 ];
 
 const latestSchemaVersion = migrations.at(-1)?.version ?? 0;

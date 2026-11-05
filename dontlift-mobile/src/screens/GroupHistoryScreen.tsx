@@ -9,10 +9,10 @@ import { HistoryPaymentScreen } from './HistoryPaymentScreen';
 import type { GroupHistoryRepository, GroupHistoryDetail } from '../features/history/group-history-repository';
 import { mergeGroupHistory, type GroupHistoryCursor, type GroupHistoryEntry } from '../features/history/group-history-model';
 
-type Props = { userId: string; repository: GroupHistoryRepository; serverPremium: boolean; localPremium?: boolean; onBack: () => void };
+type Props = { userId: string; repository: GroupHistoryRepository; serverPremium: boolean; localPremium?: boolean; initialRoomId?: string; onBack: () => void };
 type HistoryListRow = { kind: 'history'; entry: GroupHistoryEntry }
   | { kind: 'member'; member: GroupHistoryDetail['members'][number] };
-export function GroupHistoryScreen({ userId, repository, serverPremium, localPremium = serverPremium, onBack }: Props) {
+export function GroupHistoryScreen({ userId, repository, serverPremium, localPremium = serverPremium, initialRoomId, onBack }: Props) {
   const colors = Colors.light;
   const [items, setItems] = useState<GroupHistoryEntry[]>([]);
   const [selected, setSelected] = useState<GroupHistoryEntry | null>(null);
@@ -26,6 +26,7 @@ export function GroupHistoryScreen({ userId, repository, serverPremium, localPre
   const [hasMore, setHasMore] = useState(false);
   const cursor = useRef<GroupHistoryCursor | null>(null);
   const generation = useRef(0);
+  const initialSelectionApplied = useRef(false);
   const active = useRef(true);
   const refresh = useRef<(more?: boolean) => Promise<void>>(async () => undefined);
   const detailRefresh = useRef<() => void>(() => undefined);
@@ -67,6 +68,13 @@ export function GroupHistoryScreen({ userId, repository, serverPremium, localPre
     const lifecycle = AppState.addEventListener('change', state => { if (state === 'active') { void refresh.current(); detailRefresh.current(); } });
     return () => { active.current = false; generation.current++; network.remove(); lifecycle.remove(); };
   }, [userId, repository, serverPremium, localPremium]);
+  useEffect(() => {
+    if (!initialRoomId || loading || initialSelectionApplied.current) return;
+    const entry = items.find(item => item.summary.roomId === initialRoomId);
+    if (!entry) return;
+    initialSelectionApplied.current = true;
+    setSelected(entry);
+  }, [initialRoomId, items, loading]);
   useEffect(() => {
     let cancelled = false;
     let attempt = 0;
@@ -121,13 +129,14 @@ export function GroupHistoryScreen({ userId, repository, serverPremium, localPre
       {summary ? <>
         <GlassCard style={styles.section}>
           <Text style={[styles.label, { color: colors.primary }]}>{summary.status.replaceAll('_', ' ')}</Text>
-          <Text style={[styles.heading, text]}>Your device recording</Text>
-          <Text style={[styles.body, secondary]}>These local stats can differ from the final room score.</Text>
+          <Text style={[styles.heading, text]}>{selectedEntry?.source === 'ROOM' ? 'Your room result' : 'Your device recording'}</Text>
+          <Text style={[styles.body, secondary]}>{selectedEntry?.source === 'ROOM'
+            ? 'Loaded from the shared group session.' : 'These local stats can differ from the final room score.'}</Text>
           <Text style={[styles.metric, text]}>{summary.penaltyScore} pts</Text>
           <Text style={secondary}>{summary.liftCount} lifts · {formatTime(summary.violationDurationSeconds)} away</Text>
           <Text style={secondary}>Recorded for {formatTime(Math.floor((summary.completedAtUtcMs - summary.startedAtUtcMs) / 1000))}</Text>
           <Text style={secondary}>{summary.status === 'EARLY_EXIT' ? 'Approved exit cutoff' : 'Room cutoff'} · {new Date(summary.completedAtUtcMs).toLocaleString()}</Text>
-          <Text style={secondary}>{selectedEntry?.syncStatus === 'SYNCED' ? 'History uploaded' : selectedEntry?.syncStatus === 'FAILED' ? 'Upload needs attention · Retry above' : 'Waiting to upload'}</Text>
+          {selectedEntry?.source !== 'ROOM' ? <Text style={secondary}>{selectedEntry?.syncStatus === 'SYNCED' ? 'History uploaded' : selectedEntry?.syncStatus === 'FAILED' ? 'Upload needs attention · Retry above' : 'Waiting to upload'}</Text> : null}
         </GlassCard>
         <GlassCard style={styles.section}>
           <Text style={[styles.heading, text]}>Room result</Text>
@@ -150,7 +159,7 @@ export function GroupHistoryScreen({ userId, repository, serverPremium, localPre
     </View>}
     ListEmptyComponent={!selected ? loading ? <ActivityIndicator accessibilityLabel="Loading group history" color={colors.primary} /> : <GlassCard style={styles.section}>
       <Text style={[styles.heading, text]}>No group sessions yet</Text><Text style={[styles.body, secondary]}>Complete a group session or leave with Host approval. Uploaded history can also be restored on this device.</Text>
-    </GlassCard> : null}
+    </GlassCard> : undefined}
     renderItem={({ item: row }) => {
       if (row.kind === 'member') {
         const member = row.member;
@@ -168,10 +177,10 @@ export function GroupHistoryScreen({ userId, repository, serverPremium, localPre
       onPress={() => { setDetail(null); setSelected(item); }} style={({ pressed }) => [styles.row, { borderColor: colors.border, backgroundColor: colors.glassSurface, opacity: pressed ? 0.75 : 1 }]}>
       <Text style={[styles.label, { color: colors.primary }]}>{item.summary.status.replaceAll('_', ' ')}</Text>
       <Text style={[styles.heading, text]}>{new Date(item.summary.completedAtUtcMs).toLocaleDateString()}</Text>
-      <Text style={secondary}>{item.summary.liftCount} lifts · {item.summary.penaltyScore} local pts</Text>
-      <Text style={secondary}>{item.syncStatus === 'SYNCED' ? 'Uploaded' : item.syncStatus === 'FAILED' ? 'Upload needs attention' : 'Pending upload'}</Text>
+      <Text style={secondary}>{item.summary.liftCount} lifts · {item.summary.penaltyScore} {item.source === 'ROOM' ? 'pts' : 'local pts'}</Text>
+      <Text style={secondary}>{item.source === 'ROOM' ? 'Shared room result' : item.syncStatus === 'SYNCED' ? 'Uploaded' : item.syncStatus === 'FAILED' ? 'Upload needs attention' : 'Pending upload'}</Text>
     </Pressable>; }}
-    ListFooterComponent={!selected && hasMore ? <PrimaryButton title="Load older sessions" variant="secondary" disabled={loading} onPress={() => { void refresh.current(true); }} /> : null}
+    ListFooterComponent={!selected && hasMore ? <PrimaryButton title="Load older sessions" variant="secondary" disabled={loading} onPress={() => { void refresh.current(true); }} /> : undefined}
   />;
 }
 const styles = StyleSheet.create({
