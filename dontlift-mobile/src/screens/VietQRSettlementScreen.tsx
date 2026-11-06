@@ -45,7 +45,7 @@ function QrImage({ uri, colors, onRetry }: {
           {status === 'error' ? (
             <Pressable accessibilityRole="button" accessibilityLabel="Retry loading the VietQR image" onPress={onRetry}
               style={({ pressed }) => [styles.retry, pressed && styles.pressed]}>
-              <Text style={[styles.actionText, { color: colors.primary }]}>Try again</Text>
+              <Text style={[styles.actionText, { color: Colors.light.primary }]}>Try again</Text>
             </Pressable>
           ) : null}
         </View>
@@ -69,7 +69,7 @@ export function VietQRSettlementScreen(props: Props) {
   }, []);
   const payment = buildVietQrPayment({ ...props, nowUtcMs, isOnline: props.isOnline && foreground });
   const loading = props.detailsState.kind === 'loading' || props.billState.kind === 'loading';
-  const cardStyle = { backgroundColor: colors.backgroundElement, borderColor: colors.glassBorder, shadowColor: colors.glassShadow };
+  const cardStyle = { backgroundColor: colors.authFormSurface, borderColor: colors.glassBorder, shadowColor: colors.glassShadow };
   const field = (label: string, value: string, prominent = false) => (
     <View style={[styles.field, { borderTopColor: colors.border }]}>
       <Text style={[styles.label, { color: colors.textSecondary }]}>{label}</Text>
@@ -82,7 +82,7 @@ export function VietQRSettlementScreen(props: Props) {
         style={({ pressed }) => [styles.back, pressed && styles.pressed]}>
         <Text style={[styles.actionText, { color: colors.primary }]}>‹  {props.backLabel ?? 'Bill breakdown'}</Text>
       </Pressable>
-      <GlassCard colors={colors} variant="solid" style={[styles.paymentCard, cardStyle]}>
+      <GlassCard style={[styles.paymentCard, cardStyle]}>
         <View style={styles.headingRow}>
           <Text style={[styles.eyebrow, { color: colors.primary }]}>VIETQR PAYMENT</Text>
           <Text style={[styles.room, { color: colors.textSecondary }]}>Room {props.roomPin}</Text>
@@ -100,7 +100,7 @@ export function VietQRSettlementScreen(props: Props) {
             <Text style={[styles.caption, { color: colors.textSecondary }]}>For your current published share</Text>
           </>
         ) : (
-          <View style={styles.unavailable} accessibilityLiveRegion="polite">
+          <View style={styles.unavailable}>
             {payment.kind === 'unavailable' && loading && props.isOnline ? <ActivityIndicator color={colors.primary} /> : null}
             <Text accessibilityRole={payment.kind === 'unavailable' && !loading ? 'alert' : undefined}
               style={[styles.body, { color: colors.textSecondary }]}>{payment.kind === 'zero'
@@ -109,7 +109,7 @@ export function VietQRSettlementScreen(props: Props) {
             {payment.kind === 'paid' && payment.paidAtUtcMs !== null ? (
               <Text style={[styles.caption, { color: colors.textSecondary }]}>Confirmed {new Date(payment.paidAtUtcMs).toLocaleString()}</Text>
             ) : null}
-            {payment.kind === 'unavailable' && !loading ? (
+            {payment.kind === 'unavailable' ? (
               <Pressable accessibilityRole="button" accessibilityLabel="Refresh bill and Host payment details"
                 disabled={!props.isOnline} accessibilityState={{ disabled: !props.isOnline }} onPress={props.onRefresh}
                 style={({ pressed }) => [styles.refresh, { backgroundColor: colors.primary }, pressed && styles.pressed, !props.isOnline && styles.disabled]}>
@@ -120,7 +120,7 @@ export function VietQRSettlementScreen(props: Props) {
         )}
       </GlassCard>
       {payment.kind === 'ready' ? (
-        <GlassCard colors={colors} variant="solid" style={[styles.detailsCard, cardStyle]}>
+        <GlassCard style={[styles.detailsCard, cardStyle]}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Transfer details</Text>
           <Text style={[styles.body, { color: colors.textSecondary }]}>Long press a value to copy it.</Text>
           {field('Account holder', payment.accountName)}
