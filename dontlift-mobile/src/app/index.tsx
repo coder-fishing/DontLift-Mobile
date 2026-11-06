@@ -12,12 +12,14 @@ import {
   Linking,
   Text,
   Platform,
+  useColorScheme,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Network from 'expo-network';
 import * as Crypto from 'expo-crypto';
 import { ScreenId } from '../types';
 import { Colors } from '../constants/theme';
+import { getGroupHistoryPalette } from '../constants/group-history-theme';
 import { Header } from '../components/Header';
 import { AppBackground } from '../components/AppBackground';
 import { BottomNav } from '../components/BottomNav';
@@ -157,7 +159,7 @@ function HomeContent() {
   if (session.state.kind === 'loading') {
     return (
       <View style={styles.authLoading}>
-        <StatusBar barStyle="dark-content" backgroundColor={Colors.light.background} />
+        <StatusBar barStyle="dark-content" />
         <ActivityIndicator accessibilityLabel="Restoring account session" size="large" color={Colors.light.primary} />
       </View>
     );
@@ -182,7 +184,7 @@ function LoginGate({ state, recoveryUser }: { state: AuthSessionState; recoveryU
 
   return (
     <View style={[styles.loginGate, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.light.background} />
+      <StatusBar barStyle="dark-content" />
       <ScrollView contentContainerStyle={styles.loginGateContent} keyboardShouldPersistTaps="handled">
         <LoginScreen
           onAuthenticated={() => { void session.refreshProfile(); }}
@@ -292,6 +294,9 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const settlementBankDirectory = useMemo(() => createBankDirectoryRepository(), []);
   // Navigation
   const [currentScreen, setCurrentScreen] = useState<ScreenId>('02-solo-select');
+  const systemColorScheme = useColorScheme();
+  const isGroupHistory = currentScreen === '15-group-history';
+  const screenColors = isGroupHistory ? getGroupHistoryPalette(systemColorScheme) : Colors.light;
   const [groupHistoryInitialRoomId, setGroupHistoryInitialRoomId] = useState<string>();
   const settingsReturnScreen = useRef<ScreenId>('02-solo-select');
   const [createdRoom, setCreatedRoom] = useState<CreatedRoom | null>(null);
@@ -2174,8 +2179,9 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   };
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.light.background} />
+    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: isGroupHistory ? screenColors.background : 'transparent' }]}>
+      {isGroupHistory && systemColorScheme === 'dark' ? <AppBackground colors={Colors.dark} /> : null}
+      <StatusBar barStyle={isGroupHistory && systemColorScheme === 'dark' ? 'light-content' : 'dark-content'} />
 
       {/* Header */}
       <Header
@@ -2184,6 +2190,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
         email={profile.email}
         onNavigate={navigateToScreen}
         onOpenSettings={openSettings}
+        colors={isGroupHistory ? screenColors : undefined}
       />
 
       {/* Main Body */}
@@ -2199,6 +2206,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
         ) : currentScreen === '15-group-history' ? (
           <GroupHistoryScreen key={profile.uid} userId={profile.uid} serverPremium={profile.isPremium}
             repository={groupHistoryRepository} initialRoomId={groupHistoryInitialRoomId}
+            colors={screenColors}
             onBack={() => { setGroupHistoryInitialRoomId(undefined); navigateToScreen('05-group-lobby'); }} />
         ) : currentScreen === '11-solo-history' ? (
           <HistoryScreen
@@ -2462,6 +2470,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       <BottomNav
         currentScreen={currentScreen}
         onNavigate={navigateToScreen}
+        colors={isGroupHistory ? screenColors : undefined}
       />
 
     </View>

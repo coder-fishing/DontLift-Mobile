@@ -15,18 +15,21 @@ import { Colors } from '../constants/theme';
 interface GlassCardProps extends ViewProps {
   children: React.ReactNode;
   className?: string;
+  colors?: typeof Colors.light | typeof Colors.dark;
+  variant?: 'glass' | 'solid';
 }
 
 export function GlassCard({
   children,
   className = '',
+  colors = Colors.light,
+  variant = 'glass',
   style,
   ...props
 }: GlassCardProps) {
-  const colors = Colors.light;
-
   // Chỉ sử dụng Liquid Glass khi API thực sự khả dụng trên iOS.
   const useLiquidGlass =
+    variant === 'glass' &&
     Platform.OS === 'ios' &&
     isLiquidGlassAvailable() &&
     isGlassEffectAPIAvailable();
@@ -39,22 +42,22 @@ export function GlassCard({
         {
           backgroundColor: useLiquidGlass
             ? 'transparent'
-            : colors.authFormSurface,
+            : variant === 'solid' ? colors.backgroundElement : colors.authFormSurface,
           borderColor: colors.glassBorder,
           shadowColor: colors.glassShadow,
         },
-        !useLiquidGlass && styles.fallback,
+        variant === 'solid' ? styles.solid : !useLiquidGlass ? styles.fallback : null,
         style,
       ]}
       {...props}
     >
-      {useLiquidGlass && (
+      {useLiquidGlass ? (
         <GlassView
           pointerEvents="none"
           glassEffectStyle="regular"
           style={styles.glassBackground}
         />
-      )}
+      ) : null}
 
       <View style={styles.content}>
         {children}
@@ -86,5 +89,9 @@ const styles = StyleSheet.create({
 
   fallback: {
     elevation: 5,
+  },
+  solid: {
+    shadowOpacity: 0,
+    elevation: 0,
   },
 });

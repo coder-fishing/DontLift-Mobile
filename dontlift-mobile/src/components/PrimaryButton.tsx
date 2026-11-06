@@ -1,13 +1,15 @@
 import React from 'react';
-import { TouchableOpacity, Text, type TouchableOpacityProps, StyleSheet, View } from 'react-native';
+import { Pressable, Text, type PressableProps, StyleSheet, View } from 'react-native';
 import { Colors } from '../constants/theme';
 
-interface PrimaryButtonProps extends TouchableOpacityProps {
+interface PrimaryButtonProps extends PressableProps {
   title: string;
   className?: string;
   textClassName?: string;
   icon?: React.ReactNode;
   variant?: 'primary' | 'secondary' | 'danger';
+  shape?: 'pill' | 'rounded';
+  colors?: typeof Colors.light | typeof Colors.dark;
 }
 
 export function PrimaryButton({
@@ -16,6 +18,8 @@ export function PrimaryButton({
   textClassName = '',
   icon,
   variant = 'primary',
+  shape = 'pill',
+  colors = Colors.light,
   style,
   disabled,
   accessibilityState,
@@ -23,78 +27,49 @@ export function PrimaryButton({
 }: PrimaryButtonProps) {
   const isSecondary = variant === 'secondary';
   const isDanger = variant === 'danger';
-
-  const variantStyle = isSecondary ? styles.buttonSecondary : isDanger ? styles.buttonDanger : styles.buttonPrimary;
-
-  const textStyle = [
-    styles.buttonText,
-    isSecondary ? styles.textSecondary : isDanger ? styles.textDanger : styles.textPrimary,
-  ];
+  const backgroundColor = isSecondary ? colors.glassSurface : isDanger ? colors.error : colors.primary;
+  const borderColor = isSecondary ? colors.glassBorder : 'transparent';
+  const textColor = isSecondary ? colors.text : colors.onPrimary;
 
   return (
-    <TouchableOpacity
-      activeOpacity={0.82}
+    <Pressable
       accessibilityRole="button"
       accessibilityState={{ ...accessibilityState, disabled: Boolean(disabled) }}
       disabled={disabled}
-      style={[
+      style={({ pressed }) => [
         styles.button,
-        variantStyle,
-        disabled ? styles.buttonDisabled : null,
-        style,
+        { backgroundColor, borderColor, shadowColor: isDanger ? colors.error : colors.primary, borderRadius: shape === 'pill' ? 9999 : 18 },
+        isSecondary ? styles.secondary : null,
+        disabled ? styles.disabled : null,
+        typeof style === 'function' ? style({ pressed, hovered: false }) : style,
+        pressed && !disabled ? styles.pressed : null,
       ]}
       {...props}
     >
-      {icon && <View style={styles.iconContainer}>{icon}</View>}
-      <Text style={textStyle}>{title}</Text>
-    </TouchableOpacity>
+      {icon ? <View style={styles.iconContainer}>{icon}</View> : null}
+      <Text className={textClassName} style={[styles.buttonText, { color: textColor }]}>{title}</Text>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   button: {
-    height: 52,
+    minHeight: 52,
     width: '100%',
     borderRadius: 9999,
+    borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 20,
-    shadowColor: Colors.light.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
-    elevation: 3,
+    elevation: 2,
   },
-  buttonPrimary: {
-    backgroundColor: Colors.light.primary,
-  },
-  buttonSecondary: {
-    backgroundColor: Colors.light.glassSurface,
-    borderColor: Colors.light.glassBorder,
-    borderWidth: 1,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-  },
-  buttonDanger: {
-    backgroundColor: Colors.light.error,
-    shadowColor: Colors.light.error,
-  },
-  buttonText: {
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  textPrimary: {
-    color: '#FFFFFF',
-  },
-  textSecondary: {
-    color: Colors.light.text,
-  },
-  textDanger: {
-    color: Colors.light.onPrimary,
-  },
-  buttonDisabled: { opacity: 0.48, elevation: 0, shadowOpacity: 0 },
-  iconContainer: {
-    marginRight: 8,
-  },
+  secondary: { shadowColor: '#000', shadowOpacity: 0.05 },
+  buttonText: { fontSize: 15, fontWeight: '700', textAlign: 'center' },
+  iconContainer: { marginRight: 8 },
+  disabled: { opacity: 0.48, elevation: 0, shadowOpacity: 0 },
+  pressed: { opacity: 0.78 },
 });

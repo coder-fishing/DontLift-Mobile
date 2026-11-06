@@ -27,6 +27,7 @@ interface HeaderProps {
   avatarUri?: string;
   onNavigate: (screen: ScreenId) => void;
   onOpenSettings: () => void;
+  colors?: typeof Colors.light | typeof Colors.dark;
 }
 
 function getInitials(displayName: string, email: string): string {
@@ -43,31 +44,37 @@ function AccountAvatar({
   initials,
   imageUri,
   size,
+  colors,
   style,
 }: {
   initials: string;
   imageUri?: string;
   size: number;
+  colors?: typeof Colors.light | typeof Colors.dark;
   style?: ViewStyle;
 }) {
   return (
-    <View style={[styles.avatarFrame, { width: size, height: size, borderRadius: size / 2 }, style]}>
+    <View style={[styles.avatarFrame, { width: size, height: size, borderRadius: size / 2 }, colors ? { backgroundColor: colors.roomMemberAvatar } : null, style]}>
       {imageUri ? (
         <Image source={{ uri: imageUri }} contentFit="cover" style={styles.avatarImage} />
       ) : (
-        <Text style={styles.avatarText}>{initials}</Text>
+        <Text style={[styles.avatarText, colors ? { color: colors.roomMemberAccent } : null]}>{initials}</Text>
       )}
     </View>
   );
 }
 
-export function Header({ currentScreen, displayName, email, avatarUri, onNavigate, onOpenSettings }: HeaderProps) {
+export function Header({ currentScreen, displayName, email, avatarUri, onNavigate, onOpenSettings, colors }: HeaderProps) {
+  const palette = colors ?? Colors.light;
   const [menuVisible, setMenuVisible] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<{ top: number; left: number } | null>(null);
   const [menuHeight, setMenuHeight] = useState(0);
-  const avatarRef = useRef<View>(null);
+  const avatarRef = useRef<React.ElementRef<typeof View>>(null);
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const useLiquidGlass = Platform.OS === 'ios' && isLiquidGlassAvailable() && isGlassEffectAPIAvailable();
+  const headerSurface = colors
+    ? useLiquidGlass ? [styles.nativeGlass, { borderColor: palette.glassBorder }] : { backgroundColor: palette.glassSurface, borderColor: palette.glassBorder }
+    : useLiquidGlass ? styles.nativeGlass : styles.fallbackGlass;
 
   const openDestination = (screen: ScreenId) => {
     setMenuVisible(false);
@@ -76,7 +83,7 @@ export function Header({ currentScreen, displayName, email, avatarUri, onNavigat
 
   return (
     <View style={styles.wrapper}>
-      <View style={[styles.headerContainer, useLiquidGlass ? styles.nativeGlass : styles.fallbackGlass]}>
+      <View style={[styles.headerContainer, headerSurface]}>
         {useLiquidGlass ? <GlassView pointerEvents="none" glassEffectStyle="regular" style={styles.glassLayer} /> : null}
         <View style={styles.brandGroup}>
           <Pressable
@@ -90,38 +97,38 @@ export function Header({ currentScreen, displayName, email, avatarUri, onNavigat
             })}
             style={({ pressed }) => [styles.avatarButton, pressed && styles.pressed]}
           >
-            <AccountAvatar initials={getInitials(displayName, email)} imageUri={avatarUri} size={40} />
+            <AccountAvatar initials={getInitials(displayName, email)} imageUri={avatarUri} size={40} colors={colors} />
           </Pressable>
           <View style={styles.brandInfo}>
-            <Text style={styles.brandTitle} numberOfLines={1}>Hello, {getFirstName(displayName, email)}</Text>
-            <Text style={styles.brandSubtitle} numberOfLines={1}>{SCREEN_TITLES[currentScreen]}</Text>
+            <Text style={[styles.brandTitle, { color: palette.text }]} numberOfLines={1}>Hello, {getFirstName(displayName, email)}</Text>
+            <Text style={[styles.brandSubtitle, { color: palette.textSecondary }]} numberOfLines={1}>{SCREEN_TITLES[currentScreen]}</Text>
           </View>
         </View>
       </View>
 
       <Modal transparent visible={menuVisible} animationType="fade" presentationStyle="overFullScreen" statusBarTranslucent onRequestClose={() => setMenuVisible(false)}>
         <View style={styles.modalRoot}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Close account menu" style={styles.dismissArea} onPress={() => setMenuVisible(false)} />
-          <View onLayout={event => setMenuHeight(event.nativeEvent.layout.height)} style={[styles.menu, { top: Math.min(menuAnchor?.top ?? 80, windowHeight - menuHeight - 12), left: menuAnchor?.left ?? 16, width: Math.min(270, windowWidth - 32) }]}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Close account menu" style={[styles.dismissArea, colors ? { backgroundColor: colors === Colors.dark ? 'rgba(0,0,0,0.4)' : 'rgba(15,23,42,0.12)' } : null]} onPress={() => setMenuVisible(false)} />
+          <View onLayout={event => setMenuHeight(event.nativeEvent.layout.height)} style={[styles.menu, colors ? { backgroundColor: palette.glassSurface, shadowColor: palette.glassShadow } : null, { top: Math.min(menuAnchor?.top ?? 80, windowHeight - menuHeight - 12), left: menuAnchor?.left ?? 16, width: Math.min(270, windowWidth - 32) }]}>
             <View style={styles.menuIdentity}>
-              <AccountAvatar initials={getInitials(displayName, email)} imageUri={avatarUri} size={42} style={styles.menuAvatar} />
+              <AccountAvatar initials={getInitials(displayName, email)} imageUri={avatarUri} size={42} colors={colors} style={colors ? { borderColor: colors.glassBorder } : undefined} />
               <View style={styles.menuIdentityText}>
-                <Text numberOfLines={1} style={styles.menuName}>{displayName || 'DontLift user'}</Text>
-                <Text numberOfLines={1} style={styles.menuEmail}>{email}</Text>
+                <Text numberOfLines={1} style={[styles.menuName, { color: palette.text }]}>{displayName || 'DontLift user'}</Text>
+                <Text numberOfLines={1} style={[styles.menuEmail, { color: palette.textSecondary }]}>{email}</Text>
               </View>
             </View>
-            <View style={styles.divider} />
+            <View style={[styles.divider, { backgroundColor: palette.border }]} />
             <View style={styles.menuActions}>
-              <Pressable accessibilityRole="button" accessibilityLabel="Open profile" onPress={() => openDestination('16-profile')} style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Open profile" onPress={() => openDestination('16-profile')} style={({ pressed }) => [styles.menuItem, pressed && { backgroundColor: palette.backgroundSelected }]}>
                 <View style={styles.menuItemMain}>
-                  <Ionicons name="person-outline" size={20} color={Colors.light.textSecondary} />
-                  <Text style={styles.menuItemText}>Profile</Text>
+                  <Ionicons name="person-outline" size={20} color={palette.textSecondary} />
+                  <Text style={[styles.menuItemText, { color: palette.text }]}>Profile</Text>
                 </View>
               </Pressable>
-              <Pressable accessibilityRole="button" accessibilityLabel="Open settings" onPress={() => { setMenuVisible(false); onOpenSettings(); }} style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Open settings" onPress={() => { setMenuVisible(false); onOpenSettings(); }} style={({ pressed }) => [styles.menuItem, pressed && { backgroundColor: palette.backgroundSelected }]}>
                 <View style={styles.menuItemMain}>
-                  <Ionicons name="settings-outline" size={20} color={Colors.light.textSecondary} />
-                  <Text style={styles.menuItemText}>Settings</Text>
+                  <Ionicons name="settings-outline" size={20} color={palette.textSecondary} />
+                  <Text style={[styles.menuItemText, { color: palette.text }]}>Settings</Text>
                 </View>
               </Pressable>
             </View>
@@ -149,7 +156,7 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.75 },
   modalRoot: { flex: 1 },
   dismissArea: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(15,23,42,0.12)' },
-  menu: { position: 'absolute', width: 270, borderRadius: 22, padding: 10, backgroundColor: '#FFFFFF', shadowColor: '#0F172A', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.18, shadowRadius: 24, elevation: 12 },
+  menu: { position: 'absolute', width: 270, borderRadius: 22, padding: 10, backgroundColor: Colors.light.glassSurface, shadowColor: '#0F172A', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.18, shadowRadius: 24, elevation: 12 },
   menuIdentity: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 8 },
   menuAvatar: { borderColor: '#BFDBFE' },
   menuIdentityText: { flex: 1 },

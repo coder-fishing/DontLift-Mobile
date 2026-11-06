@@ -16,7 +16,8 @@ type Props = { userId: string; repository: GroupHistoryRepository; serverPremium
 type HistoryListRow = { kind: 'history'; entry: GroupHistoryEntry }
   | { kind: 'member'; member: GroupHistoryDetail['members'][number] };
 export function GroupHistoryScreen({ userId, repository, serverPremium, localPremium = serverPremium, initialRoomId, onBack, colors: providedColors }: Props) {
-  const colors = providedColors ?? getGroupHistoryPalette(useColorScheme());
+  const systemColorScheme = useColorScheme();
+  const colors = providedColors ?? getGroupHistoryPalette(systemColorScheme);
   const insets = useSafeAreaInsets();
   const [items, setItems] = useState<GroupHistoryEntry[]>([]);
   const [selected, setSelected] = useState<GroupHistoryEntry | null>(null);
@@ -180,8 +181,9 @@ export function GroupHistoryScreen({ userId, repository, serverPremium, localPre
           <Text style={[styles.heading, text]}>Room result</Text>
           {detailError ? <Text accessibilityRole="alert" style={{ color: colors.error }}>Could not confirm current room details. Refresh to retry.</Text> : null}
           {!detail ? <Text style={secondary}>Connect to load the room result.</Text> : <>
-            <Text style={secondary}>{detailSource === 'firebase' ? 'Confirmed from Firebase'
-              : detailSource === 'saved' ? (detailError ? 'Saved copy · Could not confirm current data' : 'Saved copy · Checking Firebase')
+            <Text style={secondary}>{detailSource === 'firebase' && !offline ? 'Confirmed from Firebase'
+              : detailSource === 'firebase' && offline ? 'Saved copy · Last confirmed from Firebase'
+                : detailSource === 'saved' ? (detailError ? 'Saved copy · Could not confirm current data' : offline ? 'Saved copy · Connect to check for updates' : 'Saved copy · Checking Firebase')
                 : 'Checking Firebase…'}</Text>
             <Text style={secondary}>{detail.roomStatus} · {detail.reconciliation ?? 'No final score'}</Text>
             {detail.finalizationReason === 'HOST_OVERRIDE' ? <Text style={secondary}>The Host finalized before everyone synced. Late excluded violations do not change points or payment.</Text> : null}
@@ -204,13 +206,14 @@ export function GroupHistoryScreen({ userId, repository, serverPremium, localPre
       </> : null}
     </View>}
     ListEmptyComponent={!selected ? loading ? <ActivityIndicator accessibilityLabel="Loading group history" color={colors.primary} /> : <GlassCard colors={colors} variant="solid" style={styles.section}>
-      <Text style={[styles.heading, text]}>No group sessions yet</Text><Text style={[styles.body, secondary]}>Complete a group session or leave with Host approval. Uploaded history can also be restored on this device.</Text>
+      <Text style={[styles.heading, text]}>{offline ? 'No saved sessions on this device' : error ? 'Could not load group history' : 'No group sessions yet'}</Text>
+      <Text style={[styles.body, secondary]}>{offline ? 'Connect to check for shared group sessions.' : error ? 'Try refreshing to load your saved and shared sessions.' : 'Completed group sessions will appear here.'}</Text>
     </GlassCard> : undefined}
     renderItem={({ item: row }) => {
       if (row.kind === 'member') {
         const member = row.member;
         const share = detail?.bill?.shares.find(value => value.uid === member.uid);
-      return <View style={[styles.row, { borderColor: colors.border, backgroundColor: colors.authFormSurface }]}>
+      return <View style={[styles.row, { borderColor: colors.border, backgroundColor: colors.backgroundElement }]}>
           <View style={styles.rosterRow}><View style={styles.member}>
             <Text style={[styles.name, text]}>{member.name}</Text><Text style={secondary}>{member.status.replaceAll('_', ' ')}</Text>
           </View><Text style={[styles.name, text]}>{member.score} pts{detail?.reconciliation !== 'FINALIZED' ? ' · provisional' : ''}</Text></View>
@@ -225,7 +228,7 @@ export function GroupHistoryScreen({ userId, repository, serverPremium, localPre
       const source = item.source === 'ROOM' ? 'Shared room result' : item.syncStatus === 'SYNCED' ? 'Uploaded' : item.syncStatus === 'FAILED' ? 'Upload needs attention' : 'Pending upload';
       return <Pressable accessibilityRole="button" accessibilityLabel={`Open ${source.toLowerCase()} from ${completedAt.toLocaleString()}, ${item.summary.penaltyScore} ${item.source === 'ROOM' ? 'points' : 'local points'}`}
         onPress={() => { detailValue.current = null; setDetail(null); setSelected(item); }}
-        style={({ pressed }) => [styles.row, styles.sessionRow, { borderColor: colors.border, backgroundColor: colors.authFormSurface }, pressed && styles.rowPressed]}>
+        style={({ pressed }) => [styles.row, styles.sessionRow, { borderColor: colors.border, backgroundColor: colors.backgroundElement }, pressed && styles.rowPressed]}>
         <View style={styles.sessionTop}>
           <View style={styles.sessionMeta}>
             <Text style={[styles.label, { color: colors.primary }]}>{status}</Text>
