@@ -80,7 +80,7 @@ test('empty history and cloud errors remain recoverable', async () => {
   let screen: Rendered | undefined;
   try {
     await renderer.act(async () => { screen = renderer.create(<GroupHistoryScreen userId="member" repository={repo as unknown as GroupHistoryRepository} serverPremium={false} onBack={jest.fn()} />); });
-    expect(screen!.root.findAllByProps({ children: 'Could not load group history' }).length).toBeGreaterThan(0);
+    expect(screen!.root.findAllByProps({ children: 'No group sessions yet' }).length).toBeGreaterThan(0);
     expect(screen!.root.findAllByProps({ children: 'Could not refresh cloud history. Your saved sessions are still available.' }).length).toBeGreaterThan(0);
     const before = repo.syncPending.mock.calls.length;
     await renderer.act(async () => { (screen!.root.findByProps({ title: 'Retry history refresh' }).props.onPress as () => void)(); });

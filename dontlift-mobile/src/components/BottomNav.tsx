@@ -12,7 +12,6 @@ import { Colors } from "../constants/theme";
 interface BottomNavProps {
   currentScreen: ScreenId;
   onNavigate: (screen: ScreenId) => void;
-  colors?: typeof Colors.light | typeof Colors.dark;
 }
 
 const TABS = [
@@ -67,8 +66,7 @@ const TABS = [
   },
 ];
 
-export function BottomNav({ currentScreen, onNavigate, colors }: BottomNavProps) {
-  const palette = colors ?? Colors.light;
+export function BottomNav({ currentScreen, onNavigate }: BottomNavProps) {
   const insets = useSafeAreaInsets();
 
   // Render native glass whenever the iOS runtime exposes UIGlassEffect.
@@ -84,8 +82,7 @@ export function BottomNav({ currentScreen, onNavigate, colors }: BottomNavProps)
       <View
         style={[
           styles.bar,
-          useLiquidGlass ? (colors ? [styles.nativeGlassBar, { borderColor: palette.glassBorder }] : styles.nativeGlassBar)
-            : colors ? { backgroundColor: palette.bottomNavSurface, borderColor: palette.bottomNavBorder } : styles.fallbackBar,
+          useLiquidGlass ? styles.nativeGlassBar : styles.fallbackBar,
         ]}
       >
         {useLiquidGlass && (
@@ -109,7 +106,7 @@ export function BottomNav({ currentScreen, onNavigate, colors }: BottomNavProps)
               onPress={() => onNavigate(tab.screen)}
               style={({ pressed }) => [
                 styles.tab,
-                active && (colors ? { backgroundColor: palette.backgroundSelected, borderColor: palette.glassBorder } : styles.activeTab),
+                active && styles.activeTab,
                 pressed && styles.pressedTab,
               ]}
             >
@@ -118,11 +115,11 @@ export function BottomNav({ currentScreen, onNavigate, colors }: BottomNavProps)
                   <Ionicons
                     name={active ? tab.activeIcon : tab.icon}
                     size={24}
-                    color={active ? palette.primary : palette.textSecondary}
+                    color={active ? Colors.light.primary : Colors.light.textSecondary}
                   />
                 </View>
 
-                <Text style={[styles.label, { color: palette.textSecondary }, active && { color: palette.primary, fontWeight: '800' }]}>
+                <Text style={[styles.label, active && styles.activeLabel]}>
                   {tab.label}
                 </Text>
               </View>
