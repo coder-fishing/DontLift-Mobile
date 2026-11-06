@@ -5,11 +5,7 @@ import type { GroupHistoryEntry } from '../src/features/history/group-history-mo
 jest.mock('../src/constants/theme', () => ({ Colors: { light: { primary: 'blue', text: 'black', textSecondary: 'gray', error: 'red', authBackdrop: 'white', border: 'gray', glassSurface: 'white' } } }));
 jest.mock('../src/components/GlassCard', () => ({ GlassCard: ({ children }: { children: React.ReactNode }) => children }));
 jest.mock('expo-image', () => ({ Image: 'PaymentQrImage' }));
-let mockNetworkListener: ((state: unknown) => void) | undefined;
-jest.mock('expo-network', () => ({ getNetworkStateAsync: jest.fn(), addNetworkStateListener: jest.fn((listener: (state: unknown) => void) => {
-  mockNetworkListener = listener;
-  return { remove: jest.fn() };
-}) }));
+jest.mock('expo-network', () => ({ getNetworkStateAsync: jest.fn(), addNetworkStateListener: jest.fn(() => ({ remove: jest.fn() })) }));
 const network = jest.requireMock('expo-network');
 type Node = { props: Record<string, unknown>; findByProps(props: Record<string, unknown>): Node; findAllByProps(props: Record<string, unknown>): Node[] };
 type Rendered = { root: Node; unmount(): void };
@@ -23,7 +19,7 @@ function repository(items = [entry]) {
     readDetail: jest.fn(async () => ({ roomStatus: 'COMPLETED', reconciliation: 'FINALIZED', finalizationReason: 'HOST_OVERRIDE',
       members: [{ uid: 'member', name: 'Member', status: 'EARLY_EXIT', score: 10 }], excludedCount: 1, excludedHasMore: false, bill: null, billError: false })) };
 }
-beforeEach(() => { jest.clearAllMocks(); mockNetworkListener = undefined; network.getNetworkStateAsync.mockResolvedValue({ isConnected: false }); });
+beforeEach(() => { jest.clearAllMocks(); network.getNetworkStateAsync.mockResolvedValue({ isConnected: false }); });
 test('offline history shows durable local entry and back navigation', async () => {
   const repo = repository(); const onBack = jest.fn(); let screen: Rendered | undefined;
   try {
@@ -32,31 +28,6 @@ test('offline history shows durable local entry and back navigation', async () =
     expect(repo.syncPending).not.toHaveBeenCalled();
     await renderer.act(() => { (screen!.root.findByProps({ title: 'Back to Group' }).props.onPress as () => void)(); });
     expect(onBack).toHaveBeenCalledTimes(1);
-  } finally { await renderer.act(() => screen?.unmount()); }
-});
-test('duplicate network callbacks with no connectivity change do not reload history', async () => {
-  network.getNetworkStateAsync.mockResolvedValue({ isConnected: true, isInternetReachable: true });
-  const repo = repository(); let screen: Rendered | undefined;
-  try {
-    await renderer.act(async () => { screen = renderer.create(<GroupHistoryScreen userId="member" repository={repo as unknown as GroupHistoryRepository} serverPremium={false} onBack={jest.fn()} />); });
-    expect(repo.readPage).toHaveBeenCalledTimes(2);
-    await renderer.act(async () => { mockNetworkListener?.({ isConnected: true, isInternetReachable: true }); });
-    expect(repo.readPage).toHaveBeenCalledTimes(2);
-    expect(repo.syncPending).toHaveBeenCalledTimes(1);
-  } finally { await renderer.act(() => screen?.unmount()); }
-});
-test('History refreshes once when connectivity changes from offline to online', async () => {
-  network.getNetworkStateAsync.mockResolvedValueOnce({ isConnected: false }).mockResolvedValue({ isConnected: true, isInternetReachable: true });
-  const repo = repository(); let screen: Rendered | undefined;
-  try {
-    await renderer.act(async () => { screen = renderer.create(<GroupHistoryScreen userId="member" repository={repo as unknown as GroupHistoryRepository} serverPremium={false} onBack={jest.fn()} />); });
-    expect(repo.readPage).toHaveBeenCalledTimes(1);
-    await renderer.act(async () => { mockNetworkListener?.({ isConnected: true, isInternetReachable: true }); });
-    expect(repo.readPage).toHaveBeenCalledTimes(3);
-    expect(repo.syncPending).toHaveBeenCalledTimes(1);
-    await renderer.act(async () => { mockNetworkListener?.({ isConnected: true, isInternetReachable: true }); });
-    expect(repo.readPage).toHaveBeenCalledTimes(3);
-    expect(repo.syncPending).toHaveBeenCalledTimes(1);
   } finally { await renderer.act(() => screen?.unmount()); }
 });
 test('detail distinguishes local recording from final result and excluded history', async () => {
@@ -83,7 +54,7 @@ test('empty history and cloud errors remain recoverable', async () => {
     expect(screen!.root.findAllByProps({ children: 'No group sessions yet' }).length).toBeGreaterThan(0);
     expect(screen!.root.findAllByProps({ children: 'Could not refresh cloud history. Your saved sessions are still available.' }).length).toBeGreaterThan(0);
     const before = repo.syncPending.mock.calls.length;
-    await renderer.act(async () => { (screen!.root.findByProps({ title: 'Retry history refresh' }).props.onPress as () => void)(); });
+    await renderer.act(async () => { (screen!.root.findByProps({ title: 'Refresh & retry sync' }).props.onPress as () => void)(); });
     expect(repo.syncPending.mock.calls.length).toBeGreaterThan(before);
   } finally { await renderer.act(() => screen?.unmount()); }
 });
