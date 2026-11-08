@@ -1,6 +1,6 @@
 # DontLift Firebase Command Contracts
 
-# SL-031/032 payOS override — ADR-025
+# SL-031/032 payOS override — ADR-025; package schedule — ADR-029
 
 For Premium, this boundary supersedes section 7 activation/redeem. Firebase remains Spark; Express runs on an external host. All JSON responses include version 1. Authenticated endpoints verify Bearer Firebase ID token and derive UID from it.
 
@@ -14,7 +14,7 @@ For Premium, this boundary supersedes section 7 activation/redeem. Firebase rema
 
 Backend-only collections are premiumOrders, premiumOrderRequests and premiumCurrentOrders. Client reads/status go through authenticated Express, and direct writes are denied. `users/{uid}.premiumExpiresAt` is server-owned; Rules check `request.time < premiumExpiresAt`, independently of old isPremium boolean. Profile name updates preserve entitlement fields.
 
-MONTH_1 costs 89,000 VND for 1 month; MONTH_3 178,000 for 3; MONTH_6 356,000 for 6; MONTH_12 623,000 for 12. Calendar months follow Asia/Ho_Chi_Minh with end-of-month clamp. Grant stacks from max(backend now, existing expiry), without auto-renewal. No offline purchase queue.
+Package catalog values are defined by [ADR-029](decisions/ADR-029-premium-pricing-update.md): MONTH_1 costs 30,000 VND for 1 paid / 1 granted month; MONTH_3 costs 79,000 VND for 3 paid / 4 granted months; MONTH_6 costs 149,000 VND for 6 paid / 8 granted months; MONTH_12 costs 249,000 VND for 12 paid / 16 granted months. Calendar months follow Asia/Ho_Chi_Minh with end-of-month clamp. Grant stacks from max(backend now, existing expiry), without auto-renewal. No offline purchase queue.
 
 Backend needs payOS client ID/API key/checksum key, Firebase Admin identity and public HTTPS origin. Mobile receives only EXPO_PUBLIC_PREMIUM_API_URL. Provider errors are sanitized in version/code errors; no credentials in responses. Live hosting/configuration requires user credentials; this does not enable Firebase billing.
 

@@ -8,11 +8,32 @@ export type PremiumPackage = {
 };
 // Chỉ để hiển thị khi offline/chưa nối API; checkout luôn cần catalog server đã tải thành công.
 export const DISPLAY_PREMIUM_PACKAGES: PremiumPackage[] = [
-  { id: "MONTH_1", amountVnd: 89000, paidMonths: 1, grantedMonths: 1 },
-  { id: "MONTH_3", amountVnd: 178000, paidMonths: 2, grantedMonths: 3 },
-  { id: "MONTH_6", amountVnd: 356000, paidMonths: 4, grantedMonths: 6 },
-  { id: "MONTH_12", amountVnd: 623000, paidMonths: 7, grantedMonths: 12 },
+  { id: "MONTH_1", amountVnd: 30000, paidMonths: 1, grantedMonths: 1 },
+  { id: "MONTH_3", amountVnd: 79000, paidMonths: 3, grantedMonths: 4 },
+  { id: "MONTH_6", amountVnd: 149000, paidMonths: 6, grantedMonths: 8 },
+  { id: "MONTH_12", amountVnd: 249000, paidMonths: 12, grantedMonths: 16 },
 ];
+
+export function getBestValuePackageId(packages: readonly PremiumPackage[]): string | null {
+  if (packages.length === 0) return null;
+  return packages.reduce((best, candidate) =>
+    candidate.amountVnd / candidate.grantedMonths < best.amountVnd / best.grantedMonths
+      ? candidate
+      : best,
+  ).id;
+}
+
+export function getPremiumPlanLabels(pack: PremiumPackage) {
+  const bonusMonths = Math.max(0, pack.grantedMonths - pack.paidMonths);
+  return {
+    duration: `${pack.paidMonths} ${pack.paidMonths === 1 ? "month" : "months"}`,
+    bonusMonths,
+    bonus: bonusMonths > 0
+      ? `+${bonusMonths} ${bonusMonths === 1 ? "month" : "months"} free`
+      : null,
+    access: bonusMonths > 0 ? `Use Premium for ${pack.grantedMonths} months` : "Basic access",
+  };
+}
 export type PremiumOrder = {
   version: 1;
   requestId: string;

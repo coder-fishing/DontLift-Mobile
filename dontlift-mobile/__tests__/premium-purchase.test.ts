@@ -1,5 +1,5 @@
 import { premiumIsActive, readPremiumExpiry } from '../src/features/premium/premium-entitlement';
-import { createPremiumApi } from '../src/features/premium/premium-api';
+import { createPremiumApi, DISPLAY_PREMIUM_PACKAGES, getBestValuePackageId, getPremiumPlanLabels } from '../src/features/premium/premium-api';
 
 test('expiry is required and exact cutoff is Free', () => {
   expect(premiumIsActive(null, 100)).toBe(false);
@@ -17,7 +17,7 @@ test('checkout sends package identity and fresh token, without a client price', 
     ok: true,
     status: 200,
     headers: { get: jest.fn().mockReturnValue('application/json') },
-    text: async () => JSON.stringify({ version: 1, orderCode: 42, requestId: 'request-1', packageId: 'MONTH_3', amountVnd: 178000,
+    text: async () => JSON.stringify({ version: 1, orderCode: 42, requestId: 'request-1', packageId: 'MONTH_3', amountVnd: 79000,
       status: 'CREATING', checkoutUrl: null, qrCode: null, premiumExpiresAtUtcMs: null }),
   });
   try {
@@ -28,6 +28,23 @@ test('checkout sends package identity and fresh token, without a client price', 
       body: JSON.stringify({ version: 1, requestId: 'request-1', packageId: 'MONTH_3' }),
     }));
   } finally { globalThis.fetch = originalFetch; }
+});
+
+test('display fallback matches the approved package schedule', () => {
+  expect(DISPLAY_PREMIUM_PACKAGES).toEqual([
+    { id: 'MONTH_1', amountVnd: 30000, paidMonths: 1, grantedMonths: 1 },
+    { id: 'MONTH_3', amountVnd: 79000, paidMonths: 3, grantedMonths: 4 },
+    { id: 'MONTH_6', amountVnd: 149000, paidMonths: 6, grantedMonths: 8 },
+    { id: 'MONTH_12', amountVnd: 249000, paidMonths: 12, grantedMonths: 16 },
+  ]);
+  expect(getBestValuePackageId(DISPLAY_PREMIUM_PACKAGES)).toBe('MONTH_12');
+  expect(getBestValuePackageId([])).toBe(null);
+  expect(DISPLAY_PREMIUM_PACKAGES.map(getPremiumPlanLabels)).toEqual([
+    { duration: '1 month', bonusMonths: 0, bonus: null, access: 'Basic access' },
+    { duration: '3 months', bonusMonths: 1, bonus: '+1 month free', access: 'Use Premium for 4 months' },
+    { duration: '6 months', bonusMonths: 2, bonus: '+2 months free', access: 'Use Premium for 8 months' },
+    { duration: '12 months', bonusMonths: 4, bonus: '+4 months free', access: 'Use Premium for 16 months' },
+  ]);
 });
 
 test('old account HTTP result is discarded after account changes', async () => {
