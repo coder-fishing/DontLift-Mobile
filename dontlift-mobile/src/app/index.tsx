@@ -2198,7 +2198,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
             onBack={() => navigateToScreen('02-solo-select')} />
         ) : currentScreen === '15-group-history' ? (
           <GroupHistoryScreen key={profile.uid} userId={profile.uid} serverPremium={profile.isPremium}
-            repository={groupHistoryRepository} initialRoomId={groupHistoryInitialRoomId}
+            repository={groupHistoryRepository} bankDirectory={settlementBankDirectory} initialRoomId={groupHistoryInitialRoomId}
             onBack={() => { setGroupHistoryInitialRoomId(undefined); navigateToScreen('05-group-lobby'); }} />
         ) : currentScreen === '11-solo-history' ? (
           <HistoryScreen
@@ -2433,7 +2433,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
         {currentScreen === '08-vietqr-settlement' && groupSummarySnapshot && (
           <VietQRSettlementScreen roomId={groupSummarySnapshot.roomId} roomPin={groupSummarySnapshot.pin}
             actorUid={profile.uid} member={groupSummarySnapshot.members.find(member => member.uid === profile.uid)}
-            billState={billScreenState} detailsState={paymentDetailsState} isOnline={groupIsOnline}
+            billState={billScreenState} detailsState={paymentDetailsState} isOnline={groupIsOnline} bankDirectory={settlementBankDirectory}
             onRefresh={() => {
               setPaymentDetailsState({ kind: 'loading' });
               setPaymentDetailsRevision(revision => revision + 1);
