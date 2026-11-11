@@ -31,8 +31,8 @@ interface HeaderProps {
 
 function getInitials(displayName: string, email: string): string {
   const parts = displayName.trim().split(/\s+/).filter(Boolean);
-  if (parts.length > 1) return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
-  return (parts[0]?.slice(0, 2) || email.slice(0, 1) || 'D').toUpperCase();
+  if (parts.length > 1) return `${Array.from(parts[0])[0]}${Array.from(parts[parts.length - 1])[0]}`.toUpperCase();
+  return (Array.from(parts[0] || email.slice(0, 1) || 'D').slice(0, 2).join('')).toUpperCase();
 }
 
 function getFirstName(displayName: string, email: string): string {
@@ -50,10 +50,11 @@ function AccountAvatar({
   size: number;
   style?: ViewStyle;
 }) {
+  const [failedImageUri, setFailedImageUri] = useState<string | null>(null);
   return (
     <View style={[styles.avatarFrame, { width: size, height: size, borderRadius: size / 2 }, style]}>
-      {imageUri ? (
-        <Image source={{ uri: imageUri }} contentFit="cover" style={styles.avatarImage} />
+      {imageUri && failedImageUri !== imageUri ? (
+        <Image source={{ uri: imageUri }} contentFit="cover" style={styles.avatarImage} onError={() => setFailedImageUri(imageUri)} />
       ) : (
         <Text style={styles.avatarText}>{initials}</Text>
       )}

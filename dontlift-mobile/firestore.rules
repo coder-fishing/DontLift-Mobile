@@ -1459,7 +1459,7 @@ service cloud.firestore {
       // Profile edit chỉ đổi tên và server timestamp; entitlement/email giữ nguyên.
       allow update: if isOwner(uid)
         && request.resource.data.keys().hasAll(['displayName', 'email', 'isPremium', 'createdAt', 'updatedAt'])
-        && request.resource.data.keys().hasOnly(['displayName', 'email', 'isPremium', 'createdAt', 'updatedAt', 'premiumExpiresAt'])
+        && request.resource.data.keys().hasOnly(['displayName', 'email', 'isPremium', 'createdAt', 'updatedAt', 'premiumExpiresAt', 'avatarUri', 'avatarPublicId'])
         && request.resource.data.diff(resource.data).affectedKeys().hasAll(['displayName', 'updatedAt'])
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'updatedAt'])
         && validProfileDisplayName(request.resource.data.displayName)
@@ -1649,10 +1649,11 @@ service cloud.firestore {
           'violationDurationSeconds', 'joinedAt', 'earlyExitAt', 'syncedThroughAt', 'syncAcknowledgedAt'
           ])
           && request.resource.data.keys().hasOnly([
-            'displayName', 'role', 'status', 'penaltyScore', 'liftCount',
+            'displayName', 'avatarUri', 'role', 'status', 'penaltyScore', 'liftCount',
           'violationDurationSeconds', 'joinedAt', 'earlyExitAt', 'syncedThroughAt', 'syncAcknowledgedAt', 'lastViolationEventId', 'syncAckRequestId'
           ])
           && request.resource.data.displayName == get(profilePath(memberUid)).data.displayName
+          && request.resource.data.get('avatarUri', null) == get(profilePath(memberUid)).data.get('avatarUri', null)
           && request.resource.data.status == 'ACTIVE'
           && request.resource.data.penaltyScore == 0
           && request.resource.data.liftCount == 0
@@ -1675,6 +1676,10 @@ service cloud.firestore {
           );
         allow list: if roomParticipant(roomId, request.auth.uid);
         allow update: if signedIn() && (
+          (memberUid == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['avatarUri'])
+            && request.resource.data.get('avatarUri', null) == get(profilePath(memberUid)).data.get('avatarUri', null))
+          ||
           validGroupViolationMemberUpdate(roomId, memberUid)
           || validMemberSyncAcknowledgment(roomId, memberUid)
           || validEarlyExitMemberApproval(roomId, memberUid)

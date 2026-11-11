@@ -385,6 +385,18 @@ const migrations: LocalMigration[] = [
       `);
     },
   },
+  {
+    version: 15,
+    async migrate(database) {
+      const columns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(local_profiles)');
+      if (!columns.some(column => column.name === 'avatar_uri')) {
+        await database.execAsync('ALTER TABLE local_profiles ADD COLUMN avatar_uri TEXT');
+      }
+      if (!columns.some(column => column.name === 'avatar_public_id')) {
+        await database.execAsync('ALTER TABLE local_profiles ADD COLUMN avatar_public_id TEXT');
+      }
+    },
+  },
 ];
 
 const latestSchemaVersion = migrations.at(-1)?.version ?? 0;

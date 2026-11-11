@@ -1,4 +1,5 @@
 import { createAuthController } from '../src/features/auth/auth-controller';
+import { readRegistrationProfile } from '../src/features/auth/firebase-profile';
 import type {
   RegistrationAuthPort,
   RegistrationProfile,
@@ -71,6 +72,14 @@ const validInput = {
 };
 
 describe('registration profile controller', () => {
+  it('accepts a profile without avatar metadata and parses canonical avatar fields', () => {
+    const base = { displayName: 'Lift Friend', email: 'lift@example.com', createdAt: { toMillis: () => 12 } };
+    expect(readRegistrationProfile('user-1', base).avatarUri).toBeUndefined();
+    expect(readRegistrationProfile('user-1', { ...base,
+      avatarUri: 'https://res.cloudinary.com/demo/avatar.jpg', avatarPublicId: 'avatars/user-1/a1' })).toMatchObject({
+      avatarUri: 'https://res.cloudinary.com/demo/avatar.jpg', avatarPublicId: 'avatars/user-1/a1', isPremium: false,
+    });
+  });
   it('rejects mismatched confirmation before creating an Auth account', async () => {
     const { controller, events } = setup();
     const result = await controller.register({ ...validInput, passwordConfirmation: 'different-password' });

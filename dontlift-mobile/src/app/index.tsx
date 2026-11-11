@@ -212,8 +212,19 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   }), [roomRuntime]);
   const acceptCanonicalProfile = session.acceptCanonicalProfile;
   const premiumApi = useMemo(() => createPremiumApi(roomRuntime.auth), [roomRuntime.auth]);
+  const avatarProjectionSync = useRef<{ uid: string; uri?: string; initialized: boolean }>(
+    { uid: profile.uid, uri: profile.avatarUri ?? undefined, initialized: false },
+  );
   useEffect(() => profileRepository.listen(profile.uid, (canonical, fromCache) => {
-    if (!fromCache) acceptCanonicalProfile(canonical);
+    if (!fromCache) {
+      acceptCanonicalProfile(canonical);
+      const avatarUri = canonical.avatarUri ?? undefined;
+      const previous = avatarProjectionSync.current;
+      if (previous.uid !== profile.uid || !previous.initialized || previous.uri !== avatarUri) {
+        avatarProjectionSync.current = { uid: profile.uid, uri: avatarUri, initialized: true };
+        void profileRepository.syncAvatarToRooms(profile.uid, avatarUri);
+      }
+    }
   }, () => undefined), [profileRepository, profile.uid, acceptCanonicalProfile]);
   useEffect(() => {
     if (!profile.premiumExpiresAtUtcMs) return;
@@ -354,12 +365,12 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       const localPage = await groupHistoryRepository.readPage(profile.uid, { ...options, online: false });
       if (!isCurrent()) return;
       setRecentGroupSessions(localPage.items);
-      const localPreviews = await Promise.all(localPage.items.slice(0, 2).map(async entry => [
+      const localPreviews = await Promise.all(localPage.items.slice(0, 5).map(async entry => [
         entry.summary.roomId,
         await groupHistoryRepository.readRoomRosterPreview(profile.uid, entry.summary.roomId, false),
       ] as const));
       if (!isCurrent()) return;
-      setRecentGroupMemberPreviews(Object.fromEntries(localPreviews));
+      setRecentGroupMemberPreviews(previous => ({ ...Object.fromEntries(localPreviews), ...previous }));
       const network = await Network.getNetworkStateAsync();
       if (!isCurrent()) return;
       const online = network.isConnected === true && network.isInternetReachable !== false;
@@ -370,7 +381,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       const page = await groupHistoryRepository.readPage(profile.uid, { ...options, online: true });
       if (!isCurrent()) return;
       setRecentGroupSessions(page.items);
-      const remotePreviews = await Promise.all(page.items.slice(0, 2).map(async entry => [
+      const remotePreviews = await Promise.all(page.items.slice(0, 5).map(async entry => [
         entry.summary.roomId,
         await groupHistoryRepository.readRoomRosterPreview(profile.uid, entry.summary.roomId, true),
       ] as const));
@@ -2182,6 +2193,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
         currentScreen={currentScreen}
         displayName={profile.displayName}
         email={profile.email}
+        avatarUri={profile.avatarUri ?? undefined}
         onNavigate={navigateToScreen}
         onOpenSettings={openSettings}
       />

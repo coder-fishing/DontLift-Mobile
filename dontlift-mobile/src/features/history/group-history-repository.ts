@@ -272,6 +272,18 @@ export function createGroupHistoryRepository(dependencies: {
     },
     async readRoomRosterPreview(uid: string, roomId: string, online: boolean): Promise<GroupRoomRosterPreview | null> {
       if (!isActor(uid)) return null;
+      const rosterCacheKey = `group-roster:${uid}:${roomId}`;
+      if (!online) {
+        try {
+          const saved = await (await database()).getFirstAsync<{ value: string }>(
+            'SELECT value FROM app_settings WHERE key = ?', rosterCacheKey);
+          const preview = saved ? JSON.parse(saved.value) as GroupRoomRosterPreview : null;
+          if (preview && Number.isSafeInteger(preview.totalCount) && Array.isArray(preview.members)
+            && preview.members.length <= 3 && preview.totalCount >= preview.members.length
+            && preview.members.every(member => typeof member.uid === 'string' && typeof member.displayName === 'string'
+              && (member.avatarUri === undefined || typeof member.avatarUri === 'string'))) return preview;
+        } catch { /* Fall back to the saved session detail. */ }
+      }
       let cachedJson: string | null = null;
       try {
         const local = await database();
@@ -312,7 +324,13 @@ export function createGroupHistoryRepository(dependencies: {
             ...(typeof data.avatarUri === 'string' && data.avatarUri.trim() ? { avatarUri: data.avatarUri } : {}) }];
         });
         const count = Number(room.data().participantCount);
-        return { totalCount: Number.isSafeInteger(count) && count >= members.length ? count : members.length, members };
+        const preview = { totalCount: Number.isSafeInteger(count) && count >= members.length ? count : members.length, members };
+        try {
+          await (await database()).runAsync(
+            'INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+            rosterCacheKey, JSON.stringify(preview));
+        } catch { /* A failed cache write must not hide a confirmed server roster. */ }
+        return preview;
       } catch { return null; }
     },
     async readDetail(uid: string, roomId: string): Promise<GroupHistoryDetail> {

@@ -35,7 +35,7 @@ const RECENT_AVATAR_SLOT_WIDTH = 32 + 3 * (32 - 9);
 
 export function GroupHomeDashboard({ isCreating, errorMessage, recentSessions, recentSessionsState,
   recentMemberPreviews = {}, onCreateRoom, onJoinRoom, onCancelCreate, onOpenHistory, onOpenRecentSession, onRetryRecentSessions }: Props) {
-  const sessions = recentSessions.slice(0, 2);
+  const sessions = recentSessions.slice(0, 5);
   return (
     <View style={styles.container}>
       <LinearGradient
@@ -160,16 +160,16 @@ function RecentSessionRow({ entry, memberPreview, onPress }: {
 
 function getInitials(displayName: string): string {
   const parts = displayName.trim().split(/\s+/).filter(Boolean);
-  if (parts.length > 1) return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
-  return (parts[0]?.slice(0, 2) || '?').toUpperCase();
+  if (parts.length > 1) return `${Array.from(parts[0])[0]}${Array.from(parts[parts.length - 1])[0]}`.toUpperCase();
+  return (Array.from(parts[0] || '?').slice(0, 2).join('')).toUpperCase();
 }
 
 function MemberAvatar({ displayName, avatarUri }: { displayName: string; avatarUri?: string }) {
-  const [imageFailed, setImageFailed] = useState(false);
+  const [failedImageUri, setFailedImageUri] = useState<string | null>(null);
   return (
     <View style={styles.memberAvatar}>
-      {avatarUri && !imageFailed ? <Image source={{ uri: avatarUri }} contentFit="cover" style={styles.memberAvatarImage}
-        onError={() => setImageFailed(true)} accessibilityLabel={`${displayName}'s avatar`} />
+      {avatarUri && failedImageUri !== avatarUri ? <Image source={{ uri: avatarUri }} contentFit="cover" cachePolicy="memory-disk" recyclingKey={avatarUri} transition={0} style={styles.memberAvatarImage}
+        onError={() => setFailedImageUri(avatarUri)} accessibilityLabel={`${displayName}'s avatar`} />
         : <Text numberOfLines={1} style={styles.memberAvatarInitials}>{getInitials(displayName)}</Text>}
     </View>
   );

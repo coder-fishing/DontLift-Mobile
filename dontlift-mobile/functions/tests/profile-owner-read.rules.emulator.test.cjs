@@ -23,6 +23,12 @@ test('profile Rules enforce owner-only reads and server-owned writes', async (t)
     await setDoc(doc(context.firestore(), `${userPath}/commandReceipts/receipt-1`), {
       payloadHash: 'server-only',
     });
+    await setDoc(doc(context.firestore(), 'users/profile-owner'), { avatarUri: 'https://res.cloudinary.com/demo/avatar.jpg',
+      avatarPublicId: 'avatars/profile-owner/a1' }, { merge: true });
+    await setDoc(doc(context.firestore(), 'rooms/avatar-room/members/profile-owner'), {
+      displayName: 'Owner', role: 'MEMBER', status: 'ACTIVE', penaltyScore: 0, liftCount: 0,
+      violationDurationSeconds: 0, avatarUri: 'https://res.cloudinary.com/demo/old.jpg',
+    });
   });
 
   await t.test('authenticated owner can read own profile', async () => {
@@ -42,6 +48,19 @@ test('profile Rules enforce owner-only reads and server-owned writes', async (t)
     const owner = environment.authenticatedContext(uid).firestore();
     await assertFails(updateDoc(doc(owner, userPath), { isPremium: true }));
     await assertFails(setDoc(doc(owner, 'users/attacker'), { isPremium: true }));
+    await assertFails(updateDoc(doc(owner, userPath), { avatarUri: 'https://res.cloudinary.com/demo/forged.jpg' }));
+  });
+
+  await t.test('a member can update only their own room avatar to the canonical profile URL', async () => {
+    const owner = environment.authenticatedContext(uid).firestore();
+    const member = doc(owner, 'rooms/avatar-room/members/profile-owner');
+    await assertSucceeds(updateDoc(member, { avatarUri: 'https://res.cloudinary.com/demo/avatar.jpg' }));
+    await assertFails(updateDoc(member, { avatarUri: 'https://res.cloudinary.com/demo/forged.jpg' }));
+    await assertFails(updateDoc(member, { avatarUri: 'https://res.cloudinary.com/demo/avatar.jpg', liftCount: 999 }));
+    const other = environment.authenticatedContext('another-user').firestore();
+    await assertFails(updateDoc(doc(other, 'rooms/avatar-room/members/profile-owner'), {
+      avatarUri: 'https://res.cloudinary.com/demo/avatar.jpg',
+    }));
   });
 
   await t.test('owners can read command receipts but cannot forge them', async () => {

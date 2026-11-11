@@ -1,8 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image } from 'expo-image';
+import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import * as Network from 'expo-network';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Colors, Spacing } from '../constants/theme';
+import { BottomTabInset, Colors, Spacing } from '../constants/theme';
 import { GlassCard } from '../components/GlassCard';
 import type { RegistrationProfile } from '../features/auth/auth-controller';
 import type { ProfileRepository } from '../features/profile/profile-repository';
@@ -38,13 +41,63 @@ export function ProfileScreen({ profile, repository, onProfileUpdated, onSignOut
   const [needsLocalRepair, setNeedsLocalRepair] = useState(false);
   const [online, setOnline] = useState<boolean | null>(null);
   const [listeningError, setListeningError] = useState(false);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const [contentHeight, setContentHeight] = useState(0);
+  const [failedAvatarUri, setFailedAvatarUri] = useState<string | null>(null);
   const mounted = useRef(true);
   const savedNameRef = useRef(savedName);
   const onProfileUpdatedRef = useRef(onProfileUpdated);
   const dirty = name.trim() !== savedName;
   const canSave = canSubmitProfileSave({ dirty, needsLocalRepair, saving, online });
-  savedNameRef.current = savedName;
-  onProfileUpdatedRef.current = onProfileUpdated;
+  useEffect(() => { savedNameRef.current = savedName; }, [savedName]);
+  useEffect(() => { onProfileUpdatedRef.current = onProfileUpdated; }, [onProfileUpdated]);
+
+  const changePhoto = useCallback(async () => {
+    let picked: ImagePicker.ImagePickerResult;
+    try { picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.9 }); }
+    catch { setMessage('Could not open your photo library. Check photo access and retry.'); return; }
+    if (picked.canceled || !picked.assets?.[0]) return;
+    const asset = picked.assets[0];
+    if (asset.fileSize != null && asset.fileSize > 5 * 1024 * 1024) {
+      setMessage('Choose a photo smaller than 5 MB.'); return;
+    }
+    const extension = asset.fileName?.split('.').pop()?.toLocaleLowerCase();
+    const mimeType = asset.mimeType ?? (extension === 'png' ? 'image/png' : extension === 'webp' ? 'image/webp'
+      : extension === 'jpg' || extension === 'jpeg' ? 'image/jpeg' : undefined);
+    if (!mimeType) { setMessage('Could not identify that photo. Choose a JPEG, PNG, or WebP image.'); return; }
+    setAvatarBusy(true); setMessage(undefined);
+    try {
+      const result = await repository.updateAvatar(profile.uid, asset.uri, mimeType);
+      if (!mounted.current) return;
+      onProfileUpdated(result.profile);
+      setMessage(result.cleanupPending ? 'Profile photo updated. Some cleanup is still pending.' : 'Profile photo updated.');
+    } catch (error) {
+      if (mounted.current) setMessage(error instanceof Error ? error.message : 'Could not upload the photo. Please retry.');
+    } finally { if (mounted.current) setAvatarBusy(false); }
+  }, [repository, profile.uid, onProfileUpdated]);
+
+  const removePhoto = useCallback(() => Alert.alert('Remove profile photo?', 'Your initials will be shown to other members.', [
+    { text: 'Cancel', style: 'cancel' },
+    { text: 'Remove photo', style: 'destructive', onPress: () => {
+      void (async () => {
+        setAvatarBusy(true); setMessage(undefined);
+        try {
+          const result = await repository.removeAvatar(profile.uid);
+          if (!mounted.current) return;
+          onProfileUpdated(result.profile);
+          setMessage(result.cleanupPending ? 'Profile photo removed. Some cleanup is still pending.' : 'Profile photo removed.');
+        } catch (error) {
+          if (mounted.current) setMessage(error instanceof Error ? error.message : 'Could not remove the photo. Please retry.');
+        } finally { if (mounted.current) setAvatarBusy(false); }
+      })();
+    } },
+  ]), [repository, profile.uid, onProfileUpdated]);
+
+  const nameParts = profile.displayName.trim().split(/\s+/u).filter(Boolean);
+  const initials = nameParts.length > 1
+    ? `${Array.from(nameParts[0])[0]}${Array.from(nameParts[nameParts.length - 1])[0]}`.toLocaleUpperCase()
+    : Array.from(nameParts[0] ?? profile.email.slice(0, 1) ?? 'D').slice(0, 2).join('').toLocaleUpperCase() || 'D';
 
   useEffect(() => {
     mounted.current = true;
@@ -113,36 +166,51 @@ export function ProfileScreen({ profile, repository, onProfileUpdated, onSignOut
 
   return <KeyboardAvoidingView style={[styles.root, { paddingBottom: Math.max(insets.bottom, 8) }]}
     behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-    <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+    <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}
+      onLayout={event => setViewportHeight(event.nativeEvent.layout.height)}
+      onContentSizeChange={(_width, height) => setContentHeight(height)}
+      scrollEnabled={viewportHeight === 0 || contentHeight > viewportHeight + 1} bounces={false}>
       <Pressable accessibilityRole="button" accessibilityLabel="Return to the main screen" onPress={onBack} hitSlop={8} style={styles.back}>
         <Text style={[styles.backText, { color: colors.primary }]}>‹  Back to DontLift</Text>
       </Pressable>
 
-      <View style={styles.intro}>
-        <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>Your profile</Text>
-        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Manage the name people see in your rooms.</Text>
-      </View>
-
-      <GlassCard className="" style={styles.card}>
+      <GlassCard className="" style={styles.identityCard}>
+        <View style={styles.identityContent}>
         <View style={styles.identityRow}>
           <View style={[styles.avatar, { backgroundColor: colors.backgroundSelected }]}>
-            <Text style={[styles.avatarText, { color: colors.primary }]}>{profile.displayName.trim().slice(0, 1).toUpperCase()}</Text>
+            {profile.avatarUri && failedAvatarUri !== profile.avatarUri ? <Image source={{ uri: profile.avatarUri }} contentFit="cover" style={styles.avatarImage} onError={() => setFailedAvatarUri(profile.avatarUri ?? null)} /> :
+              <Text style={[styles.avatarText, { color: colors.primary }]}>{initials}</Text>}
           </View>
           <View style={styles.identityCopy}>
             <Text style={[styles.identityName, { color: colors.text }]} numberOfLines={1}>{profile.displayName}</Text>
-            <Text style={[styles.identityCaption, { color: colors.textSecondary }]}>DontLift account</Text>
+            <Text style={[styles.identityCaption, { color: colors.textSecondary }]} numberOfLines={1}>{profile.email}</Text>
           </View>
           <View style={[styles.planPill, { backgroundColor: colors.backgroundSelected }]}>
             <Text style={[styles.planText, { color: colors.primary }]}>{profile.isPremium ? 'PRO' : 'FREE'}</Text>
           </View>
         </View>
-
+        <View style={styles.avatarActions}>
+          <Pressable accessibilityRole="button" accessibilityLabel={profile.avatarUri ? 'Change profile photo' : 'Add profile photo'} disabled={avatarBusy} onPress={() => { void changePhoto(); }} style={({ pressed }) => [styles.photoAction, { borderColor: colors.border, opacity: avatarBusy ? 0.55 : pressed ? 0.7 : 1 }]}>
+            <View style={styles.photoActionContent}>
+            {avatarBusy ? <ActivityIndicator size="small" color={colors.primary} /> : <Ionicons name="camera-outline" size={18} color={colors.primary} />}
+            <Text style={[styles.photoActionText, { color: colors.primary }]}>{avatarBusy ? 'Updating…' : profile.avatarUri ? 'Change photo' : 'Add photo'}</Text>
+            </View>
+          </Pressable>
+          {profile.avatarUri ? <Pressable accessibilityRole="button" accessibilityLabel="Remove profile photo" disabled={avatarBusy} onPress={removePhoto} style={({ pressed }) => [styles.removePhoto, { opacity: avatarBusy ? 0.55 : pressed ? 0.7 : 1 }]}>
+            <Text style={[styles.removePhotoText, { color: colors.error }]}>Remove</Text>
+          </Pressable> : null}
+        </View>
         <View style={styles.divider} />
+        <View style={styles.premiumRow}>
         {profile.premiumExpiresAtUtcMs != null ? <Text style={[styles.helper, { color: colors.textSecondary }]}>Premium until {new Date(profile.premiumExpiresAtUtcMs).toLocaleDateString('vi-VN')}</Text> : null}
-        {onPremium ? <Pressable accessibilityRole="button" onPress={onPremium} style={{ minHeight: 44, justifyContent: 'center' }}><Text style={[styles.label, { color: colors.primary }]}>{profile.isPremium ? 'Extend Premium' : 'Explore Premium'}</Text></Pressable> : null}
+        {onPremium ? <Pressable accessibilityRole="button" accessibilityLabel={profile.isPremium ? 'Extend Premium' : 'Explore Premium'} onPress={onPremium} style={styles.premiumAction}><Text style={[styles.photoActionText, { color: colors.primary }]}>{profile.isPremium ? 'Extend' : 'Explore Premium'}</Text></Pressable> : null}
+        </View>
+        </View>
+      </GlassCard>
 
-        <Text accessibilityRole="header" style={[styles.sectionTitle, { color: colors.text }]}>Display name</Text>
-        <Text style={[styles.helper, { color: colors.textSecondary }]}>This name appears to people in your group rooms.</Text>
+      <GlassCard className="" style={styles.card}>
+        <View style={styles.formContent}>
+        <Text accessibilityRole="header" style={[styles.sectionTitle, { color: colors.text }]}>Personal information</Text>
         <Text accessibilityRole="text" style={[styles.label, { color: colors.text }]}>Name</Text>
         <TextInput testID="profile-display-name" accessibilityLabel="Display name" value={name} onChangeText={value => {
           setName(value); setNameError(undefined); setMessage(undefined);
@@ -159,21 +227,23 @@ export function ProfileScreen({ profile, repository, onProfileUpdated, onSignOut
           <Text selectable style={[styles.readOnlyText, { color: colors.textSecondary }]}>{profile.email}</Text>
           <Text style={[styles.readOnlyTag, { color: colors.textSecondary }]}>Read only</Text>
         </View>
-        <Text style={[styles.privacy, { color: colors.textSecondary }]}>Email and account plan are managed by your account and cannot be changed here.</Text>
+        <Text style={[styles.privacy, { color: colors.textSecondary }]}>Email is managed by your account.</Text>
 
-        {message ? <Text accessibilityRole={message === 'Profile saved.' ? 'text' : 'alert'} style={[styles.message,
-          { color: message === 'Profile saved.' ? colors.primary : colors.error }]}>{message}</Text> : null}
+        {message ? <Text accessibilityRole={message === 'Profile saved.' || message.startsWith('Profile photo updated.') || message.startsWith('Profile photo removed.') ? 'text' : 'alert'} style={[styles.message,
+          { color: message === 'Profile saved.' || message.startsWith('Profile photo updated.') || message.startsWith('Profile photo removed.') ? colors.primary : colors.error }]}>{message}</Text> : null}
         {listeningError ? <Text accessibilityRole="alert" style={[styles.message, { color: colors.error }]}>Live profile updates are unavailable. Check your connection and retry.</Text> : null}
         {!online && !message ? <Text style={[styles.message, { color: colors.textSecondary }]}>Offline. Changes stay on this screen until you save online.</Text> : null}
 
         <Pressable testID="profile-save" accessibilityRole="button"
           accessibilityLabel={needsLocalRepair && !dirty ? 'Retry local profile update' : 'Save profile name'}
           accessibilityState={{ disabled: !canSave }} disabled={!canSave} onPress={() => { void save(); }}
-          style={({ pressed }) => [styles.saveButton, { backgroundColor: colors.primary,
-            opacity: !canSave ? 0.48 : pressed ? 0.82 : 1 }]}>
+          style={[styles.saveButton, { backgroundColor: canSave || saving ? colors.primary : colors.backgroundElement,
+            borderColor: canSave || saving ? colors.primary : colors.border }]}
+          android_ripple={canSave ? { color: colors.backgroundSelected } : undefined}>
           {saving ? <ActivityIndicator color={colors.onPrimary} /> : null}
-          <Text style={[styles.saveText, { color: colors.onPrimary }]}>{saving ? 'Saving…' : needsLocalRepair && !dirty ? 'Retry local update' : 'Save changes'}</Text>
+          <Text style={[styles.saveText, { color: canSave || saving ? colors.onPrimary : colors.textSecondary }]}>{saving ? 'Saving…' : needsLocalRepair && !dirty ? 'Retry local update' : 'Save changes'}</Text>
         </Pressable>
+        </View>
       </GlassCard>
 
       <Pressable accessibilityRole="button" accessibilityLabel="Sign out" onPress={confirmSignOut} style={styles.signOut}>
@@ -184,23 +254,28 @@ export function ProfileScreen({ profile, repository, onProfileUpdated, onSignOut
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 }, content: { padding: Spacing.three, paddingBottom: Spacing.four, gap: Spacing.three },
+  root: { flex: 1 }, content: { paddingHorizontal: Spacing.three, paddingTop: 4, paddingBottom: BottomTabInset + 12, gap: 10 },
   back: { minHeight: 44, alignSelf: 'flex-start', justifyContent: 'center', paddingHorizontal: 4 },
   backText: { fontSize: 15, fontWeight: '700' }, intro: { gap: 6, marginBottom: 2 },
   title: { fontSize: 30, lineHeight: 36, fontWeight: '800', letterSpacing: -0.7 },
-  subtitle: { fontSize: 15, lineHeight: 22 }, card: { gap: 14, borderRadius: 24, padding: 20 },
-  identityRow: { flexDirection: 'row', alignItems: 'center', gap: 12 }, avatar: { width: 52, height: 52, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { fontSize: 22, fontWeight: '800' }, identityCopy: { flex: 1, gap: 3 }, identityName: { fontSize: 17, fontWeight: '700' },
+  subtitle: { fontSize: 15, lineHeight: 22 }, identityCard: { borderRadius: 24, padding: 14 }, card: { borderRadius: 24, padding: 16 },
+  identityContent: { gap: 8 }, formContent: { gap: 7 },
+  premiumRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', columnGap: 10 },
+  photoActionContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  premiumAction: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start', paddingHorizontal: 4 },
+  identityRow: { flexDirection: 'row', alignItems: 'center', gap: 14 }, avatar: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  avatarImage: { width: '100%', height: '100%', borderRadius: 38 }, avatarText: { fontSize: 26, fontWeight: '800' }, identityCopy: { flex: 1, gap: 3 }, identityName: { fontSize: 17, fontWeight: '700' },
+  avatarActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12 }, photoAction: { minHeight: 44, borderWidth: 1, borderRadius: 22, paddingHorizontal: 16, justifyContent: 'center' }, photoActionText: { fontSize: 13, fontWeight: '700' }, removePhoto: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 16 }, removePhotoText: { fontSize: 13, fontWeight: '700' },
   identityCaption: { fontSize: 13 }, planPill: { minHeight: 30, borderRadius: 15, paddingHorizontal: 11, alignItems: 'center', justifyContent: 'center' },
   planText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.7 }, divider: { height: StyleSheet.hairlineWidth, backgroundColor: Colors.light.border, marginVertical: 3 },
-  sectionTitle: { fontSize: 19, fontWeight: '700' }, helper: { fontSize: 14, lineHeight: 20, marginTop: -8 },
-  label: { fontSize: 14, fontWeight: '700', marginBottom: -7 }, input: { minHeight: 52, borderWidth: 1, borderRadius: 15, paddingHorizontal: 15, fontSize: 16 },
-  inputFooter: { minHeight: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: -9 },
+  sectionTitle: { fontSize: 19, fontWeight: '700' }, helper: { fontSize: 14, lineHeight: 20 },
+  label: { fontSize: 14, fontWeight: '700', marginTop: 4 }, input: { minHeight: 52, borderWidth: 1, borderRadius: 15, paddingHorizontal: 15, fontSize: 16 },
+  inputFooter: { minHeight: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   error: { fontSize: 13, lineHeight: 18 }, counter: { fontSize: 12, lineHeight: 18, fontVariant: ['tabular-nums'] },
   emailLabel: { marginTop: 2 }, readOnly: { minHeight: 52, borderWidth: 1, borderRadius: 15, paddingHorizontal: 14, flexDirection: 'row', gap: 8, alignItems: 'center' },
   readOnlyText: { flex: 1, fontSize: 15 }, readOnlyTag: { fontSize: 11, fontWeight: '700' },
-  privacy: { fontSize: 13, lineHeight: 19, marginTop: -6 }, message: { fontSize: 14, lineHeight: 20 },
-  saveButton: { minHeight: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 9, paddingHorizontal: 20, marginTop: 2 },
+  privacy: { fontSize: 13, lineHeight: 19 }, message: { fontSize: 14, lineHeight: 20 },
+  saveButton: { minHeight: 50, borderRadius: 25, borderWidth: 1, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 9, paddingHorizontal: 20, marginTop: 2 },
   saveText: { fontSize: 15, fontWeight: '700' }, signOut: { minHeight: 44, alignItems: 'center', justifyContent: 'center', alignSelf: 'center', paddingHorizontal: 16 },
   signOutText: { fontSize: 14, fontWeight: '700' },
 });

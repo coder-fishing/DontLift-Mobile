@@ -1,10 +1,11 @@
 import type { Auth } from 'firebase/auth';
-import { doc, onSnapshot, runTransaction, serverTimestamp, type Firestore } from 'firebase/firestore';
+import { collection, deleteField, doc, getDocFromServer, getDocsFromServer, onSnapshot, runTransaction, serverTimestamp, updateDoc, writeBatch, type Firestore } from 'firebase/firestore';
 import type { RegistrationProfile } from '../auth/auth-controller';
 import { readRegistrationProfile } from '../auth/firebase-profile';
 import { getLocalDatabase } from '../local/database';
 import { upsertLocalProfile } from '../auth/local-profile-repository';
 import type * as SQLite from 'expo-sqlite';
+import { createAvatarApi } from './avatar-api';
 
 export type ProfileNameValidation = { value: string; error?: undefined } | { value?: undefined; error: 'required' | 'too-long' };
 export function validateProfileDisplayName(input: string): ProfileNameValidation {
@@ -36,6 +37,28 @@ export function createProfileRepository(dependencies: {
   database?: Promise<SQLite.SQLiteDatabase>;
   persistLocal?: (profile: RegistrationProfile) => Promise<void>;
 }) {
+  const avatarApi = createAvatarApi(dependencies.auth);
+  async function syncAvatarToRooms(uid: string, avatarUri?: string): Promise<boolean> {
+    if (dependencies.auth.currentUser?.uid !== uid) return false;
+    try {
+      const index = await getDocsFromServer(collection(dependencies.firestore, 'users', uid, 'groupRooms'));
+      const memberRefs = index.docs.map(item => doc(dependencies.firestore, 'rooms', item.id, 'members', uid));
+      for (let offset = 0; offset < memberRefs.length; offset += 400) {
+        if (dependencies.auth.currentUser?.uid !== uid) return false;
+        const refs = memberRefs.slice(offset, offset + 400);
+        const snapshots = await Promise.all(refs.map(ref => getDocFromServer(ref)));
+        const batch = writeBatch(dependencies.firestore);
+        let updates = 0;
+        snapshots.forEach((snapshot, indexInBatch) => {
+          if (!snapshot.exists() || snapshot.data().avatarUri === avatarUri) return;
+          batch.update(refs[indexInBatch], { avatarUri: avatarUri ?? deleteField() });
+          updates += 1;
+        });
+        if (updates) await batch.commit();
+      }
+      return true;
+    } catch { return false; }
+  }
   const persistLocal = dependencies.persistLocal ?? (async (profile: RegistrationProfile) => {
     await upsertLocalProfile(await (dependencies.database ?? getLocalDatabase()), profile);
   });
@@ -87,6 +110,43 @@ export function createProfileRepository(dependencies: {
       try { await persistLocal(canonical); }
       catch { throw new ProfileEditError('local-cache-failed'); }
       return canonical;
+    },
+    async updateAvatar(uid: string, uri: string, mimeType: string): Promise<{ profile: RegistrationProfile; cleanupPending: boolean }> {
+      if (dependencies.auth.currentUser?.uid !== uid) throw new ProfileEditError('unauthenticated');
+      const uploaded = await avatarApi.upload(uid, uri, mimeType);
+      if (dependencies.auth.currentUser?.uid !== uid) throw new ProfileEditError('unauthenticated');
+      try {
+        const snapshot = await getDocFromServer(doc(dependencies.firestore, 'users', uid));
+        if (!snapshot.exists()) throw new ProfileEditError('not-found');
+        const canonical = readRegistrationProfile(uid, snapshot.data());
+        if (!canonical.avatarUri || !canonical.avatarPublicId) throw new ProfileEditError('unavailable');
+        await persistLocal(canonical);
+        const propagated = await syncAvatarToRooms(uid, canonical.avatarUri);
+        return { profile: canonical, cleanupPending: uploaded.cleanupPending || !propagated };
+      } catch (error) {
+        if (error instanceof ProfileEditError) throw error;
+        throw mapError(error);
+      }
+    },
+    async removeAvatar(uid: string): Promise<{ profile: RegistrationProfile; cleanupPending: boolean }> {
+      if (dependencies.auth.currentUser?.uid !== uid) throw new ProfileEditError('unauthenticated');
+      const result = await avatarApi.remove(uid);
+      if (dependencies.auth.currentUser?.uid !== uid) throw new ProfileEditError('unauthenticated');
+      try {
+        const snapshot = await getDocFromServer(doc(dependencies.firestore, 'users', uid));
+        if (!snapshot.exists()) throw new ProfileEditError('not-found');
+        const canonical = readRegistrationProfile(uid, snapshot.data());
+        if (canonical.avatarUri || canonical.avatarPublicId) throw new ProfileEditError('unavailable');
+        await persistLocal(canonical);
+        const propagated = await syncAvatarToRooms(uid, canonical.avatarUri ?? undefined);
+        return { profile: canonical, cleanupPending: result.cleanupPending || !propagated };
+      } catch (error) {
+        if (error instanceof ProfileEditError) throw error;
+        throw mapError(error);
+      }
+    },
+    async syncAvatarToRooms(uid: string, avatarUri?: string): Promise<boolean> {
+      return syncAvatarToRooms(uid, avatarUri);
     },
   };
 }

@@ -4,8 +4,13 @@ import { canSubmitProfileSave } from '../src/features/profile/profile-save-state
 
 jest.mock('firebase/firestore', () => ({
   doc: (_firestore: unknown, ...parts: string[]) => ({ path: parts.join('/') }),
-  onSnapshot: jest.fn(), runTransaction: jest.fn(), serverTimestamp: () => 'SERVER_TIME',
+  onSnapshot: jest.fn(), runTransaction: jest.fn(), serverTimestamp: () => 'SERVER_TIME', getDocFromServer: jest.fn(),
+  collection: jest.fn(), getDocsFromServer: jest.fn(), deleteField: jest.fn(() => 'DELETE_FIELD'), updateDoc: jest.fn(), writeBatch: jest.fn(),
 }));
+jest.mock('../src/features/profile/avatar-api', () => ({ createAvatarApi: () => ({
+  upload: jest.fn().mockResolvedValue({ version: 1, url: 'https://res.cloudinary.com/demo/a.jpg', publicId: 'avatars/user-a/a', cleanupPending: false }),
+  remove: jest.fn().mockResolvedValue({ cleanupPending: false }),
+}) }));
 
 const firestore = {} as never;
 const auth = { currentUser: { uid: 'user-a' } } as never;
@@ -60,6 +65,28 @@ describe('profile editing', () => {
     await expect(repository.updateDisplayName('user-a', '  ')).rejects.toMatchObject({ code: 'invalid-argument' });
     await expect(repository.updateDisplayName('user-b', 'Other')).rejects.toMatchObject({ code: 'unauthenticated' });
     expect(runTransaction).not.toHaveBeenCalled();
+  });
+
+  it('confirms avatar metadata from the server and persists its local projection', async () => {
+    const { getDocFromServer } = require('firebase/firestore') as { getDocFromServer: jest.Mock };
+    getDocFromServer.mockResolvedValue({ exists: () => true, data: () => ({ displayName: 'Before', email: profile.email,
+      isPremium: false, createdAt: { toMillis: () => 1234 }, avatarUri: 'https://res.cloudinary.com/demo/a.jpg',
+      avatarPublicId: 'avatars/user-a/a' }) });
+    const persistLocal = jest.fn().mockResolvedValue(undefined);
+    const repository = createProfileRepository({ firestore, auth, persistLocal });
+    await expect(repository.updateAvatar('user-a', 'file:///photo.jpg', 'image/jpeg')).resolves.toMatchObject({
+      profile: { avatarUri: 'https://res.cloudinary.com/demo/a.jpg', avatarPublicId: 'avatars/user-a/a' }, cleanupPending: true,
+    });
+    expect(persistLocal).toHaveBeenCalledWith(expect.objectContaining({ avatarUri: 'https://res.cloudinary.com/demo/a.jpg' }));
+  });
+
+  it('does not confirm removal until the server profile no longer references the avatar', async () => {
+    const { getDocFromServer } = require('firebase/firestore') as { getDocFromServer: jest.Mock };
+    getDocFromServer.mockResolvedValue({ exists: () => true, data: () => ({ displayName: 'Before', email: profile.email,
+      isPremium: false, createdAt: { toMillis: () => 1234 }, avatarUri: 'https://res.cloudinary.com/demo/a.jpg',
+      avatarPublicId: 'avatars/user-a/a' }) });
+    const repository = createProfileRepository({ firestore, auth, persistLocal: jest.fn() });
+    await expect(repository.removeAvatar('user-a')).rejects.toMatchObject({ code: 'unavailable' });
   });
 
   it('subscribes to and projects the canonical server profile', () => {

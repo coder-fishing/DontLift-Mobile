@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/theme';
 import type { RoomLobbyMember } from '../features/rooms/room-listener';
@@ -38,11 +39,7 @@ export function RoomRoster({ members, participantCount, isActive, hostUid, isLiv
           const isHost = member.uid === hostUid;
           return (
             <View key={member.uid} style={[styles.row, isHost ? styles.hostRow : styles.memberRow]}>
-              <View style={[styles.avatar, isHost ? styles.hostAvatar : styles.memberAvatar]}>
-                <Text style={[styles.initials, isHost ? styles.hostAccent : styles.memberAccent]}>
-                  {member.displayName.trim().slice(0, 2).toUpperCase()}
-                </Text>
-              </View>
+              <MemberAvatar displayName={member.displayName} avatarUri={member.avatarUri} isHost={isHost} />
               <View style={styles.identity}>
                 <Text numberOfLines={1} style={styles.member}>{member.displayName}</Text>
                 <View style={[styles.roleBadge, isHost ? styles.hostBadge : styles.memberBadge]}>
@@ -72,6 +69,30 @@ export function RoomRoster({ members, participantCount, isActive, hostUid, isLiv
   );
 }
 
+function MemberAvatar({ displayName, avatarUri, isHost }: { displayName: string; avatarUri?: string; isHost: boolean }) {
+  const [failedImageUri, setFailedImageUri] = useState<string | null>(null);
+  return (
+    <View style={[styles.avatar, isHost ? styles.hostAvatar : styles.memberAvatar]}>
+      {avatarUri && failedImageUri !== avatarUri ? (
+        <Image
+          source={{ uri: avatarUri }}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          recyclingKey={avatarUri}
+          transition={0}
+          style={styles.avatarImage}
+          onError={() => setFailedImageUri(avatarUri)}
+          accessibilityLabel={`${displayName}'s avatar`}
+        />
+      ) : (
+        <Text style={[styles.initials, isHost ? styles.hostAccent : styles.memberAccent]}>
+          {displayName.trim().slice(0, 2).toUpperCase() || '?'}
+        </Text>
+      )}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { width: '100%', gap: 12 },
   headerRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
@@ -91,7 +112,8 @@ const styles = StyleSheet.create({
   memberRow: { backgroundColor: Colors.light.roomMemberSurface },
   hostAvatar: { backgroundColor: Colors.light.roomHostAvatar },
   memberAvatar: { backgroundColor: Colors.light.roomMemberAvatar },
-  avatar: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  avatarImage: { width: '100%', height: '100%' },
   initials: { fontSize: 13, fontWeight: '800' },
   hostAccent: { color: Colors.light.roomHostAccent },
   memberAccent: { color: Colors.light.roomMemberAccent },

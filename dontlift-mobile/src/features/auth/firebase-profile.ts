@@ -13,7 +13,10 @@ export function readRegistrationProfile(uid: string, data: DocumentData): Regist
   const createdAtUtcMs: number = createdAt.toMillis();
   if (!Number.isFinite(createdAtUtcMs)) throw new Error('The account profile timestamp is invalid.');
   const premiumExpiresAtUtcMs = readPremiumExpiry(data.premiumExpiresAt);
-  return { uid, email: data.email, displayName: data.displayName, isPremium: premiumIsActive(premiumExpiresAtUtcMs), premiumExpiresAtUtcMs, createdAtUtcMs };
+  const avatarUri = typeof data.avatarUri === 'string' && data.avatarUri.trim() ? data.avatarUri : null;
+  const avatarPublicId = typeof data.avatarPublicId === 'string' && data.avatarPublicId.trim() ? data.avatarPublicId : null;
+  return { uid, email: data.email, displayName: data.displayName, isPremium: premiumIsActive(premiumExpiresAtUtcMs), premiumExpiresAtUtcMs,
+    ...(avatarUri ? { avatarUri } : {}), ...(avatarPublicId ? { avatarPublicId } : {}), createdAtUtcMs };
 }
 
 export async function completeRegistrationProfile(
