@@ -771,10 +771,16 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
         onComplete: () => {
           localCleanupComplete = true;
           retryController = createEarlyExitSyncRetry(roomId, groupViolationRepository, {
-            onPending: count => setGroupSyncMessage(`${count} eligible violation${count === 1 ? '' : 's'} waiting to sync. The app will retry while connected.`),
-            onDrained: failed => setGroupSyncMessage(failed > 0
-              ? `${failed} violation${failed === 1 ? '' : 's'} could not sync and remain saved on this device.`
-              : undefined),
+            onPending: count => {
+              setGroupSyncPendingCount(count);
+              setGroupSyncMessage(`${count} eligible violation${count === 1 ? '' : 's'} waiting to sync. The app will retry while connected.`);
+            },
+            onDrained: failed => {
+              setGroupSyncPendingCount(0);
+              setGroupSyncMessage(failed > 0
+                ? `${failed} violation${failed === 1 ? '' : 's'} could not sync and remain saved on this device.`
+                : undefined);
+            },
             onReconciliation: () => setGroupSyncMessage('A saved violation is waiting for room reconciliation.'),
             onRetrying: () => setGroupSyncMessage('Eligible violations are saved on this device. Sync will retry while connected.'),
           });
@@ -1247,6 +1253,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const [groupDetection, setGroupDetection] = useState<ForegroundDetectionViewState>(INITIAL_DETECTION_STATE);
   const [groupIsOnline, setGroupIsOnline] = useState(false);
   const [groupSyncMessage, setGroupSyncMessage] = useState<string>();
+  const [groupSyncPendingCount, setGroupSyncPendingCount] = useState(0);
   const candidateGroupRoom = roomLobbyState?.snapshot;
   const groupRoomSnapshot = candidateGroupRoom?.status === 'ACTIVE'
     && candidateGroupRoom.startedAtUtcMs !== null ? candidateGroupRoom : null;
@@ -1422,9 +1429,12 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
           groupViolationRepository.getPendingCount(roomId),
           groupViolationRepository.getFailedCount(roomId),
         ]);
-        if (!disposed) setGroupSyncMessage(failed > 0
-          ? `${failed} violation${failed === 1 ? '' : 's'} could not sync and remain saved on this device.`
-          : pending > 0 ? `${pending} violation${pending === 1 ? '' : 's'} waiting to sync` : undefined);
+        if (!disposed) {
+          setGroupSyncPendingCount(pending);
+          setGroupSyncMessage(failed > 0
+            ? `${failed} violation${failed === 1 ? '' : 's'} could not sync and remain saved on this device.`
+            : pending > 0 ? `${pending} violation${pending === 1 ? '' : 's'} waiting to sync` : undefined);
+        }
       } catch {
         if (!disposed) setGroupSyncMessage('Could not check pending sync yet.');
       }
@@ -2255,8 +2265,9 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
           style={styles.mainBodyScrollView}
           contentContainerStyle={[
             styles.scrollContent,
-            { paddingBottom: 115 + insets.bottom },
+            { paddingBottom: (currentScreen === '06-group-active' ? 132 : 115) + insets.bottom },
             currentScreen === '05-group-lobby' ? styles.lobbyScrollContent : null,
+            currentScreen === '06-group-active' ? styles.activeSessionScrollContent : null,
           ]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps={currentScreen === '12-join-room' ? 'handled' : 'never'}
@@ -2385,6 +2396,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
           groupRoomSnapshot
             ? <GroupActiveScreen snapshot={groupRoomSnapshot} elapsedSeconds={groupTimerSeconds}
                 detection={groupDetection} isOnline={groupIsOnline} syncMessage={groupSyncMessage}
+                pendingSyncCount={groupSyncPendingCount}
                 actorUid={profile.uid} openEarlyExitRequests={openEarlyExitRequests}
                 isRequestingEarlyExit={isRequestingEarlyExit} decidingEarlyExit={decidingEarlyExit}
                 earlyExitError={earlyExitError} onRequestEarlyExit={() => { void handleRequestEarlyExit(); }}
@@ -2474,6 +2486,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       <BottomNav
         currentScreen={currentScreen}
         onNavigate={navigateToScreen}
+        pendingGroupSyncCount={groupSyncPendingCount}
       />
 
     </View>
@@ -2498,4 +2511,5 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   lobbyScrollContent: { paddingTop: 28 },
+  activeSessionScrollContent: { paddingTop: 28 },
 });

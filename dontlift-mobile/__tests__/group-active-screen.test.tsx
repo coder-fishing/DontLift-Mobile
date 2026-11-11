@@ -5,11 +5,16 @@ import { GroupActiveScreen } from '../src/screens/GroupActiveScreen';
 jest.mock('../src/components/GlassCard', () => ({
   GlassCard: ({ children }: { children: React.ReactNode }) => children,
 }));
+jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
+jest.mock('expo-image', () => ({ Image: 'AvatarImage' }));
+jest.mock('expo-linear-gradient', () => ({ LinearGradient: 'TimerGradient' }));
 jest.mock('../src/constants/theme', () => ({ Colors: { light: {
   text: '#000000', textSecondary: '#60646C', primary: '#004AC6', onPrimary: '#FFFFFF', error: '#B42318', border: '#E6E6E6',
+  roomInviteGradient: ['blue', 'purple'], success: 'green', groupHomeSessionSurface: 'white', groupHomeSessionBorder: 'gray',
+  roomMemberAvatar: 'lightblue', roomMemberAccent: 'blue', backgroundSelected: 'lightblue', roomLeaveBorder: 'red', roomLeaveSurface: 'white',
 } } }));
 
-type Node = { props: Record<string, unknown>; findByProps(props: Record<string, unknown>): Node };
+type Node = { props: Record<string, unknown>; findByProps(props: Record<string, unknown>): Node; findAllByProps(props: Record<string, unknown>): Node[] };
 type Rendered = { root: Node; unmount(): void };
 const renderer = require('react-test-renderer') as {
   create(element: React.ReactElement): Rendered;
@@ -144,4 +149,78 @@ test('shows Yes and No controls for the current vote and hides them after a ball
   });
   expect(() => mounted!.root.findByProps({ accessibilityLabel: 'Vote yes to end session' })).toThrow();
   await renderer.act(async () => mounted?.unmount());
+});
+
+function baseProps(): Parameters<typeof GroupActiveScreen>[0] {
+  return {
+    snapshot, actorUid: 'host-id', elapsedSeconds: 38, isOnline: true,
+    detection: { orientation: 'FACE_DOWN', violationsCount: 2, violationDurationSeconds: 12,
+      isGraceActive: false, isViolationActive: false, graceSeconds: 0 },
+    openEarlyExitRequests: [], isRequestingEarlyExit: false, decidingEarlyExit: null,
+    onRequestEarlyExit: jest.fn(), onDecideEarlyExit: jest.fn(),
+  };
+}
+
+test('shows unknown/offline and local persistence errors without implying healthy recording', async () => {
+  const props = baseProps();
+  let mounted: Rendered | undefined;
+  await renderer.act(() => {
+    mounted = renderer.create(<GroupActiveScreen {...props} isOnline={false}
+      detection={{ ...props.detection, orientation: 'UNKNOWN', persistenceError: 'Local history failed.' }} />);
+  });
+  expect(mounted!.root.findByProps({ accessibilityLabel: 'Room connection offline' })).toBeDefined();
+  expect(mounted!.root.findByProps({ children: 'Checking position…' })).toBeDefined();
+  expect(mounted!.root.findAllByProps({ children: 'Face down' })).toHaveLength(0);
+  expect(mounted!.root.findByProps({ children: 'Local history failed.' })).toBeDefined();
+  expect(mounted!.root.findByProps({ children: 'Local totals may be incomplete. The leaderboard shows the last room scores.' })).toBeDefined();
+  expect(mounted!.root.findByProps({ accessibilityLabel: 'End group session' }).props.disabled).toBe(true);
+  expect(mounted!.root.findByProps({ accessibilityLabel: 'Initiate termination vote' }).props.disabled).toBe(true);
+  await renderer.act(() => mounted?.unmount());
+});
+
+test('keeps saved scores for an exited member and hides actions they cannot take', async () => {
+  const props = baseProps();
+  const original = props.snapshot;
+  let mounted: Rendered | undefined;
+  await renderer.act(() => {
+    mounted = renderer.create(<GroupActiveScreen {...props} actorUid="member-id"
+      snapshot={{ ...original, members: original.members.map(member => member.uid === 'member-id'
+        ? { ...member, status: 'EARLY_EXIT', liftCount: 3, violationDurationSeconds: 8, penaltyScore: 38 } : member) }} />);
+  });
+  expect(mounted!.root.findByProps({ children: 'Your saved room score' })).toBeDefined();
+  expect(mounted!.root.findByProps({ accessibilityLabel: 'Saved penalty score: 38 points' })).toBeDefined();
+  expect(mounted!.root.findAllByProps({ accessibilityLabel: 'Request early exit' })).toHaveLength(0);
+  expect(mounted!.root.findAllByProps({ accessibilityLabel: 'End group session' })).toHaveLength(0);
+  expect(mounted!.root.findAllByProps({ accessibilityLabel: 'Initiate termination vote' })).toHaveLength(0);
+  await renderer.act(() => mounted?.unmount());
+});
+
+test('uses roster avatar URLs with initials fallback after an image fails', async () => {
+  const props = baseProps();
+  let mounted: Rendered | undefined;
+  await renderer.act(() => {
+    mounted = renderer.create(<GroupActiveScreen {...props} snapshot={{ ...props.snapshot,
+      members: props.snapshot.members.map(member => member.uid === 'host-id'
+        ? { ...member, displayName: 'Minh Anh', avatarUri: 'https://example.test/avatar.jpg' } : member) }} />);
+  });
+  const avatar = mounted!.root.findByProps({ accessibilityLabel: "Minh Anh's avatar" });
+  expect(avatar.props.source).toEqual({ uri: 'https://example.test/avatar.jpg' });
+  await renderer.act(() => (avatar.props.onError as () => void)());
+  expect(mounted!.root.findByProps({ children: 'MA' })).toBeDefined();
+  expect(mounted!.root.findByProps({ children: 'YOU' })).toBeDefined();
+  await renderer.act(() => mounted?.unmount());
+});
+
+test('only Host completion confirmation invokes the existing completion callback', async () => {
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+  const onCompleteRoom = jest.fn();
+  let mounted: Rendered | undefined;
+  await renderer.act(() => { mounted = renderer.create(<GroupActiveScreen {...baseProps()} onCompleteRoom={onCompleteRoom} />); });
+  await renderer.act(() => (mounted!.root.findByProps({ accessibilityLabel: 'End group session' }).props.onPress as () => void)());
+  expect(onCompleteRoom).not.toHaveBeenCalled();
+  const buttons = alert.mock.calls[0][2] as { text: string; onPress?: () => void }[];
+  await renderer.act(() => buttons.find(button => button.text === 'End session')?.onPress?.());
+  expect(onCompleteRoom).toHaveBeenCalledTimes(1);
+  await renderer.act(() => mounted?.unmount());
+  alert.mockRestore();
 });
