@@ -30,7 +30,7 @@ export async function cacheGroupRoomSnapshot(tx: SQLite.SQLiteDatabase, userId: 
         roomStatus: snapshot.status, reconciliation: snapshot.reconciliationStatus ?? null,
         finalizationReason: snapshot.finalizationReason ?? null,
         members: snapshot.members.map(member => ({ uid: member.uid, name: member.displayName, status: member.status, score: member.penaltyScore,
-          ...(member.avatarUri ? { avatarUri: member.avatarUri } : {}) })),
+          ...(member.avatarUri ? { avatarUri: member.avatarUri } : {}), premiumExpiresAtUtcMs: member.premiumExpiresAtUtcMs ?? null })),
         excludedCount: previousShared?.excludedCount ?? 0,
         excludedHasMore: previousShared?.excludedHasMore ?? false,
         bill: previousShared?.bill ?? null, billError: previousShared?.billError ?? false,
@@ -56,7 +56,7 @@ export async function cacheGroupRoomSnapshot(tx: SQLite.SQLiteDatabase, userId: 
   const detail: GroupHistoryDetail = { roomStatus: snapshot.status, reconciliation: snapshot.reconciliationStatus ?? null,
     finalizationReason: snapshot.finalizationReason ?? null,
     members: snapshot.members.map(member => ({ uid: member.uid, name: member.displayName, status: member.status, score: member.penaltyScore,
-      ...(member.avatarUri ? { avatarUri: member.avatarUri } : {}) })),
+      ...(member.avatarUri ? { avatarUri: member.avatarUri } : {}), premiumExpiresAtUtcMs: member.premiumExpiresAtUtcMs ?? null })),
     excludedCount: previous?.excludedCount ?? 0, excludedHasMore: previous?.excludedHasMore ?? false,
     bill: previous?.bill ?? null, billError: previous?.billError ?? false };
   await tx.runAsync('UPDATE group_history SET detail_json = ? WHERE actor_uid = ? AND room_id = ?', JSON.stringify(detail), userId, snapshot.roomId);

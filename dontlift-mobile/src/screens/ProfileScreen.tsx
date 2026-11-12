@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Network from 'expo-network';
@@ -11,6 +10,7 @@ import type { RegistrationProfile } from '../features/auth/auth-controller';
 import type { ProfileRepository } from '../features/profile/profile-repository';
 import { ProfileEditError, validateProfileDisplayName } from '../features/profile/profile-repository';
 import { canSubmitProfileSave } from '../features/profile/profile-save-state';
+import { PremiumAvatar } from '../components/PremiumAvatar';
 
 type Props = {
   profile: RegistrationProfile;
@@ -44,7 +44,6 @@ export function ProfileScreen({ profile, repository, onProfileUpdated, onSignOut
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [viewportHeight, setViewportHeight] = useState(0);
   const [contentHeight, setContentHeight] = useState(0);
-  const [failedAvatarUri, setFailedAvatarUri] = useState<string | null>(null);
   const mounted = useRef(true);
   const savedNameRef = useRef(savedName);
   const onProfileUpdatedRef = useRef(onProfileUpdated);
@@ -177,10 +176,9 @@ export function ProfileScreen({ profile, repository, onProfileUpdated, onSignOut
       <GlassCard className="" style={styles.identityCard}>
         <View style={styles.identityContent}>
         <View style={styles.identityRow}>
-          <View style={[styles.avatar, { backgroundColor: colors.backgroundSelected }]}>
-            {profile.avatarUri && failedAvatarUri !== profile.avatarUri ? <Image source={{ uri: profile.avatarUri }} contentFit="cover" style={styles.avatarImage} onError={() => setFailedAvatarUri(profile.avatarUri ?? null)} /> :
-              <Text style={[styles.avatarText, { color: colors.primary }]}>{initials}</Text>}
-          </View>
+          <PremiumAvatar displayName={profile.displayName} imageUri={profile.avatarUri} premiumExpiresAtUtcMs={profile.premiumExpiresAtUtcMs}
+            initials={initials} size={56} backgroundColor={colors.backgroundSelected} fallbackColor={colors.primary}
+            borderColor="transparent" style={styles.avatar} textStyle={styles.avatarText} />
           <View style={styles.identityCopy}>
             <Text style={[styles.identityName, { color: colors.text }]} numberOfLines={1}>{profile.displayName}</Text>
             <Text style={[styles.identityCaption, { color: colors.textSecondary }]} numberOfLines={1}>{profile.email}</Text>
@@ -263,8 +261,8 @@ const styles = StyleSheet.create({
   premiumRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', columnGap: 10 },
   photoActionContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   premiumAction: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start', paddingHorizontal: 4 },
-  identityRow: { flexDirection: 'row', alignItems: 'center', gap: 14 }, avatar: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  avatarImage: { width: '100%', height: '100%', borderRadius: 38 }, avatarText: { fontSize: 26, fontWeight: '800' }, identityCopy: { flex: 1, gap: 3 }, identityName: { fontSize: 17, fontWeight: '700' },
+  identityRow: { flexDirection: 'row', alignItems: 'center', gap: 14 }, avatar: { width: 56, height: 56, borderRadius: 28, borderWidth: 2, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  avatarText: { fontSize: 26, fontWeight: '800' }, identityCopy: { flex: 1, gap: 3 }, identityName: { fontSize: 17, fontWeight: '700' },
   avatarActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12 }, photoAction: { minHeight: 44, borderWidth: 1, borderRadius: 22, paddingHorizontal: 16, justifyContent: 'center' }, photoActionText: { fontSize: 13, fontWeight: '700' }, removePhoto: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 16 }, removePhotoText: { fontSize: 13, fontWeight: '700' },
   identityCaption: { fontSize: 13 }, planPill: { minHeight: 30, borderRadius: 15, paddingHorizontal: 11, alignItems: 'center', justifyContent: 'center' },
   planText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.7 }, divider: { height: StyleSheet.hairlineWidth, backgroundColor: Colors.light.border, marginVertical: 3 },

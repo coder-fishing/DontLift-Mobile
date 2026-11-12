@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
-import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { formatTime } from '../constants';
@@ -9,6 +8,7 @@ import type { GroupHistoryEntry } from '../features/history/group-history-model'
 import type { GroupActionableSession, GroupRoomRosterPreview } from '../features/history/group-history-repository';
 import { PrimaryButton } from './PrimaryButton';
 import { GroupActionableSessionsSkeleton } from './GroupActionableSessionsSkeleton';
+import { PremiumAvatar } from './PremiumAvatar';
 
 export type RecentSessionsState = 'loading' | 'ready' | 'offline' | 'cloud-error' | 'error';
 export type ActionableSessionsState = RecentSessionsState;
@@ -18,6 +18,8 @@ type Props = {
   errorMessage?: string;
   recentSessions: GroupHistoryEntry[];
   recentMemberPreviews?: Record<string, GroupRoomRosterPreview | null>;
+  currentUserId?: string;
+  currentUserPremiumExpiresAtUtcMs?: number | null;
   recentSessionsState: RecentSessionsState;
   actionableSessions?: GroupActionableSession[];
   actionableSessionsState?: ActionableSessionsState;
@@ -46,7 +48,7 @@ const SESSION_LIST_BATCH_SIZE = 5;
 
 export function GroupHomeDashboard({ isCreating, errorMessage, recentSessions, recentSessionsState,
   actionableSessions = [], actionableSessionsState = 'ready', actionableErrorMessage, actionableHasMore = false, isLoadingMoreActionable = false,
-  recentMemberPreviews = {}, onCreateRoom, onJoinRoom, onCancelCreate, onOpenHistory, onOpenRecentSession,
+  recentMemberPreviews = {}, currentUserId, currentUserPremiumExpiresAtUtcMs, onCreateRoom, onJoinRoom, onCancelCreate, onOpenHistory, onOpenRecentSession,
   onRetryRecentSessions, onOpenActionableSession, onRetryActionableSessions, onLoadMoreActionableSessions }: Props) {
   const sessions = recentSessions.slice(0, 5);
   const [visibleActionableCount, setVisibleActionableCount] = useState(SESSION_LIST_BATCH_SIZE);
@@ -115,7 +117,7 @@ export function GroupHomeDashboard({ isCreating, errorMessage, recentSessions, r
               onPress={onRetryActionableSessions} style={styles.retryButton}><Text style={styles.historyText}>Try again</Text></Pressable> : null}
           </View> : null}
           {visibleActionableSessions.map(item => <ActionableSessionRow key={item.roomId} item={item}
-            memberPreview={recentMemberPreviews[item.roomId]} onPress={onOpenActionableSession} />)}
+            memberPreview={withCurrentUserPremium(recentMemberPreviews[item.roomId], currentUserId, currentUserPremiumExpiresAtUtcMs)} onPress={onOpenActionableSession} />)}
           {hasMoreActionableToShow && (onLoadMoreActionableSessions || actionableSessions.length > visibleActionableCount) ? <Pressable accessibilityRole="button"
             accessibilityLabel="Load more sessions that need attention" disabled={isLoadingMoreActionable}
             onPress={() => {
@@ -149,7 +151,7 @@ export function GroupHomeDashboard({ isCreating, errorMessage, recentSessions, r
         ) : null}
 
         {sessions.map(entry => <RecentSessionRow key={entry.summary.roomId} entry={entry}
-          memberPreview={recentMemberPreviews[entry.summary.roomId]} onPress={onOpenRecentSession} />)}
+          memberPreview={withCurrentUserPremium(recentMemberPreviews[entry.summary.roomId], currentUserId, currentUserPremiumExpiresAtUtcMs)} onPress={onOpenRecentSession} />)}
 
         {recentSessionsState !== 'loading' && recentSessionsState !== 'error' && sessions.length === 0 ? (
           <View style={styles.emptyState}>
@@ -249,15 +251,11 @@ function getInitials(displayName: string): string {
   return (Array.from(parts[0] || '?').slice(0, 2).join('')).toUpperCase();
 }
 
-function MemberAvatar({ displayName, avatarUri }: { displayName: string; avatarUri?: string }) {
-  const [failedImageUri, setFailedImageUri] = useState<string | null>(null);
-  return (
-    <View style={styles.memberAvatar}>
-      {avatarUri && failedImageUri !== avatarUri ? <Image source={{ uri: avatarUri }} contentFit="cover" cachePolicy="memory-disk" recyclingKey={avatarUri} transition={0} style={styles.memberAvatarImage}
-        onError={() => setFailedImageUri(avatarUri)} accessibilityLabel={`${displayName}'s avatar`} />
-        : <Text numberOfLines={1} style={styles.memberAvatarInitials}>{getInitials(displayName)}</Text>}
-    </View>
-  );
+function MemberAvatar({ displayName, avatarUri, premiumExpiresAtUtcMs }: { displayName: string; avatarUri?: string; premiumExpiresAtUtcMs?: number | null }) {
+  return <PremiumAvatar displayName={displayName} imageUri={avatarUri} premiumExpiresAtUtcMs={premiumExpiresAtUtcMs}
+    initials={getInitials(displayName)} size={32} backgroundColor={Colors.light.roomMemberAvatar}
+    fallbackColor={Colors.light.roomMemberAccent} borderColor={Colors.light.groupHomeSessionSurface}
+    style={styles.memberAvatar} textStyle={styles.memberAvatarInitials} />;
 }
 
 function MemberAvatarStack({ preview }: { preview: GroupRoomRosterPreview }) {
@@ -270,13 +268,20 @@ function MemberAvatarStack({ preview }: { preview: GroupRoomRosterPreview }) {
   return (
     <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.memberAvatarStack, { width }]}>
       {visible.map((member, index) => <View key={member.uid} style={[styles.memberAvatarSlot, index > 0 && styles.memberAvatarOverlap]}>
-        <MemberAvatar displayName={member.displayName} avatarUri={member.avatarUri} />
+        <MemberAvatar displayName={member.displayName} avatarUri={member.avatarUri} premiumExpiresAtUtcMs={member.premiumExpiresAtUtcMs} />
       </View>)}
       {overflow > 0 ? <View style={[styles.memberOverflow, styles.memberAvatarOverlap]}>
         <Text numberOfLines={1} style={styles.memberOverflowText}>+{overflow}</Text>
       </View> : null}
     </View>
   );
+}
+
+function withCurrentUserPremium(preview: GroupRoomRosterPreview | null | undefined, currentUserId?: string,
+  currentUserPremiumExpiresAtUtcMs?: number | null): GroupRoomRosterPreview | null | undefined {
+  if (!preview || !currentUserId) return preview;
+  return { ...preview, members: preview.members.map(member => member.uid === currentUserId
+    ? { ...member, premiumExpiresAtUtcMs: currentUserPremiumExpiresAtUtcMs ?? null } : member) };
 }
 
 const styles = StyleSheet.create({
@@ -320,7 +325,6 @@ const styles = StyleSheet.create({
   memberAvatarSlot: { width: 32, height: 32, zIndex: 1 },
   memberAvatarOverlap: { marginLeft: -9 },
   memberAvatar: { width: 32, height: 32, borderRadius: 16, borderWidth: 2, borderColor: Colors.light.groupHomeSessionSurface, backgroundColor: Colors.light.roomMemberAvatar, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  memberAvatarImage: { width: '100%', height: '100%' },
   memberAvatarInitials: { color: Colors.light.roomMemberAccent, fontSize: 10, fontWeight: '800' },
   memberOverflow: { width: 32, height: 32, borderRadius: 16, borderWidth: 2, borderColor: Colors.light.groupHomeSessionSurface, backgroundColor: Colors.light.backgroundElement, alignItems: 'center', justifyContent: 'center', zIndex: 2 },
   memberOverflowText: { color: Colors.light.textSecondary, fontSize: 9, fontWeight: '800' },

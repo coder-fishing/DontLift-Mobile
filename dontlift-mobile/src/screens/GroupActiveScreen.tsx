@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { AccessibilityInfo, ActivityIndicator, Alert, Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
-import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { GlassCard } from '../components/GlassCard';
 import { Colors } from '../constants/theme';
+import { PremiumAvatar } from '../components/PremiumAvatar';
 import { formatTime } from '../constants';
 import { rankGroupMembers } from '../features/rooms/group-active-domain';
 import type { RoomLobbySnapshot } from '../features/rooms/room-listener';
@@ -20,6 +20,7 @@ type Props = {
   syncMessage?: string;
   pendingSyncCount?: number;
   actorUid: string;
+  currentUserPremiumExpiresAtUtcMs?: number | null;
   openEarlyExitRequests: EarlyExitRequest[];
   isRequestingEarlyExit: boolean;
   decidingEarlyExit: { requestId: string; decision: EarlyExitDecision } | null;
@@ -37,7 +38,7 @@ type Props = {
   onCompleteRoom?: () => void;
 };
 
-export function GroupActiveScreen({ snapshot, elapsedSeconds, detection, isOnline, syncMessage, pendingSyncCount = 0, actorUid,
+export function GroupActiveScreen({ snapshot, elapsedSeconds, detection, isOnline, syncMessage, pendingSyncCount = 0, actorUid, currentUserPremiumExpiresAtUtcMs,
   openEarlyExitRequests, isRequestingEarlyExit, decidingEarlyExit, earlyExitError,
   onRequestEarlyExit, onDecideEarlyExit,
   terminationVoteState = { vote: null, ownBallot: null, error: false },
@@ -311,7 +312,9 @@ export function GroupActiveScreen({ snapshot, elapsedSeconds, detection, isOnlin
           {members.length === 0 ? <Text style={styles.emptyRoster}>Waiting for members…</Text> : members.map((member, index) => (
             <View key={member.uid} style={[styles.memberRow, index > 0 && styles.memberDivider]}>
               <View style={[styles.avatarRankWrap, index === 0 && styles.winnerAvatarWrap]}>
-                <SessionAvatar name={member.displayName} uri={snapshot.members.find(candidate => candidate.uid === member.uid)?.avatarUri} />
+                <SessionAvatar name={member.displayName} uri={snapshot.members.find(candidate => candidate.uid === member.uid)?.avatarUri}
+                  premiumExpiresAtUtcMs={member.uid === actorUid ? currentUserPremiumExpiresAtUtcMs
+                    : snapshot.members.find(candidate => candidate.uid === member.uid)?.premiumExpiresAtUtcMs} />
                 <Text accessibilityLabel={'Rank ' + (index + 1)} style={[styles.rankBadge, index === 0 && styles.winnerRankBadge]}>{index + 1}</Text>
               </View>
               <View style={styles.memberDetails}>
@@ -441,17 +444,14 @@ function Metric({ value, label }: { value: string; label: string }) {
   </View>;
 }
 
-function SessionAvatar({ name, uri }: { name: string; uri?: string }) {
-  const [failedUri, setFailedUri] = useState<string | null>(null);
+function SessionAvatar({ name, uri, premiumExpiresAtUtcMs }: { name: string; uri?: string; premiumExpiresAtUtcMs?: number | null }) {
   const words = name.trim().split(/\s+/u).filter(Boolean);
   const initials = words.length > 1
     ? `${Array.from(words[0])[0]}${Array.from(words[words.length - 1])[0]}`
     : Array.from(words[0] || '?').slice(0, 2).join('');
-  return <View style={styles.avatar}>
-    {uri && failedUri !== uri ? <Image source={{ uri }} cachePolicy="memory-disk" contentFit="cover" style={styles.avatarImage}
-      onError={() => setFailedUri(uri)} accessibilityLabel={`${name || 'Participant'}'s avatar`} />
-      : <Text style={styles.avatarInitials}>{initials.toLocaleUpperCase()}</Text>}
-  </View>;
+  return <PremiumAvatar displayName={name} imageUri={uri} premiumExpiresAtUtcMs={premiumExpiresAtUtcMs}
+    initials={initials.toLocaleUpperCase()} size={38} backgroundColor={Colors.light.roomMemberAvatar}
+    fallbackColor={Colors.light.roomMemberAccent} style={styles.avatar} textStyle={styles.avatarInitials} />;
 }
 
 const styles = StyleSheet.create({
@@ -528,8 +528,7 @@ const styles = StyleSheet.create({
   memberDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.light.border },
   avatarRankWrap: { position: 'relative', padding: 2, borderRadius: 23, borderWidth: 1, borderColor: Colors.light.border },
   winnerAvatarWrap: { borderColor: Colors.light.success, backgroundColor: Colors.light.successSurface },
-  avatar: { width: 38, height: 38, borderRadius: 19, overflow: 'hidden', backgroundColor: Colors.light.roomMemberAvatar, alignItems: 'center', justifyContent: 'center' },
-  avatarImage: { width: '100%', height: '100%' },
+  avatar: { width: 38, height: 38, borderRadius: 19, borderWidth: 2, borderColor: 'transparent', overflow: 'hidden', backgroundColor: Colors.light.roomMemberAvatar, alignItems: 'center', justifyContent: 'center' },
   avatarInitials: { color: Colors.light.roomMemberAccent, fontSize: 13, fontWeight: '800' },
   memberNameRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, alignItems: 'center' },
   youBadge: { color: Colors.light.primary, backgroundColor: Colors.light.backgroundSelected, fontSize: 10, fontWeight: '800', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6 },

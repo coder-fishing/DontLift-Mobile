@@ -213,17 +213,19 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   }), [roomRuntime]);
   const acceptCanonicalProfile = session.acceptCanonicalProfile;
   const premiumApi = useMemo(() => createPremiumApi(roomRuntime.auth), [roomRuntime.auth]);
-  const avatarProjectionSync = useRef<{ uid: string; uri?: string; initialized: boolean }>(
-    { uid: profile.uid, uri: profile.avatarUri ?? undefined, initialized: false },
+  const profileProjectionSync = useRef<{ uid: string; uri?: string; premiumExpiresAtUtcMs?: number | null; initialized: boolean }>(
+    { uid: profile.uid, uri: profile.avatarUri ?? undefined, premiumExpiresAtUtcMs: profile.premiumExpiresAtUtcMs, initialized: false },
   );
   useEffect(() => profileRepository.listen(profile.uid, (canonical, fromCache) => {
     if (!fromCache) {
       acceptCanonicalProfile(canonical);
       const avatarUri = canonical.avatarUri ?? undefined;
-      const previous = avatarProjectionSync.current;
-      if (previous.uid !== profile.uid || !previous.initialized || previous.uri !== avatarUri) {
-        avatarProjectionSync.current = { uid: profile.uid, uri: avatarUri, initialized: true };
-        void profileRepository.syncAvatarToRooms(profile.uid, avatarUri);
+      const premiumExpiresAtUtcMs = canonical.premiumExpiresAtUtcMs;
+      const previous = profileProjectionSync.current;
+      if (previous.uid !== profile.uid || !previous.initialized || previous.uri !== avatarUri
+        || previous.premiumExpiresAtUtcMs !== premiumExpiresAtUtcMs) {
+        profileProjectionSync.current = { uid: profile.uid, uri: avatarUri, premiumExpiresAtUtcMs, initialized: true };
+        void profileRepository.syncProfileToRooms(profile.uid, avatarUri, premiumExpiresAtUtcMs);
       }
     }
   }, () => undefined), [profileRepository, profile.uid, acceptCanonicalProfile]);
@@ -2319,6 +2321,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
         displayName={profile.displayName}
         email={profile.email}
         avatarUri={profile.avatarUri ?? undefined}
+        premiumExpiresAtUtcMs={profile.premiumExpiresAtUtcMs}
         onNavigate={navigateToScreen}
         onOpenSettings={openSettings}
       />
@@ -2335,6 +2338,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
             onBack={() => navigateToScreen('02-solo-select')} />
         ) : currentScreen === '15-group-history' ? (
           <GroupHistoryScreen key={profile.uid} userId={profile.uid} serverPremium={profile.isPremium}
+            currentUserPremiumExpiresAtUtcMs={profile.premiumExpiresAtUtcMs}
             repository={groupHistoryRepository} bankDirectory={settlementBankDirectory} initialRoomId={groupHistoryInitialRoomId}
             onBack={() => { setGroupHistoryInitialRoomId(undefined); navigateToScreen('05-group-lobby'); }} />
         ) : currentScreen === '11-solo-history' ? (
@@ -2351,7 +2355,9 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
               mode={groupSummarySnapshot.members.find(member => member.uid === profile.uid)?.role === 'HOST' ? 'host' : 'member'}
               members={groupSummarySnapshot.members
                 .filter(member => member.status === 'ACTIVE' || member.status === 'EARLY_EXIT')
-                .map(member => ({ uid: member.uid, displayName: member.displayName, penaltyScore: member.penaltyScore, avatarUri: member.avatarUri }))}
+                .map(member => ({ uid: member.uid, displayName: member.displayName, penaltyScore: member.penaltyScore,
+                  avatarUri: member.avatarUri, premiumExpiresAtUtcMs: member.uid === profile.uid
+                    ? profile.premiumExpiresAtUtcMs : member.premiumExpiresAtUtcMs }))}
               state={billScreenState}
               pendingPaymentMemberUid={pendingPayment.current?.memberUid}
               isMarkingPayment={isMarkingPayment}
@@ -2459,6 +2465,8 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
 
         {currentScreen === '05-group-lobby' && (
           <GroupLobbyScreen
+            currentUserId={profile.uid}
+            currentUserPremiumExpiresAtUtcMs={profile.premiumExpiresAtUtcMs}
             onOpenHistory={() => { setGroupHistoryInitialRoomId(undefined); setCurrentScreen('15-group-history'); }}
             recentSessions={recentGroupSessions}
             recentMemberPreviews={recentGroupMemberPreviews}
@@ -2521,7 +2529,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
             ? <GroupActiveScreen snapshot={groupRoomSnapshot} elapsedSeconds={groupTimerSeconds}
                 detection={groupDetection} isOnline={groupIsOnline} syncMessage={groupSyncMessage}
                 pendingSyncCount={groupSyncPendingCount}
-                actorUid={profile.uid} openEarlyExitRequests={openEarlyExitRequests}
+                actorUid={profile.uid} currentUserPremiumExpiresAtUtcMs={profile.premiumExpiresAtUtcMs} openEarlyExitRequests={openEarlyExitRequests}
                 isRequestingEarlyExit={isRequestingEarlyExit} decidingEarlyExit={decidingEarlyExit}
                 earlyExitError={earlyExitError} onRequestEarlyExit={() => { void handleRequestEarlyExit(); }}
                 onDecideEarlyExit={(request, decision) => { void handleDecideEarlyExit(request, decision); }}
@@ -2537,6 +2545,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
         {currentScreen === '13-group-summary' && (
           groupSummarySnapshot
             ? <GroupSummaryScreen snapshot={groupSummarySnapshot} actorUid={profile.uid}
+                currentUserPremiumExpiresAtUtcMs={profile.premiumExpiresAtUtcMs}
                 isOnline={groupIsOnline} isSyncing={isAcknowledgingRoom}
                 isFinalizingOverride={isFinalizingRoomOverride}
                 errorMessage={roomAcknowledgmentError}

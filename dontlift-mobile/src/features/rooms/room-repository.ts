@@ -303,6 +303,7 @@ export function createRoomRepository(dependencies: RoomCreateDependencies) {
           transaction.set(memberRef, {
             displayName: profile.data().displayName || hostDisplayName,
             ...(typeof profile.data().avatarUri === 'string' ? { avatarUri: profile.data().avatarUri } : {}),
+            premiumExpiresAt: profile.data().premiumExpiresAt ?? null,
             role: 'HOST', status: 'ACTIVE', penaltyScore: 0, liftCount: 0,
             violationDurationSeconds: 0, joinedAt: timestamp, earlyExitAt: null,
             syncedThroughAt: null, syncAcknowledgedAt: null,
@@ -457,6 +458,7 @@ export function createRoomRepository(dependencies: RoomCreateDependencies) {
           transaction.set(memberRef, {
             displayName: profileSnapshot.data().displayName,
             ...(typeof profileSnapshot.data().avatarUri === 'string' ? { avatarUri: profileSnapshot.data().avatarUri } : {}),
+            premiumExpiresAt: profileSnapshot.data().premiumExpiresAt ?? null,
             role: 'MEMBER', status: 'ACTIVE', penaltyScore: 0, liftCount: 0,
             violationDurationSeconds: 0, joinedAt: timestamp, earlyExitAt: null,
             syncedThroughAt: null, syncAcknowledgedAt: null,

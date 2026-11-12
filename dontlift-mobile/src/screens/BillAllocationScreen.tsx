@@ -1,8 +1,9 @@
 import React, { useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, FlatList, Image, Keyboard, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, useColorScheme, View,
+  ActivityIndicator, Alert, FlatList, Keyboard, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, useColorScheme, View,
 } from 'react-native';
 import { GlassCard } from '../components/GlassCard';
+import { PremiumAvatar } from '../components/PremiumAvatar';
 import { BottomTabInset, Colors } from '../constants/theme';
 import { formatVND } from '../constants';
 import { calculateBillSharesWithOverrides, calculateDefaultBillShares, type BillShareOverride } from '../features/settlement/bill-allocation';
@@ -10,16 +11,13 @@ import { AiBillScanCard } from '../features/settlement/components/AiBillScanCard
 import type { BillShare } from '../features/settlement/bill-repository';
 import type { PublishedBillState } from '../features/settlement/published-bill-listener';
 
-export type BillAllocationMember = { uid: string; displayName: string; penaltyScore: number; avatarUri?: string };
+export type BillAllocationMember = { uid: string; displayName: string; penaltyScore: number; avatarUri?: string; premiumExpiresAtUtcMs?: number | null };
 
 function MemberAvatar({ member, colors }: { member?: BillAllocationMember; colors: typeof Colors.light | typeof Colors.dark }) {
-  const [failed, setFailed] = useState(false);
   const initials = shareLabel(member).trim().split(/\s+/).slice(0, 2).map(part => part[0]?.toUpperCase() ?? '').join('') || '?';
-  return <View style={[styles.memberAvatar, { backgroundColor: colors.backgroundSelected, borderColor: colors.border }]}>
-    {member?.avatarUri && !failed
-      ? <Image accessibilityLabel={`${shareLabel(member)} avatar`} source={{ uri: member.avatarUri }} resizeMode="cover" style={styles.memberAvatarImage} onError={() => setFailed(true)} />
-      : <Text style={[styles.memberAvatarInitials, { color: colors.primary }]}>{initials}</Text>}
-  </View>;
+  return <PremiumAvatar displayName={shareLabel(member)} imageUri={member?.avatarUri} premiumExpiresAtUtcMs={member?.premiumExpiresAtUtcMs}
+    initials={initials} size={46} backgroundColor={colors.backgroundSelected} fallbackColor={colors.primary}
+    borderColor={colors.border} style={styles.memberAvatar} textStyle={styles.memberAvatarInitials} />;
 }
 
 type Props = {
@@ -655,7 +653,6 @@ const styles = StyleSheet.create({
   shareRow: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10,
     paddingHorizontal: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.light.border },
   memberAvatar: { width: 46, height: 46, borderRadius: 23, borderWidth: 1, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
-  memberAvatarImage: { width: '100%', height: '100%' },
   memberAvatarInitials: { fontSize: 15, fontWeight: '800' },
   rankBadge: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   rankNumber: { color: '#FFFFFF', fontSize: 12, fontWeight: '800', fontVariant: ['tabular-nums'] },

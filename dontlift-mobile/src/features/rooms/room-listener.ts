@@ -6,6 +6,7 @@ export type RoomLobbyMember = {
   uid: string;
   displayName: string;
   avatarUri?: string;
+  premiumExpiresAtUtcMs?: number | null;
   role: 'HOST' | 'MEMBER';
   status: string;
   penaltyScore: number;
@@ -141,6 +142,8 @@ export function listenToRoomLobby(
           uid: memberDoc.id,
           displayName: String(data.displayName ?? ''),
           ...(typeof data.avatarUri === 'string' && data.avatarUri.trim() ? { avatarUri: data.avatarUri } : {}),
+          premiumExpiresAtUtcMs: data.premiumExpiresAt && typeof data.premiumExpiresAt.toMillis === 'function'
+            ? data.premiumExpiresAt.toMillis() : null,
           role: data.role === 'HOST' ? 'HOST' : 'MEMBER',
           status: String(data.status ?? ''),
           penaltyScore: Number(data.penaltyScore ?? 0),
