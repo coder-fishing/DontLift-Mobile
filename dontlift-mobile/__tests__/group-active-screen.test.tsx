@@ -151,6 +151,21 @@ test('shows Yes and No controls for the current vote and hides them after a ball
   await renderer.act(async () => mounted?.unmount());
 });
 
+test('describes a unanimously closed vote as a session completion, not a room cancellation', async () => {
+  const props = baseProps();
+  let mounted: Rendered | undefined;
+  await renderer.act(() => {
+    mounted = renderer.create(<GroupActiveScreen {...props} terminationVoteState={{
+      vote: { version: 1, roomId: 'room-id', voteId: 'vote-id', openedAtUtcMs: Date.now() - 1_000,
+        eligibleVoterCount: 2, yesVoteCount: 2, status: 'CANCELLED' },
+      ownBallot: { voteId: 'vote-id', requestId: 'request-id', choice: 'YES' }, error: false,
+    }} />);
+  });
+  expect(mounted!.root.findByProps({ children: 'The session ended by unanimous vote. Opening the session summary…' })).toBeDefined();
+  expect(mounted!.root.findAllByProps({ children: 'This room was cancelled by unanimous vote.' })).toHaveLength(0);
+  await renderer.act(() => mounted?.unmount());
+});
+
 function baseProps(): Parameters<typeof GroupActiveScreen>[0] {
   return {
     snapshot, actorUid: 'host-id', elapsedSeconds: 38, isOnline: true,

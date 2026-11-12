@@ -152,7 +152,7 @@ export function GroupActiveScreen({ snapshot, elapsedSeconds, detection, isOnlin
         ) : (
           <>
             {vote?.status === 'CANCELLED' ? <Text style={styles.controlSubheading}>Vote ended</Text> : null}
-            {vote?.status === 'CANCELLED' ? <Text style={styles.body}>This room was cancelled by unanimous vote.</Text> : null}
+            {vote?.status === 'CANCELLED' ? <Text style={styles.body}>The session ended by unanimous vote. Opening the session summary…</Text> : null}
             {canOpenVote ? (
               <>
                 <Pressable accessibilityRole="button" accessibilityLabel="Initiate termination vote" disabled={!isOnline || isOpeningTerminationVote}
