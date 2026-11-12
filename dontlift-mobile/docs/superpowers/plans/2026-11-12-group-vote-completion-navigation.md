@@ -26,6 +26,7 @@
 ## File và trách nhiệm
 
 - Sửa `dontlift-mobile/src/features/rooms/termination-vote-repository.ts` để ballot Yes cuối tạo trạng thái completion/reconciliation thống nhất với kết thúc room thông thường.
+- Sửa `dontlift-mobile/src/features/rooms/early-exit-repository.ts` để Host duyệt rời phòng làm các phiếu còn lại thành nhất trí cũng tạo trạng thái completion/reconciliation thống nhất.
 - Sửa `dontlift-mobile/firestore.rules` để chỉ cho phép giao dịch ballot nhất trí hợp lệ đồng thời chuyển room từ `ACTIVE` sang `COMPLETED`; cập nhật nhánh early-exit làm mẫu số vote thay đổi.
 - Sửa `dontlift-mobile/src/app/index.tsx` để Summary hiển thị ngay từ snapshot `COMPLETED`, còn lỗi local projection không chặn điều hướng hoặc lặp lại thao tác kết thúc.
 - Sửa `dontlift-mobile/src/screens/GroupActiveScreen.tsx` để không còn thông báo rằng unanimous vote đã hủy room.
@@ -34,15 +35,16 @@
 
 ## Task 1: Chuyển vote đồng thuận sang room completion
 
-**Files:** `termination-vote-repository.ts`, `firestore.rules`, test repository/rules tương ứng.
+**Files:** `dontlift-mobile/src/features/rooms/termination-vote-repository.ts`, `dontlift-mobile/src/features/rooms/early-exit-repository.ts`, `dontlift-mobile/firestore.rules`, `dontlift-mobile/functions/tests/termination-vote-rules.emulator.test.cjs`, `dontlift-mobile/functions/tests/early-exit-rules.emulator.test.cjs`, test repository tương ứng.
 
 - [ ] Thêm các case xác nhận ballot Yes cuối đóng vote nhưng chuyển room sang `COMPLETED`, đặt reconciliation ở `PENDING`, pending count bằng roster đã chốt, và khởi tạo các marker completion/ACK/finalization giống luồng completion thông thường.
 - [ ] Xác nhận vote No hoặc chưa đủ Yes chỉ cập nhật ballot/count; room vẫn `ACTIVE`.
 - [ ] Xác nhận người không thuộc roster, ballot lặp, vote hết hạn và transaction thiếu một trong các ghi liên quan đều bị từ chối.
 - [ ] Cập nhật transaction vote để dùng `requestId` của ballot cuối làm completion request marker hợp lệ; giữ tính replay-safe cho ballot đã commit.
 - [ ] Cập nhật Rules để liên kết ballot mới của người gọi, vote đóng với đủ Yes, và room `COMPLETED/PENDING` trong cùng commit; không mở rộng quyền tự hoàn tất room cho member khác.
-- [ ] Khi Host duyệt early-exit làm vote trở thành nhất trí, chuyển room sang cùng trạng thái `COMPLETED/PENDING`; giữ member early-exit trong roster và pending count theo participant roster đã chốt.
-- [ ] Chạy test repository và Firestore Rules liên quan.
+- [ ] Khi Host duyệt early-exit làm vote trở thành nhất trí, đóng vote và chuyển room sang `COMPLETED/PENDING`; giữ member early-exit trong roster và pending count theo participant roster đã chốt.
+- [ ] Xác nhận early-exit không có vote đang mở hoặc vote chưa nhất trí tiếp tục cập nhật member/room như trước và room vẫn `ACTIVE`.
+- [ ] Chạy test repository early-exit/vote và Firestore Rules liên quan.
 - [ ] Commit task với subject `[2026-11-12-group-vote-completion-navigation] ...` và trailer `Plan` / `Task: 1`.
 
 ## Task 2: Điều hướng mọi client sang Group Summary an toàn
