@@ -50,7 +50,7 @@ function installTransaction(seed: Record<string, RecordData>) {
   return { records, writes };
 }
 
-function roomData() { return { status: 'ACTIVE', hostId: hostUid, activeMemberCount: 2 }; }
+function roomData() { return { status: 'ACTIVE', hostId: hostUid, participantCount: 2, activeMemberCount: 2 }; }
 function memberData(role: 'HOST' | 'MEMBER', status = 'ACTIVE') {
   return { role, status, earlyExitAt: null, penaltyScore: 0, liftCount: 0, violationDurationSeconds: 0 };
 }
@@ -112,7 +112,7 @@ describe('early-exit Spark repository', () => {
     expect(records.get(`rooms/${roomId}/members/${memberUid}`)?.status).toBe('EARLY_EXIT');
   });
 
-  it('removes an exited NO voter and cancels when the remaining ACTIVE roster is unanimous', async () => {
+  it('removes an exited NO voter and completes when the remaining ACTIVE roster is unanimous', async () => {
     const votePath = `rooms/${roomId}/terminationVotes/current`;
     const { records, writes } = installTransaction({
       [`rooms/${roomId}`]: roomData(),
@@ -134,7 +134,11 @@ describe('early-exit Spark repository', () => {
 
     expect(result.status).toBe('APPROVED');
     expect(records.get(votePath)).toMatchObject({ eligibleVoterCount: 1, yesVoteCount: 1, status: 'CANCELLED' });
-    expect(records.get(`rooms/${roomId}`)).toMatchObject({ activeMemberCount: 1, status: 'CANCELLED' });
+    expect(records.get(`rooms/${roomId}`)).toMatchObject({
+      activeMemberCount: 1, status: 'COMPLETED', reconciliationStatus: 'PENDING', pendingMemberCount: 2,
+      completionRequestId: firstRequestId, lastSyncAckMemberUid: null, lastSyncAckRequestId: null,
+      finalizedAt: null, finalizedBy: null, finalizationReason: null,
+    });
     expect(writes.map(write => write.path)).toContain(votePath);
   });
 

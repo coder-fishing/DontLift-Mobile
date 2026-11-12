@@ -71,16 +71,16 @@ async function decideExit(db, uid, memberUid, id, decision) {
     });
     if (decision === 'APPROVE') transaction.update(memberRef, { status: 'EARLY_EXIT', earlyExitAt: serverTimestamp() });
     if (decision === 'APPROVE') {
-      let cancelRoom = false;
+      let completeRoom = false;
       if (vote.exists() && vote.data().status === 'OPEN'
         && Date.now() < vote.data().openedAt.toMillis() + 30_000) {
         const removedYes = ballot.exists() && ballot.data().voteId === vote.data().voteId && ballot.data().choice === 'YES';
         const eligibleVoterCount = vote.data().eligibleVoterCount - 1;
         const yesVoteCount = vote.data().yesVoteCount - (removedYes ? 1 : 0);
-        cancelRoom = eligibleVoterCount > 0 && eligibleVoterCount === yesVoteCount;
+        completeRoom = eligibleVoterCount > 0 && eligibleVoterCount === yesVoteCount;
         transaction.update(voteRef, {
           eligibleVoterCount, yesVoteCount,
-          ...(cancelRoom ? { status: 'CANCELLED', closedAt: serverTimestamp() } : {}),
+          ...(completeRoom ? { status: 'CANCELLED', closedAt: serverTimestamp() } : {}),
         });
       }
       transaction.update(roomRef, {
@@ -88,7 +88,12 @@ async function decideExit(db, uid, memberUid, id, decision) {
         updatedAt: serverTimestamp(),
         lastEarlyExitMemberUid: memberUid,
         lastEarlyExitRequestId: id,
-        ...(cancelRoom ? { status: 'CANCELLED', endedAt: serverTimestamp() } : {}),
+        ...(completeRoom ? {
+          status: 'COMPLETED', endedAt: serverTimestamp(), reconciliationStatus: 'PENDING',
+          pendingMemberCount: room.data().participantCount, completionRequestId: id,
+          lastSyncAckMemberUid: null, lastSyncAckRequestId: null,
+          finalizedAt: null, finalizedBy: null, finalizationReason: null,
+        } : {}),
       });
     }
     return decision === 'APPROVE' ? 'APPROVED' : 'DENIED';
@@ -165,7 +170,7 @@ test('Host approval changes request and membership atomically; denial keeps memb
   assert.equal(await assertSucceeds(decideExit(hostDb, hostId, memberId, '00000000-0000-4000-8000-000000000084', 'APPROVE')), 'APPROVED');
 });
 
-test('Host approval removes a NO voter and cancels atomically when the remaining roster is unanimous', async t => {
+test('Host approval removes a NO voter and completes atomically when the remaining roster is unanimous', async t => {
   const env = await createRulesEnvironment();
   t.after(() => env.cleanup());
   await seedRoom(env);
@@ -197,7 +202,10 @@ test('Host approval removes a NO voter and cancels atomically when the remaining
   ]);
   assert.equal(member.data().status, 'EARLY_EXIT');
   assert.equal(room.data().activeMemberCount, 1);
-  assert.equal(room.data().status, 'CANCELLED');
+  assert.equal(room.data().status, 'COMPLETED');
+  assert.equal(room.data().reconciliationStatus, 'PENDING');
+  assert.equal(room.data().pendingMemberCount, room.data().participantCount);
+  assert.equal(room.data().completionRequestId, id);
   assert.equal(vote.data().eligibleVoterCount, 1);
   assert.equal(vote.data().yesVoteCount, 1);
   assert.equal(vote.data().status, 'CANCELLED');

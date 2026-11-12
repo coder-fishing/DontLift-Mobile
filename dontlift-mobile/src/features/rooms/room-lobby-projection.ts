@@ -15,7 +15,7 @@ type RestorableRoomRow = {
   reconciliation_status: string | null;
 };
 
-// Khôi phục room ACTIVE đã cache để app có thể gắn lại Firestore listener sau khi process bị tạo lại.
+// Khôi phục lobby đang chờ hoặc room ACTIVE đã cache để gắn lại Firestore listener sau đăng nhập/process restart.
 export async function restoreCachedActiveRoom(
   databasePromise: Promise<SQLite.SQLiteDatabase>,
   userId: string,
@@ -26,7 +26,7 @@ export async function restoreCachedActiveRoom(
      FROM rooms r
      JOIN room_members mine ON mine.room_id = r.room_id AND mine.uid = ? AND mine.status IN ('ACTIVE', 'EARLY_EXIT')
      JOIN room_members host ON host.room_id = r.room_id AND host.role = 'HOST'
-     WHERE (r.status = 'ACTIVE'
+     WHERE (r.status IN ('WAITING', 'ACTIVE')
         OR EXISTS (
           SELECT 1 FROM sessions s
           WHERE s.id = r.room_id AND s.user_id = mine.uid AND s.mode = 'GROUP' AND s.status = 'ACTIVE'

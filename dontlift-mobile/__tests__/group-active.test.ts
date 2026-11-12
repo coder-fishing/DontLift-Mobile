@@ -19,4 +19,13 @@ describe('group active leaderboard', () => {
       { ...member('exited', 2), status: 'EARLY_EXIT' },
     ]).map(value => value.uid)).toEqual(['active']);
   });
+
+  it('can include early-exit members for completed-room sync while preserving score and UID order', () => {
+    const exited = { ...member('early', 4), status: 'EARLY_EXIT' };
+    expect(rankGroupMembers([
+      member('later', 4),
+      exited,
+      member('lowest', 1),
+    ], ['ACTIVE', 'EARLY_EXIT']).map(value => value.uid)).toEqual(['lowest', 'early', 'later']);
+  });
 });

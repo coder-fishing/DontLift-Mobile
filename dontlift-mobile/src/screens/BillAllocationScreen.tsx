@@ -1,15 +1,26 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, FlatList, Keyboard, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, useColorScheme, View,
+  ActivityIndicator, Alert, FlatList, Image, Keyboard, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, useColorScheme, View,
 } from 'react-native';
 import { GlassCard } from '../components/GlassCard';
-import { Colors } from '../constants/theme';
+import { BottomTabInset, Colors } from '../constants/theme';
 import { formatVND } from '../constants';
 import { calculateBillSharesWithOverrides, calculateDefaultBillShares, type BillShareOverride } from '../features/settlement/bill-allocation';
+import { AiBillScanCard } from '../features/settlement/components/AiBillScanCard';
 import type { BillShare } from '../features/settlement/bill-repository';
 import type { PublishedBillState } from '../features/settlement/published-bill-listener';
 
-export type BillAllocationMember = { uid: string; displayName: string; penaltyScore: number };
+export type BillAllocationMember = { uid: string; displayName: string; penaltyScore: number; avatarUri?: string };
+
+function MemberAvatar({ member, colors }: { member?: BillAllocationMember; colors: typeof Colors.light | typeof Colors.dark }) {
+  const [failed, setFailed] = useState(false);
+  const initials = shareLabel(member).trim().split(/\s+/).slice(0, 2).map(part => part[0]?.toUpperCase() ?? '').join('') || '?';
+  return <View style={[styles.memberAvatar, { backgroundColor: colors.backgroundSelected, borderColor: colors.border }]}>
+    {member?.avatarUri && !failed
+      ? <Image accessibilityLabel={`${shareLabel(member)} avatar`} source={{ uri: member.avatarUri }} resizeMode="cover" style={styles.memberAvatarImage} onError={() => setFailed(true)} />
+      : <Text style={[styles.memberAvatarInitials, { color: colors.primary }]}>{initials}</Text>}
+  </View>;
+}
 
 type Props = {
   actorUid?: string;
@@ -26,11 +37,12 @@ type Props = {
   isOnline: boolean;
   isPublishing: boolean;
   pendingTotalVnd?: number;
+  pendingShareOverrides?: readonly BillShareOverride[];
   isApplyingOverride?: boolean;
   hasPendingOverride?: boolean;
   publishError?: string;
   overrideError?: string;
-  onPublish: (totalBillVnd: number) => void;
+  onPublish: (totalBillVnd: number, shareOverrides?: BillShareOverride[]) => void;
   onApplyOverrides?: (overrides: BillShareOverride[], expectedRevision: number) => void;
   onRetry: () => void;
   onRetryPublish: () => void;
@@ -102,27 +114,73 @@ function OverrideMemberEditor({
 }
 
 export function BillAllocationScreen({
-  roomId, mode, members, state, isOnline, isPublishing, pendingTotalVnd, actorUid, onPayShare,
+  roomId, mode, members, state, isOnline, isPublishing, pendingTotalVnd, pendingShareOverrides, actorUid, onPayShare,
   isApplyingOverride = false, hasPendingOverride = false, publishError, overrideError,
   onPublish, onApplyOverrides = () => undefined, onRetry, onRetryPublish, onRetryOverride = () => undefined, onBack,
   pendingPaymentMemberUid, isMarkingPayment = false, paymentError, onMarkPaid, onRetryPayment,
 }: Props) {
   const colors = useColorScheme() === 'dark' ? Colors.dark : Colors.light;
   const [billInput, setBillInput] = useState('');
+  const [initialSplitMode, setInitialSplitMode] = useState<'ROOM_SCORE' | 'CUSTOM_PERCENT'>(pendingShareOverrides?.length ? 'CUSTOM_PERCENT' : 'ROOM_SCORE');
+  const [initialPercentDrafts, setInitialPercentDrafts] = useState<Record<string, string>>(() => Object.fromEntries(
+    (pendingShareOverrides ?? []).filter(item => item.type === 'PERCENT_BPS').map(item => [item.uid, (item.value / 100).toFixed(2).replace(/\.00$/, '')]),
+  ));
   const [submitted, setSubmitted] = useState(false);
   const [overrideEditingRequested, setIsEditingOverrides] = useState(false);
   const [overrideDrafts, setOverrideDrafts] = useState<Record<string, { type: BillShareOverride['type']; value: string }>>({});
+  const billListRef = useRef<FlatList<BillShare>>(null);
+  const percentInputRefs = useRef<Record<string, { focus: () => void } | null>>({});
   const host = mode === 'host';
   const parsedTotal = pendingTotalVnd ?? (billInput ? Number(billInput.replace(/\D/g, '')) : 0);
   const validTotal = Number.isSafeInteger(parsedTotal) && parsedTotal >= 1_000;
+  const customOrder = useMemo(() => [...members].sort((left, right) => left.penaltyScore - right.penaltyScore
+    || left.displayName.localeCompare(right.displayName) || left.uid.localeCompare(right.uid)), [members]);
+  const initialPercentOverrides = useMemo(() => {
+    if (initialSplitMode !== 'CUSTOM_PERCENT') return { entries: undefined as BillShareOverride[] | undefined, error: undefined as string | undefined, totalBps: 0 };
+    const entries: BillShareOverride[] = [];
+    let totalBps = 0;
+    for (const member of members) {
+      const raw = (initialPercentDrafts[member.uid] ?? '').trim();
+      if (!raw || !/^\d{1,3}(?:\.\d{1,2})?$/.test(raw)) return { entries: undefined, error: 'Enter a percentage for every member (0–100, up to 2 decimals).', totalBps };
+      const value = Math.round(Number(raw) * 100);
+      if (value > 10_000) return { entries: undefined, error: 'A member percentage cannot exceed 100%.', totalBps };
+      totalBps += value;
+      entries.push({ uid: member.uid, type: 'PERCENT_BPS', value });
+    }
+    if (totalBps !== 10_000) return { entries: undefined, error: `Percentages must total 100% (currently ${(totalBps / 100).toFixed(2)}%).`, totalBps };
+    return { entries, error: undefined, totalBps };
+  }, [initialSplitMode, initialPercentDrafts, members]);
   const preview = useMemo(() => {
     if (!host || !validTotal || members.length === 0) return null;
     try {
+      if (initialSplitMode === 'CUSTOM_PERCENT') {
+        if (!initialPercentOverrides.entries) return null;
+        return calculateBillSharesWithOverrides(parsedTotal, members, initialPercentOverrides.entries);
+      }
       return calculateDefaultBillShares(parsedTotal, members);
     } catch {
       return null;
     }
-  }, [host, validTotal, parsedTotal, members]);
+  }, [host, validTotal, parsedTotal, members, initialSplitMode, initialPercentOverrides]);
+  const customInputRows = useMemo(() => customOrder.map((member, index) => ({
+    uid: member.uid,
+    shareVnd: preview?.shares.find(share => share.uid === member.uid)?.shareVnd ?? 0,
+    rank: index + 1,
+  })), [customOrder, preview]);
+  const bringPercentInputIntoView = (uid: string) => {
+    const index = customOrder.findIndex(member => member.uid === uid);
+    if (index < 0) return;
+    // Wait for the keyboard/window resize to settle, then bring the focused row above it.
+    setTimeout(() => billListRef.current?.scrollToIndex({ index, viewPosition: 0.28, animated: true }), 260);
+  };
+  const focusNextPercentInput = (uid: string) => {
+    const index = customOrder.findIndex(member => member.uid === uid);
+    const next = customOrder[index + 1];
+    if (next) {
+      percentInputRefs.current[next.uid]?.focus();
+      bringPercentInputIntoView(next.uid);
+    } else Keyboard.dismiss();
+  };
   const confirmedBill = state.bill ?? null;
   const paidLocked = (confirmedBill?.billPaidCount ?? 0) > 0;
   const canOverride = host && confirmedBill != null && !paidLocked && state.kind === 'published'
@@ -181,10 +239,11 @@ export function BillAllocationScreen({
     Keyboard.dismiss();
     Alert.alert(
       'Publish this bill split?',
-      `${formatVND(preview.totalBillVnd)} VND will be split across ${preview.shares.length} members. You can review the preview below. Publishing is one-time for this room.`,
+      `${formatVND(preview.totalBillVnd)} VND will be split across ${preview.shares.length} members${initialSplitMode === 'CUSTOM_PERCENT' ? ' using your percentages' : ' by room score'}. You can review the preview below. Publishing is one-time for this room.`,
       [
         { text: 'Review again', style: 'cancel' },
-        { text: 'Publish once', onPress: () => onPublish(preview.totalBillVnd) },
+        { text: 'Publish once', onPress: () => onPublish(preview.totalBillVnd,
+          initialSplitMode === 'CUSTOM_PERCENT' ? initialPercentOverrides.entries : undefined) },
       ],
     );
   };
@@ -211,11 +270,17 @@ export function BillAllocationScreen({
         : state.kind === 'error' ? 'Could not load the published breakdown.' : undefined;
 
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
     <FlatList
+      ref={billListRef}
       style={styles.list}
-      contentContainerStyle={styles.content}
-      data={displayedShares}
+      contentContainerStyle={[styles.content, { paddingBottom: BottomTabInset + 32 }]}
+      onScrollToIndexFailed={({ index, averageItemLength }) => billListRef.current?.scrollToOffset({
+        offset: Math.max(0, averageItemLength * index), animated: true,
+      })}
+      data={(host && !confirmedBill && initialSplitMode === 'CUSTOM_PERCENT'
+        ? customInputRows as BillShare[]
+        : displayedShares)}
       keyExtractor={item => item.uid}
       keyboardShouldPersistTaps="handled"
       ListHeaderComponent={(
@@ -225,21 +290,29 @@ export function BillAllocationScreen({
             <Text style={[styles.backText, { color: colors.primary }]}>‹  Group summary</Text>
           </Pressable>
 
-          <GlassCard style={[styles.hero, { backgroundColor: colors.authFormSurface, borderColor: colors.glassBorder, shadowColor: colors.glassShadow }]}>
-            <Text style={[styles.eyebrow, { color: colors.primary }]}>ROOM SETTLEMENT</Text>
-            <Text style={[styles.title, { color: colors.text }]}>{confirmedBill ? canOverride && isEditingOverrides ? 'Adjust the split' : 'Published shares' : host ? 'Split the room bill' : 'Bill breakdown'}</Text>
-            <Text style={[styles.description, { color: colors.textSecondary }]}>
-              {host
-                ? confirmedBill ? 'Adjust selected raw shares. Other members keep their default amount; the complete bill total must still match exactly.' : 'Review each member’s amount before publishing. The Host device calculates from the finalized room scores.'
-                : 'These are the final amounts published by the Host for this room.'}
-            </Text>
-            {confirmedBill ? (
+          {host && !confirmedBill ? (
+            <View style={styles.intro}>
+              <Text style={[styles.eyebrow, { color: colors.primary }]}>ROOM SETTLEMENT</Text>
+              <Text style={[styles.title, { color: colors.text }]}>Split the room bill</Text>
+              <Text style={[styles.description, { color: colors.textSecondary }]}>Enter the total, review each share, then publish.</Text>
+            </View>
+          ) : (
+            <GlassCard style={[styles.hero, { backgroundColor: colors.authFormSurface, borderColor: colors.glassBorder, shadowColor: colors.glassShadow }]}>
+              <Text style={[styles.eyebrow, { color: colors.primary }]}>ROOM SETTLEMENT</Text>
+              <Text style={[styles.title, { color: colors.text }]}>{confirmedBill ? canOverride && isEditingOverrides ? 'Adjust the split' : 'Published shares' : 'Bill breakdown'}</Text>
+              <Text style={[styles.description, { color: colors.textSecondary }]}>
+                {host
+                  ? 'Adjust selected raw shares. Other members keep their default amount; the complete bill total must still match exactly.'
+                  : 'These are the final amounts published by the Host for this room.'}
+              </Text>
+              {confirmedBill ? (
               <View style={styles.totalRow}>
                 <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Room total</Text>
                 <Text accessibilityRole="text" style={[styles.totalValue, { color: colors.text }]}>{formatVND(confirmedBill.totalBillVnd)} VND</Text>
               </View>
-            ) : null}
-          </GlassCard>
+              ) : null}
+            </GlassCard>
+          )}
 
           {host && confirmedBill && paidLocked ? (
             <GlassCard style={[styles.lockCard, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
@@ -272,8 +345,14 @@ export function BillAllocationScreen({
 
           {host && !confirmedBill ? (
             <GlassCard style={[styles.entryCard, { backgroundColor: colors.authFormSurface, borderColor: colors.glassBorder, shadowColor: colors.glassShadow }]}>
+              <AiBillScanCard
+                colors={colors}
+                disabledReason="Receipt scanning is not connected to the Premium API yet. Enter the amount below."
+                onPress={() => Alert.alert('AI bill scan coming soon', 'Receipt scanning is not connected yet. Enter the bill total manually below.')}
+              />
+              <View style={[styles.sectionDivider, { backgroundColor: colors.border }]} />
               <Text style={[styles.sectionTitle, { color: colors.text }]}>Bill total</Text>
-              <Text style={[styles.helper, { color: colors.textSecondary }]}>Enter the full amount from the receipt. Minimum 1,000 VND.</Text>
+              <Text style={[styles.helper, { color: colors.textSecondary }]}>Minimum 1,000 VND.</Text>
               <View style={[styles.inputWrap,
                 { borderColor: submitted && !validTotal ? colors.error : colors.border, backgroundColor: colors.inputSurface },
                 submitted && !validTotal && styles.inputInvalid]}>
@@ -296,6 +375,27 @@ export function BillAllocationScreen({
               </View>
               {submitted && !validTotal ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.error }]}>Enter a whole amount of at least 1,000 VND.</Text> : null}
               {pendingTotalVnd != null ? <Text style={[styles.helper, { color: colors.textSecondary }]}>Retrying the same request so a delayed commit cannot publish twice.</Text> : null}
+              <View style={[styles.sectionDivider, { backgroundColor: colors.border }]} />
+              <View style={styles.splitMethod}>
+                <View style={styles.splitMethodHeader}>
+                  <Text style={[styles.sectionTitle, { color: colors.text }]}>Split method</Text>
+                  <View style={[styles.methodOptions, { backgroundColor: colors.backgroundElement }]}>
+                    {(['ROOM_SCORE', 'CUSTOM_PERCENT'] as const).map(method => {
+                      const selected = initialSplitMode === method;
+                      return <Pressable key={method} accessibilityRole="button" accessibilityLabel={method === 'ROOM_SCORE' ? 'Split by room score' : 'Enter custom percentages'}
+                        accessibilityState={{ selected }} disabled={pendingTotalVnd != null || isPublishing} onPress={() => setInitialSplitMode(method)}
+                        style={[styles.methodOption, { backgroundColor: selected ? '#2563EB' : 'transparent' }]}>
+                        <Text style={[styles.methodTagText, { color: selected ? '#FFFFFF' : '#334155' }]}>{method === 'ROOM_SCORE' ? 'Room score' : 'Custom %'}</Text>
+                      </Pressable>;
+                    })}
+                  </View>
+                </View>
+                <Text style={[styles.helper, { color: colors.textSecondary }]}>{initialSplitMode === 'ROOM_SCORE'
+                  ? 'Calculated from finalized room scores. You can adjust shares after publishing, before anyone is marked paid.'
+                  : 'Set each member’s share. Percentages must add up to exactly 100%.'}</Text>
+                {initialSplitMode === 'CUSTOM_PERCENT' ? <Text style={[styles.percentTotal, { color: initialPercentOverrides.totalBps === 10_000 ? colors.success : colors.textSecondary }]}>Total {(initialPercentOverrides.totalBps / 100).toFixed(2)}% / 100%</Text> : null}
+                {initialSplitMode === 'CUSTOM_PERCENT' && initialPercentOverrides.error ? <Text accessibilityRole="alert" style={[styles.helper, { color: colors.error }]}>{initialPercentOverrides.error}</Text> : null}
+              </View>
             </GlassCard>
           ) : null}
 
@@ -387,21 +487,38 @@ export function BillAllocationScreen({
           ) : null}
         </View>
       )}
-      renderItem={({ item, index }) => {
+      renderItem={({ item }) => {
         const member = membersByUid.get(item.uid);
         return (
           <View>
             <View style={[styles.shareRow, { borderBottomColor: colors.border }]}>
-              <View style={[styles.rowIndex, { backgroundColor: colors.backgroundElement }]}><Text style={[styles.rowIndexText, { color: colors.textSecondary }]}>{String(index + 1).padStart(2, '0')}</Text></View>
+              {host && !confirmedBill && initialSplitMode === 'CUSTOM_PERCENT'
+                ? <View style={[styles.rankBadge, { backgroundColor: colors.primary }]}><Text style={styles.rankNumber}>{String(customInputRows.find(row => row.uid === item.uid)?.rank ?? 0)}</Text></View>
+                : null}
+              <MemberAvatar member={member} colors={colors} />
               <View style={styles.memberInfo}>
                 <Text style={[styles.memberName, { color: colors.text }]} numberOfLines={2}>{shareLabel(member)}</Text>
+                {host && !confirmedBill && initialSplitMode === 'CUSTOM_PERCENT' ? (
+                  <View style={[styles.percentInputWrap, { borderColor: colors.border, backgroundColor: colors.inputSurface }]}>
+                    <TextInput ref={input => { percentInputRefs.current[item.uid] = input; }} accessibilityLabel={`Bill percentage for ${shareLabel(member)}`} keyboardType="decimal-pad"
+                      returnKeyType={customOrder.findIndex(candidate => candidate.uid === item.uid) < customOrder.length - 1 ? 'next' : 'done'}
+                      blurOnSubmit={false} onFocus={() => bringPercentInputIntoView(item.uid)}
+                      onSubmitEditing={() => focusNextPercentInput(item.uid)}
+                      editable={!isPublishing && pendingTotalVnd == null} value={initialPercentDrafts[item.uid] ?? ''}
+                      onChangeText={value => setInitialPercentDrafts(current => ({ ...current, [item.uid]: value.replace(/[^\d.]/g, '') }))}
+                      placeholder="0" placeholderTextColor={colors.textSecondary} style={[styles.percentInput, { color: colors.text }]} />
+                    <Text style={[styles.percentSuffix, { color: colors.textSecondary }]}>%</Text>
+                  </View>
+                ) : null}
                 {confirmedBill ? <Text style={[styles.helper, { color: item.paymentStatus === 'MARKED_AS_PAID' ? colors.primary : colors.textSecondary }]}>
                   {item.shareVnd === 0 ? 'No payment due' : item.paymentStatus === 'MARKED_AS_PAID'
                     ? `Paid · Host confirmed${state.kind !== 'published' ? ' (saved copy)' : ''}` : 'Awaiting Host confirmation'}
                 </Text> : null}
               </View>
-              <Text accessibilityLabel={`${shareLabel(member)} pays ${formatVND(item.shareVnd)} Vietnamese dong`}
-                style={[styles.shareAmount, { color: colors.text }]}>{formatVND(item.shareVnd)} VND</Text>
+              <Text accessibilityLabel={host && !confirmedBill && initialSplitMode === 'CUSTOM_PERCENT' && !preview
+                ? `Share amount for ${shareLabel(member)} not calculated until percentages total 100 percent`
+                : `${shareLabel(member)} pays ${formatVND(item.shareVnd)} Vietnamese dong`}
+                style={[styles.shareAmount, { color: colors.text }]}>{host && !confirmedBill && initialSplitMode === 'CUSTOM_PERCENT' && !preview ? '— VND' : `${formatVND(item.shareVnd)} VND`}</Text>
             </View>
             {host && confirmedBill && !isEditingOverrides && item.shareVnd > 0
               && item.paymentStatus !== 'MARKED_AS_PAID' && onMarkPaid ? (
@@ -427,7 +544,7 @@ export function BillAllocationScreen({
       }}
       ListEmptyComponent={host && validTotal
         ? <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No room members are available for this calculation.</Text>
-        : null}
+        : undefined}
       ListFooterComponent={(
         <View style={styles.footer}>
           {confirmedBill && !isEditingOverrides && onPayShare && confirmedBill.shares.some(share => share.uid === actorUid) ? (
@@ -460,11 +577,13 @@ export function BillAllocationScreen({
                 accessibilityState={{ disabled: !preview || !isOnline || isPublishing }}
                 disabled={!preview || !isOnline || isPublishing}
                 onPress={pendingTotalVnd == null ? requestPublish : onRetryPublish}
-                style={({ pressed }) => [styles.publishButton, pressed && styles.pressed,
-                  (!preview || !isOnline || isPublishing) && styles.disabled]}
+                style={[styles.publishButton, {
+                  backgroundColor: preview && isOnline ? '#2563EB' : '#DBEAFE',
+                  borderColor: preview && isOnline ? '#1D4ED8' : '#93C5FD',
+                }]}
               >
-                {isPublishing ? <ActivityIndicator color={colors.onPrimary} /> : null}
-                <Text style={[styles.publishText, { color: colors.onPrimary }]}>{isPublishing ? 'Publishing…' : pendingTotalVnd == null ? 'Publish shares once' : 'Retry publish'}</Text>
+                {isPublishing ? <ActivityIndicator color={preview && isOnline ? '#FFFFFF' : '#1D4ED8'} /> : null}
+                <Text style={[styles.publishText, { color: preview && isOnline ? '#FFFFFF' : '#1D4ED8' }]}>{isPublishing ? 'Publishing…' : pendingTotalVnd == null ? 'Publish shares once' : 'Retry publish'}</Text>
               </Pressable>
               <Text style={[styles.oneTimeNote, { color: colors.textSecondary }]}>Check the preview before publishing. The Host can adjust the split until the first payment is marked.</Text>
             </>
@@ -483,10 +602,11 @@ const styles = StyleSheet.create({
     borderRadius: 14, alignSelf: 'flex-end', justifyContent: 'center', marginBottom: 12 },
   flex: { flex: 1 },
   list: { flex: 1 },
-  content: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 36, gap: 10 },
+  content: { paddingHorizontal: 20, paddingTop: 12, gap: 10 },
   headerContent: { gap: 14 },
   backButton: { minHeight: 48, justifyContent: 'center', alignSelf: 'flex-start', paddingHorizontal: 6 },
   backText: { color: Colors.light.primary, fontSize: 16, fontWeight: '700' },
+  intro: { gap: 5, paddingHorizontal: 4, paddingTop: 2, paddingBottom: 4 },
   hero: { gap: 12, padding: 22, borderRadius: 24 },
   eyebrow: { color: Colors.light.primary, fontSize: 12, fontWeight: '800', letterSpacing: 1.3 },
   title: { color: Colors.light.text, fontSize: 28, lineHeight: 34, fontWeight: '800' },
@@ -494,7 +614,14 @@ const styles = StyleSheet.create({
   totalRow: { borderTopWidth: 1, borderTopColor: Colors.light.border, paddingTop: 12, gap: 4 },
   totalLabel: { color: Colors.light.textSecondary, fontSize: 13, fontWeight: '600' },
   totalValue: { color: Colors.light.text, fontSize: 24, lineHeight: 30, fontWeight: '800', fontVariant: ['tabular-nums'] },
-  entryCard: { gap: 8, padding: 18, borderRadius: 20 },
+  entryCard: { gap: 12, padding: 18, borderRadius: 24 },
+  sectionDivider: { height: StyleSheet.hairlineWidth, marginVertical: 2 },
+  splitMethod: { gap: 6 },
+  splitMethodHeader: { minHeight: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  methodOptions: { flexDirection: 'row', gap: 3, borderRadius: 11, padding: 3 },
+  methodOption: { minHeight: 32, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 9, borderRadius: 8 },
+  methodTagText: { fontSize: 13, fontWeight: '700' },
+  percentTotal: { fontSize: 13, fontWeight: '800', fontVariant: ['tabular-nums'] },
   lockCard: { gap: 6, padding: 16, borderRadius: 18, borderWidth: 1 },
   overrideCard: { gap: 12, padding: 18, borderRadius: 20 },
   overrideRow: { gap: 10, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },
@@ -527,8 +654,14 @@ const styles = StyleSheet.create({
   previewTotal: { color: Colors.light.textSecondary, fontSize: 13, fontWeight: '700', marginBottom: 2 },
   shareRow: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10,
     paddingHorizontal: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.light.border },
-  rowIndex: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: Colors.light.backgroundElement },
-  rowIndexText: { color: Colors.light.textSecondary, fontSize: 11, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  memberAvatar: { width: 46, height: 46, borderRadius: 23, borderWidth: 1, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  memberAvatarImage: { width: '100%', height: '100%' },
+  memberAvatarInitials: { fontSize: 15, fontWeight: '800' },
+  rankBadge: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  rankNumber: { color: '#FFFFFF', fontSize: 12, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  percentInputWrap: { width: 92, minHeight: 38, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 9, borderRadius: 10, borderWidth: 1 },
+  percentInput: { flex: 1, minHeight: 36, paddingVertical: 0, fontSize: 15, fontWeight: '700', textAlign: 'right', fontVariant: ['tabular-nums'] },
+  percentSuffix: { marginLeft: 4, fontSize: 14, fontWeight: '700' },
   memberInfo: { flex: 1, gap: 3 },
   memberName: { color: Colors.light.text, fontSize: 15, lineHeight: 20, fontWeight: '700' },
   shareAmount: { maxWidth: '46%', color: Colors.light.text, fontSize: 15, lineHeight: 21, fontWeight: '800', fontVariant: ['tabular-nums'], textAlign: 'right' },
@@ -536,7 +669,7 @@ const styles = StyleSheet.create({
   footer: { gap: 12, paddingTop: 14 },
   publishedCard: { gap: 8, padding: 16, borderRadius: 18 },
   publishedTitle: { color: Colors.light.primary, fontSize: 15, fontWeight: '800' },
-  publishButton: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+  publishButton: { width: '88%', alignSelf: 'center', minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     paddingHorizontal: 18, borderRadius: 14, backgroundColor: Colors.light.primary },
   publishText: { color: Colors.light.onPrimary, fontSize: 15, fontWeight: '800' },
   pressed: { opacity: 0.78 },

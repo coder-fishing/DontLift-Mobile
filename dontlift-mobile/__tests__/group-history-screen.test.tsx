@@ -71,6 +71,17 @@ test('one Premium entitlement controls local and cloud origins', async () => {
   }
 });
 
+test('opens the requested ended room directly from Group Summary or the recent-session preview', async () => {
+  network.getNetworkStateAsync.mockResolvedValue({ isConnected: true, isInternetReachable: true });
+  const repo = repository(); let screen: Rendered | undefined;
+  try {
+    await renderer.act(async () => { screen = renderer.create(<GroupHistoryScreen userId="member"
+      repository={repo as unknown as GroupHistoryRepository} serverPremium={false} initialRoomId={entry.summary.roomId} onBack={jest.fn()} />); });
+    expect(screen!.root.findAllByProps({ children: 'Your device recording' }).length).toBeGreaterThan(0);
+    expect(repo.readDetail).toHaveBeenCalledWith('member', entry.summary.roomId);
+  } finally { await renderer.act(() => screen?.unmount()); }
+});
+
 test('unpaid history opens a separate current-bill payment subscription and returns to the same session', async () => {
   const { AppState } = require('react-native') as typeof import('react-native');
   const old = AppState.currentState;

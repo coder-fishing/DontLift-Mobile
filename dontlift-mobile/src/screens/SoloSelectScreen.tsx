@@ -1,9 +1,15 @@
 import React, { useState } from 'react';
 import { View, Text, Pressable, StyleSheet, Platform } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/theme';
 import { GlassCard } from '../components/GlassCard';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { SensorAvailabilityPanel } from '../components/SensorAvailabilityPanel';
+import { CustomDurationSlider } from '../components/CustomDurationSlider';
+import {
+  MAX_COUNTDOWN_DURATION_MINUTES,
+  MIN_COUNTDOWN_DURATION_MINUTES,
+} from '../features/solo/session-controller';
 import type { SensorAvailabilityState } from '../features/sensors/sensor-adapter';
 import type { SoloSession } from '../features/solo/session-controller';
 
@@ -47,36 +53,64 @@ export function SoloSelectScreen({
   // Màn chọn có thể được mở lại sau timer; khôi phục custom từ lựa chọn đang giữ ở màn cha.
   const [customMinutes, setCustomMinutes] = useState<number>(() =>
     [25, 45, 60].includes(selectedDuration) ? 90 : selectedDuration);
-  const [showCustomStepper, setShowCustomStepper] = useState<boolean>(() =>
+  const [showCustomSlider, setShowCustomSlider] = useState<boolean>(() =>
     ![25, 45, 60].includes(selectedDuration));
   const canStartSession = sensorAvailability.kind === 'ready';
   const choicesLocked = isStarting || isCancelling || Boolean(activeSession);
   const isCountdown = selectedMode === 'COUNTDOWN';
+  const durationLabel = selectedDuration >= 60
+    ? `${Math.floor(selectedDuration / 60)} hr${selectedDuration % 60 > 0 ? ` ${selectedDuration % 60} min` : ''}`
+    : `${selectedDuration} min`;
 
   return (
     <View style={styles.container}>
       <View style={styles.titleSection}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>Solo Focus Mode</Text>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>Choose your duration</Text>
         <Text style={[styles.sectionDesc, { color: colors.textSecondary }]}>
-          Select discipline interval before placing phone face-down.
+          Set a focus block, then place your phone face-down.
         </Text>
       </View>
 
-      <PrimaryButton accessibilityRole="button" title="View Solo history" variant="secondary" onPress={onOpenHistory} />
+      {sensorAvailability.kind === 'ready' ? (
+        <View style={styles.statusHistoryRow}>
+          <SensorAvailabilityPanel
+            state={sensorAvailability}
+            onRetry={onRetrySensorCheck}
+            onOpenSettings={onOpenSettings}
+            compactStyle={styles.sensorReadyCompact}
+          />
+          <Pressable accessibilityRole="button" accessibilityLabel="Open Solo history" onPress={onOpenHistory} style={({ pressed }) => [styles.historyAction, pressed && styles.historyActionPressed]}>
+            {/* <Ionicons name="time-outline" size={18} color={colors.primary} /> */}
+            <Text style={styles.historyActionText}>Solo history</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <>
+          <SensorAvailabilityPanel
+            state={sensorAvailability}
+            onRetry={onRetrySensorCheck}
+            onOpenSettings={onOpenSettings}
+          />
+          <Pressable accessibilityRole="button" accessibilityLabel="Open Solo history" onPress={onOpenHistory} style={({ pressed }) => [styles.historyActionUnavailable, pressed && styles.historyActionPressed]}>
+            <Ionicons name="time-outline" size={18} color={colors.primary} />
+            <Text style={styles.historyActionText}>Solo history</Text>
+          </Pressable>
+        </>
+      )}
 
       {activeSession ? (
         <GlassCard style={styles.activeSessionCard}>
-          <Text style={[styles.activeSessionTitle, { color: colors.text }]}>Active session saved</Text>
+          <Text style={[styles.activeSessionTitle, { color: colors.text }]}>Active session</Text>
           <Text style={[styles.activeSessionBody, { color: colors.textSecondary }]}>
-            Continue your saved {activeSession.mode === 'COUNTDOWN'
-              ? `${activeSession.durationSeconds / 60}-minute Countdown`
-              : 'Stopwatch'} session from its current time.
+            Continue your {activeSession.mode === 'COUNTDOWN'
+              ? `${activeSession.durationSeconds / 60}-minute countdown`
+              : 'stopwatch'} session from its current time.
           </Text>
           <PrimaryButton
-            title={`Continue ${activeSession.mode === 'COUNTDOWN' ? 'Countdown' : 'Stopwatch'}`}
+            title={`Continue ${activeSession.mode === 'COUNTDOWN' ? 'countdown' : 'stopwatch'}`}
             onPress={onContinueSession}
             disabled={isStarting || isCancelling}
-            accessibilityHint="Return to the active Solo timer"
+            accessibilityHint="Return to the active focus session"
             style={styles.cancelSessionButton}
           />
           <PrimaryButton
@@ -91,8 +125,8 @@ export function SoloSelectScreen({
 
       <View style={styles.modeSelector} accessibilityRole="tablist">
         {([
-          { mode: 'COUNTDOWN' as const, title: 'Countdown Timer' },
-          { mode: 'STOPWATCH' as const, title: 'Open-ended Stopwatch' },
+          { mode: 'COUNTDOWN' as const, title: 'Countdown timer' },
+          { mode: 'STOPWATCH' as const, title: 'Open-ended stopwatch' },
         ]).map(({ mode, title }) => {
           const selected = selectedMode === mode;
           return (
@@ -110,31 +144,32 @@ export function SoloSelectScreen({
         })}
       </View>
 
-      {/* 4 Interval Cards */}
+      {/* Các lựa chọn thời lượng */}
       <View style={[styles.cardsGrid, !isCountdown && styles.cardsGridDisabled]}>
         {[
-          { duration: 25, title: 'Pomodoro Sprint', desc: 'Standard block', tag: 'Recommended' },
-          { duration: 45, title: 'Deep Work Flow', desc: 'Cognitive peak', tag: 'Standard' },
-          { duration: 60, title: 'Total Immersion', desc: 'Complex builds', tag: 'Intense' },
-          { duration: customMinutes, title: 'Custom Stepper', desc: '±5m Stepper', tag: 'Variable' },
+          { duration: 25, title: 'Pomodoro Sprint', desc: 'Standard focus block', tag: 'Recommended' },
+          { duration: 45, title: 'Deep Work Flow', desc: 'For focused work', tag: 'Standard' },
+          { duration: 60, title: 'Total Immersion', desc: 'For complex tasks', tag: 'Intense' },
+          { duration: customMinutes, title: 'Custom duration', desc: showCustomSlider ? 'Drag below · 5-min steps' : 'Choose your own block', tag: 'Flexible' },
         ].map((item, idx) => {
           const isCustom = idx === 3;
           const isSelected = isCustom
-            ? showCustomStepper
-            : selectedDuration === item.duration && !showCustomStepper;
+            ? showCustomSlider
+            : selectedDuration === item.duration && !showCustomSlider;
 
           return (
             <Pressable
-              key={idx}
+              key={item.title}
               disabled={!isCountdown || choicesLocked}
               accessibilityRole="button"
+              accessibilityLabel={`${item.duration} minutes, ${item.title}`}
               accessibilityState={{ selected: isSelected, disabled: !isCountdown || choicesLocked }}
               onPress={() => {
                 if (isCustom) {
-                  setShowCustomStepper(true);
+                  setShowCustomSlider(true);
                   onSelectDuration(customMinutes);
                 } else {
-                  setShowCustomStepper(false);
+                  setShowCustomSlider(false);
                   onSelectDuration(item.duration);
                 }
               }}
@@ -156,10 +191,9 @@ export function SoloSelectScreen({
                   {isSelected && <Text style={styles.checkText}>✓</Text>}
                 </View>
               </View>
-
               <Text style={styles.cardDuration}>
                 {item.duration}
-                <Text style={[styles.durationUnit, { color: colors.text }]}>m</Text>
+                <Text style={[styles.durationUnit, { color: colors.textSecondary }]}>min</Text>
               </Text>
               <Text style={[styles.cardTitle, { color: colors.text }]}>{item.title}</Text>
               <Text style={[styles.cardDesc, { color: colors.textSecondary }]}>{item.desc}</Text>
@@ -168,69 +202,36 @@ export function SoloSelectScreen({
         })}
       </View>
 
-      {/* Stepper adjustment row if custom */}
-      {isCountdown && showCustomStepper && (
-        <GlassCard style={styles.stepperCard}>
-          <Text style={[styles.stepperTitle, { color: colors.text }]}>Adjust Custom Interval</Text>
-          <View style={styles.stepperControls}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Decrease duration by 5 minutes"
-              disabled={choicesLocked || customMinutes <= 5}
-              accessibilityState={{ disabled: choicesLocked || customMinutes <= 5 }}
-              hitSlop={8}
-              onPress={() => {
-                const next = Math.max(5, customMinutes - 5);
-                setCustomMinutes(next);
-                onSelectDuration(next);
-              }}
-              style={styles.stepperBtn}
-            >
-              <Text style={styles.stepperBtnText}>−</Text>
-            </Pressable>
-            <Text style={styles.stepperValText}>{customMinutes}m</Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Increase duration by 5 minutes"
-              disabled={choicesLocked || customMinutes >= 180}
-              accessibilityState={{ disabled: choicesLocked || customMinutes >= 180 }}
-              hitSlop={8}
-              onPress={() => {
-                const next = Math.min(180, customMinutes + 5);
-                setCustomMinutes(next);
-                onSelectDuration(next);
-              }}
-              style={styles.stepperBtn}
-            >
-              <Text style={styles.stepperBtnText}>+</Text>
-            </Pressable>
-          </View>
-        </GlassCard>
-      )}
-
-      <SensorAvailabilityPanel
-        state={sensorAvailability}
-        onRetry={onRetrySensorCheck}
-        onOpenSettings={onOpenSettings}
-      />
+      {isCountdown && showCustomSlider ? (
+        <CustomDurationSlider
+          value={customMinutes}
+          disabled={choicesLocked}
+          onChange={minutes => {
+            const next = Math.max(MIN_COUNTDOWN_DURATION_MINUTES, Math.min(MAX_COUNTDOWN_DURATION_MINUTES, minutes));
+            setCustomMinutes(next);
+            onSelectDuration(next);
+          }}
+        />
+      ) : null}
 
       {startError ? <Text accessibilityRole="alert" style={styles.startError}>{startError}</Text> : null}
 
       <PrimaryButton
         title={isStarting
-          ? 'Saving session…'
+          ? 'Starting session…'
           : isCancelling
             ? 'Cancelling session…'
           : activeSession
-            ? `Continue ${activeSession.mode === 'COUNTDOWN' ? 'Countdown' : 'Stopwatch'}`
+            ? `Continue ${activeSession.mode === 'COUNTDOWN' ? 'countdown' : 'stopwatch'}`
             : isCountdown
-              ? `Start ${selectedDuration}m Solo Focus Session`
-              : 'Start Stopwatch'}
+              ? `Start focus · ${durationLabel}`
+              : 'Start stopwatch'}
         onPress={() => onStartSession(selectedMode, selectedDuration)}
         disabled={!canStartSession || isStarting || isCancelling}
         accessibilityState={{ disabled: !canStartSession || isStarting || isCancelling, busy: isStarting || isCancelling }}
-        accessibilityHint={canStartSession ? undefined : 'The session starts after the accelerometer check is ready'}
-        style={!canStartSession ? styles.startDisabled : undefined}
+        accessibilityHint={canStartSession ? undefined : 'The session can start when the motion sensor is ready'}
+        style={[styles.startCallToAction, !canStartSession && styles.startDisabled]}
+        icon={<Ionicons name="play" size={18} color="#FFFFFF" />}
       />
     </View>
   );
@@ -243,27 +244,40 @@ const styles = StyleSheet.create({
   startDisabled: {
     opacity: 0.55,
   },
+  startCallToAction: {
+    height: 56,
+    borderRadius: 22,
+    shadowColor: Colors.light.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 3,
+  },
   modeSelector: {
     flexDirection: 'row',
-    gap: 4,
-    padding: 4,
+    gap: 3,
+    minHeight: 44,
+    padding: 3,
     borderRadius: 999,
-    backgroundColor: 'rgba(255, 255, 255, 0.56)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.84)',
+    backgroundColor: Colors.light.backgroundElement,
   },
   modeOption: {
     flex: 1,
-    minHeight: 42,
+    minHeight: 38,
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 8,
   },
   modeOptionActive: {
-    backgroundColor: 'rgba(255, 255, 255, 0.88)',
+    backgroundColor: Colors.light.background,
     borderWidth: 1,
     borderColor: 'rgba(37, 99, 235, 0.2)',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 1,
   },
   modeText: {
     color: '#334155',
@@ -272,7 +286,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   modeTextActive: {
-    color: '#004AC6',
+    color: Colors.light.primary,
     fontWeight: '800',
   },
   cardsGridDisabled: {
@@ -302,6 +316,12 @@ const styles = StyleSheet.create({
   titleSection: {
     marginBottom: 4,
   },
+  statusHistoryRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  sensorReadyCompact: { flex: 1, paddingHorizontal: 0 },
+  historyAction: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 8, borderRadius: 14 },
+  historyActionUnavailable: { minHeight: 44, alignSelf: 'flex-end', flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, borderRadius: 14 },
+  historyActionPressed: { backgroundColor: 'rgba(37,99,235,0.08)' },
+  historyActionText: { color: Colors.light.primary, fontSize: 12, fontWeight: '700' },
   sectionTitle: {
     fontSize: 22,
     fontWeight: '900',
@@ -339,100 +359,33 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   tagPill: {
-    backgroundColor: 'rgba(37, 99, 235, 0.1)',
+    backgroundColor: 'rgba(37,99,235,0.1)',
     borderRadius: 999,
     paddingHorizontal: 8,
     paddingVertical: 2,
   },
-  tagText: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#2563EB',
-  },
+  tagText: { color: Colors.light.primary, fontSize: 10, lineHeight: 14, fontWeight: '800' },
   checkCircle: {
     width: 18,
     height: 18,
     borderRadius: 9,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: Colors.light.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  checkCircleActive: {
-    backgroundColor: '#2563EB',
-    borderColor: '#2563EB',
-  },
-  checkText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
+  checkCircleActive: { backgroundColor: Colors.light.primary, borderColor: Colors.light.primary },
+  checkText: { color: '#FFFFFF', fontSize: 10, fontWeight: 'bold' },
   cardDuration: {
     fontSize: 32,
+    lineHeight: 38,
     fontWeight: '900',
-    color: '#2563EB',
+    color: Colors.light.primary,
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
-  durationUnit: {
-    fontSize: 14,
-    color: '#0F172A',
-    fontWeight: '700',
-  },
-  cardTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#0F172A',
-    marginTop: 4,
-  },
-  cardDesc: {
-    fontSize: 10,
-    color: '#64748B',
-    marginTop: 2,
-  },
-  stepperCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 14,
-  },
-  stepperTitle: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  stepperControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-  },
-  stepperBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  stepperBtnText: {
-    fontSize: 16,
-    fontWeight: '900',
-    color: '#0F172A',
-  },
-  stepperValText: {
-    fontSize: 13,
-    fontWeight: '900',
-    color: '#2563EB',
-    minWidth: 36,
-    textAlign: 'center',
-  },
+  durationUnit: { fontSize: 14, fontWeight: '700' },
+  cardTitle: { fontSize: 13, fontWeight: '800', marginTop: 4 },
+  cardDesc: { fontSize: 11, lineHeight: 15, marginTop: 2 },
   readinessCard: {
     padding: 14,
   },

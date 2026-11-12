@@ -1,6 +1,6 @@
 # DontLift Firebase Command Contracts
 
-# SL-031/032 payOS override — ADR-025
+# SL-031/032 payOS override — ADR-025; package schedule — ADR-029
 
 For Premium, this boundary supersedes section 7 activation/redeem. Firebase remains Spark; Express runs on an external host. All JSON responses include version 1. Authenticated endpoints verify Bearer Firebase ID token and derive UID from it.
 
@@ -14,7 +14,7 @@ For Premium, this boundary supersedes section 7 activation/redeem. Firebase rema
 
 Backend-only collections are premiumOrders, premiumOrderRequests and premiumCurrentOrders. Client reads/status go through authenticated Express, and direct writes are denied. `users/{uid}.premiumExpiresAt` is server-owned; Rules check `request.time < premiumExpiresAt`, independently of old isPremium boolean. Profile name updates preserve entitlement fields.
 
-MONTH_1 costs 89,000 VND for 1 month; MONTH_3 178,000 for 3; MONTH_6 356,000 for 6; MONTH_12 623,000 for 12. Calendar months follow Asia/Ho_Chi_Minh with end-of-month clamp. Grant stacks from max(backend now, existing expiry), without auto-renewal. No offline purchase queue.
+Package catalog values are defined by [ADR-029](decisions/ADR-029-premium-pricing-update.md): MONTH_1 costs 30,000 VND for 1 paid / 1 granted month; MONTH_3 costs 79,000 VND for 3 paid / 4 granted months; MONTH_6 costs 149,000 VND for 6 paid / 8 granted months; MONTH_12 costs 249,000 VND for 12 paid / 16 granted months. Calendar months follow Asia/Ho_Chi_Minh with end-of-month clamp. Grant stacks from max(backend now, existing expiry), without auto-renewal. No offline purchase queue.
 
 Backend needs payOS client ID/API key/checksum key, Firebase Admin identity and public HTTPS origin. Mobile receives only EXPO_PUBLIC_PREMIUM_API_URL. Provider errors are sanitized in version/code errors; no credentials in responses. Live hosting/configuration requires user credentials; this does not enable Firebase billing.
 
@@ -89,6 +89,8 @@ The app first writes `users/{uid}/roomQuotaClock/current` with a server timestam
 **Rules obligations:** authenticated owner only; exact field allowlists; Host UID comes from Auth; new PIN is eight decimal digits and reserved only if absent; all cross-document links agree through `getAfter()`; new room starts with `lastJoinRequestId: null`, which Rules use to link a later participant-count update to its receipt; month bucket is derived from server `request.time` shifted by the approved fixed UTC+07:00 calendar; counter increments once or resets to 1 only when the server-derived month changes; count never exceeds 7 for a non-Premium Host; create-only receipt and documents; no update/delete paths for this command.
 
 **Errors:** unauthenticated; permission denied for a failed Rules invariant, including PIN collision; resource exhausted when the current server bucket has reached 7; unavailable for retryable network/service failure; already exists for request-ID collision. The client may pre-check quota for a clear message, but Rules remain authoritative if concurrent creates race. The client never reports success before commit.
+
+After the create transaction commits, the client creates `users/{uid}/groupRooms/{roomId}` as a separate best-effort index write. It contains only `roomId` and the canonical Host `joinedAt`; an index failure must not turn a successful room creation into a failure. History refresh may repair the index after Rules are deployed.
 
 ## 3. `startRoom` — Firestore transaction (Spark)
 
@@ -186,6 +188,8 @@ The ballot and counters are written atomically. If every eligible member has vot
 
 **Transaction outputs:** resolve the PIN reservation, validate room/capacity, create membership only when absent, update `participantCount` and store command receipt atomically. The room's `lastJoinRequestId` links the count update to the exact member and receipt written in that transaction; Rules reject another count update once that UID already has membership. Under the Spark client transaction exception (ADR-012), the authenticated client reads one reservation document by PIN; collection listing remains denied. Eight digits reduce guessing probability, but Firestore Rules cannot enforce a read-attempt rate limit, so this lookup is not a complete anti-enumeration control.
 
+After join succeeds, the client creates `users/{uid}/groupRooms/{roomId}` with only `roomId` and the canonical member `joinedAt`. This is a separate best-effort owner index, guarded by Rules against the matching room membership. A failed index write does not roll back a successful join; History may repair it from the local room projection.
+
 ## 5. `syncEvents`
 
 **Request schema**
@@ -239,6 +243,14 @@ Identity: actorUid/roomId with a durable UUID event ID. Write the local summary 
 Owner query: completedAtUtcMs DESC, document ID DESC, cursor pair and page size 20. Local/cache merge deduplicates by actor/room and keeps pending local state. Independent startup/reconnect/foreground retry does not depend on the current room or screen. Account changes cancel old callbacks. Second-device recovery includes records already uploaded, not never-uploaded sessions.
 
 Retention: Free UI shows seven days, pending/failed local records remain visible. Local Premium extends local-origin visibility; verified Server Premium extends cloud-origin visibility. This is an application visibility policy, not server-enforced deletion. SL-033 owns purge. No bank account or QR cache. Existing per-room canonical detail permissions and settlement expiry remain unchanged.
+
+### 5.3 Shared group-room History index — ADR-028
+
+`users/{uid}/groupRooms/{roomId}` is a per-owner lookup index for rooms joined by that account. It contains only `roomId` and `joinedAt`; it is not a score or payment source. Rules allow the owner to list the index and require any create to match an existing ACTIVE/EARLY_EXIT membership and its canonical `joinedAt`. No client may write another UID's index.
+
+History reads the current user's index, then loads each room and own membership. It shows terminal rooms only while the caller remains ACTIVE/EARLY_EXIT. Shared detail continues to use the existing room, member, published-bill and payment-detail boundaries. If no personal device summary exists, a list entry can be projected from the caller's canonical member counters and server room timestamps; it is labeled as a shared room result and never creates/ACKs an outbox event. Personal local pending/failed summaries take precedence for the caller's own device stats. Index data is not public and does not provide discovery of arbitrary rooms.
+
+On a new device, rooms are discoverable after the owner index has synced. Previously completed sessions lacking an owner index can only be backfilled when the current device already has their room/member projection. No Cloud Function, broad collection query, or cross-owner history read is introduced.
 
 
 ## 6. Room completion and reconciliation transactions
@@ -408,3 +420,9 @@ Both client and Function trim and validate `displayName`. The Function is author
 - Security tests verify that direct writes cannot reproduce any transaction output owned by a Function.
 - Property tests verify bill-share non-negativity and `sumShareVnd == totalBillVnd` for default and override calculations, including totals not divisible by 1,000.
 - Emulator tests verify `HOST_OVERRIDE` audit append, late-event exclusion, settlement-details membership reads and 30-day deletion eligibility.
+
+# WAITING lobby departure (ADR-026)
+
+`createLobbyLeaveRepository(...).leave(roomId)` runs online through the authenticated Firestore JS client, without Functions. Member departure atomically deletes the caller's membership and decrements the count. Host departure also transfers `hostId` and promotes an existing ACTIVE Member. The client picks the earliest joined remaining member (UID tie-breaker); Rules validate the eligible recipient, not roster ordering. A lone Host closes the lobby as CANCELLED with server endedAt. There is no active focus session to finalize.
+
+An absent membership confirms a previous successful departure and permits local cleanup. A new join requires a fresh join request; an old receipt does not re-create membership. Offline/failed requests retain the local room. The UI clears the room after confirmed cloud success and consumes Host changes through realtime snapshots. ACTIVE room departures use the existing early-exit and termination contracts.

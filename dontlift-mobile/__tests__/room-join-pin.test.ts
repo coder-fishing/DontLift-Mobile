@@ -103,6 +103,22 @@ describe('joinRoomByPin', () => {
     expect(writes.update).not.toHaveBeenCalled();
   });
 
+  test('old join receipt cannot report membership after a successful leave', async () => {
+    const writes = { set: jest.fn(), update: jest.fn() };
+    jest.mocked(runTransaction).mockImplementationOnce(async (_firestore, callback) => callback({
+      get: async (reference: string) => reference.includes('commandReceipts')
+        ? { exists: () => true, data: () => ({ roomId, pin, hostId: 'former-host' }) }
+        : reference.includes('/members/')
+          ? { exists: () => false }
+          : { exists: () => true, data: () => ({ hostId: 'new-host', participantCount: 1 }) },
+      ...writes,
+    } as never) as never);
+    await expect(repository({ withExclusiveTransactionAsync: jest.fn() }).joinRoomByPin({ pin, requestId }))
+      .rejects.toMatchObject({ code: 'failed-precondition' });
+    expect(writes.set).not.toHaveBeenCalled();
+    expect(writes.update).not.toHaveBeenCalled();
+  });
+
   test('does not queue or report success when Firestore is unavailable', async () => {
     jest.mocked(runTransaction).mockRejectedValueOnce({ code: 'unavailable' });
     const joiner = repository({ withExclusiveTransactionAsync: jest.fn() });

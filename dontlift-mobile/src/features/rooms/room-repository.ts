@@ -91,29 +91,29 @@ function mapRoomStartError(error: unknown): RoomStartError {
 }
 
 export function roomStartErrorMessage(error: unknown): string {
-  if (!(error instanceof RoomStartError)) return 'Không thể bắt đầu phòng lúc này. Hãy thử lại.';
+  if (!(error instanceof RoomStartError)) return 'Could not start the session. Please try again.';
   switch (error.code) {
-    case 'unauthenticated': return 'Phiên đăng nhập không còn hiệu lực. Hãy đăng nhập lại rồi thử lại.';
-    case 'invalid-argument': return 'Yêu cầu bắt đầu phòng không hợp lệ.';
-    case 'not-found': return 'Không tìm thấy phòng này.';
-    case 'failed-precondition': return 'Phòng đã được bắt đầu hoặc không còn ở trạng thái chờ.';
-    case 'unavailable': return 'Không có kết nối tới Firebase. Phòng chưa được bắt đầu; hãy kết nối rồi thử lại.';
-    case 'rejected': return 'Firebase từ chối bắt đầu phòng. Hãy xác nhận bạn vẫn là Host của phòng đang chờ.';
-    default: return 'Không thể bắt đầu phòng lúc này. Hãy thử lại.';
+    case 'unauthenticated': return 'Your session has expired. Sign in again and retry.';
+    case 'invalid-argument': return 'Invalid session start request.';
+    case 'not-found': return 'Room not found.';
+    case 'failed-precondition': return 'This room has already started or is no longer waiting.';
+    case 'unavailable': return 'No connection. The session has not started. Reconnect and retry.';
+    case 'rejected': return 'Could not start the session. Check that you are still the host of this waiting room.';
+    default: return 'Could not start the session. Please try again.';
   }
 }
 
 export function roomJoinErrorMessage(error: unknown): string {
-  if (!(error instanceof RoomJoinError)) return 'Không thể tham gia phòng lúc này. Hãy thử lại.';
+  if (!(error instanceof RoomJoinError)) return 'Could not join the room. Please try again.';
   switch (error.code) {
-    case 'unauthenticated': return 'Phiên đăng nhập không còn hiệu lực. Hãy đăng nhập lại rồi thử lại.';
-    case 'invalid-argument': return 'Mã phòng không hợp lệ. Hãy kiểm tra mã và thử lại.';
-    case 'not-found': return 'Không tìm thấy phòng đang chờ với mã này. Hãy kiểm tra mã và thử lại.';
-    case 'failed-precondition': return 'Phòng này không còn nhận người tham gia.';
-    case 'unavailable': return 'Không có kết nối tới Firebase. Mã vẫn được giữ để bạn thử lại.';
-    case 'rejected': return 'Không thể tham gia phòng. Phòng có thể đã đủ người hoặc không còn ở trạng thái chờ.';
-    case 'already-exists': return 'Yêu cầu này đã được dùng với mã khác. Hãy gửi lại mã phòng.';
-    default: return 'Không thể tham gia phòng lúc này. Hãy thử lại.';
+    case 'unauthenticated': return 'Your session has expired. Sign in again and retry.';
+    case 'invalid-argument': return 'Invalid room PIN. Check the PIN and try again.';
+    case 'not-found': return 'No waiting room found with this PIN. Check the PIN and try again.';
+    case 'failed-precondition': return 'This room is no longer accepting members.';
+    case 'unavailable': return 'No connection. Your PIN is saved so you can retry.';
+    case 'rejected': return 'Could not join. The room may be full or no longer waiting.';
+    case 'already-exists': return 'This request was used with another PIN. Enter the room PIN again.';
+    default: return 'Could not join the room. Please try again.';
   }
 }
 
@@ -184,8 +184,49 @@ async function saveJoinedRoomProjection(database: SQLite.SQLiteDatabase, room: J
   });
 }
 
+async function ensureGroupRoomIndex(firestore: Firestore, auth: Auth, uid: string, roomId: string): Promise<void> {
+  if (auth.currentUser?.uid !== uid) throw new RoomJoinError('unauthenticated');
+  const roomRef = doc(firestore, 'rooms', roomId);
+  const memberRef = doc(firestore, 'rooms', roomId, 'members', uid);
+  const indexRef = doc(firestore, 'users', uid, 'groupRooms', roomId);
+  await runTransaction(firestore, async transaction => {
+    if (auth.currentUser?.uid !== uid) throw new RoomJoinError('unauthenticated');
+    const [room, member, index] = await Promise.all([
+      transaction.get(roomRef), transaction.get(memberRef), transaction.get(indexRef),
+    ]);
+    if (!room.exists() || !member.exists() || !['ACTIVE', 'EARLY_EXIT'].includes(String(member.data().status)) || index.exists()) return;
+    const joinedAt = member.data().joinedAt;
+    if (!(joinedAt instanceof Timestamp)) throw new RoomJoinError('unavailable');
+    transaction.set(indexRef, { roomId, joinedAt });
+  });
+}
+
 export function createRoomRepository(dependencies: RoomCreateDependencies) {
   return {
+    async loadMemberRoom(roomId: string, expectedStatus: 'ACTIVE' | 'COMPLETED'): Promise<CreatedRoom> {
+      const actor = dependencies.auth.currentUser;
+      if (!actor) throw new RoomJoinError('unauthenticated');
+      if (!/^[0-9a-f-]{36}$/i.test(roomId)) throw new RoomJoinError('invalid-argument');
+      const [roomSnapshot, memberSnapshot] = await Promise.all([
+        getDocFromServer(doc(dependencies.firestore, 'rooms', roomId)),
+        getDocFromServer(doc(dependencies.firestore, 'rooms', roomId, 'members', actor.uid)),
+      ]);
+      if (dependencies.auth.currentUser?.uid !== actor.uid) throw new RoomJoinError('unauthenticated');
+      if (!roomSnapshot.exists() || !memberSnapshot.exists()) throw new RoomJoinError('not-found');
+      const room = roomSnapshot.data();
+      const member = memberSnapshot.data();
+      if (!['ACTIVE', 'EARLY_EXIT'].includes(String(member.status))) throw new RoomJoinError('rejected');
+      if (room.status !== expectedStatus || (expectedStatus === 'COMPLETED' && room.reconciliationStatus !== 'FINALIZED')) {
+        throw new RoomJoinError('failed-precondition');
+      }
+      if (typeof room.pin !== 'string' || !/^\d{8}$/.test(room.pin) || typeof room.hostId !== 'string') {
+        throw new RoomJoinError('failed-precondition');
+      }
+      return { roomId, pin: room.pin, invitation: encodeRoomInvitation(room.pin), hostUid: room.hostId,
+        hostDisplayName: member.role === 'HOST' && typeof member.displayName === 'string' ? member.displayName : 'Group host',
+        createdAt: room.createdAt instanceof Timestamp ? room.createdAt.toDate().toISOString() : null,
+        localCacheSaved: false };
+    },
     startCommand(roomId: string): RoomStartCommand {
       return { version: 1, roomId, requestId: dependencies.randomUUID() };
     },
@@ -261,6 +302,7 @@ export function createRoomRepository(dependencies: RoomCreateDependencies) {
           });
           transaction.set(memberRef, {
             displayName: profile.data().displayName || hostDisplayName,
+            ...(typeof profile.data().avatarUri === 'string' ? { avatarUri: profile.data().avatarUri } : {}),
             role: 'HOST', status: 'ACTIVE', penaltyScore: 0, liftCount: 0,
             violationDurationSeconds: 0, joinedAt: timestamp, earlyExitAt: null,
             syncedThroughAt: null, syncAcknowledgedAt: null,
@@ -293,6 +335,9 @@ export function createRoomRepository(dependencies: RoomCreateDependencies) {
           createdAt,
           localCacheSaved: false,
         };
+
+        // Indexing is a follow-up write so an undeployed Rules update cannot block room creation.
+        await ensureGroupRoomIndex(firestore, dependencies.auth, uid, persistedRoomId).catch(() => undefined);
 
         let localCacheSaved = false;
         if (createdAt !== null) {
@@ -378,9 +423,11 @@ export function createRoomRepository(dependencies: RoomCreateDependencies) {
             }
             const roomSnapshot = await transaction.get(doc(dependencies.firestore, 'rooms', saved.roomId));
             if (!roomSnapshot.exists()) throw new RoomJoinError('not-found');
+            const membership = await transaction.get(doc(dependencies.firestore, 'rooms', saved.roomId, 'members', uid));
+            if (!membership.exists()) throw new RoomJoinError('failed-precondition');
             return {
               roomId: saved.roomId,
-              hostUid: saved.hostId,
+              hostUid: String(roomSnapshot.data().hostId),
               participantCount: Number(roomSnapshot.data().participantCount),
               alreadyMember: true,
             };
@@ -409,6 +456,7 @@ export function createRoomRepository(dependencies: RoomCreateDependencies) {
           const timestamp = serverTimestamp();
           transaction.set(memberRef, {
             displayName: profileSnapshot.data().displayName,
+            ...(typeof profileSnapshot.data().avatarUri === 'string' ? { avatarUri: profileSnapshot.data().avatarUri } : {}),
             role: 'MEMBER', status: 'ACTIVE', penaltyScore: 0, liftCount: 0,
             violationDurationSeconds: 0, joinedAt: timestamp, earlyExitAt: null,
             syncedThroughAt: null, syncAcknowledgedAt: null,
@@ -437,6 +485,7 @@ export function createRoomRepository(dependencies: RoomCreateDependencies) {
           status: 'WAITING', participantCount: outcome.participantCount, roomCreatedAt, roomUpdatedAt, joinedAt,
           alreadyMember: outcome.alreadyMember, localCacheSaved: false,
         };
+        await ensureGroupRoomIndex(dependencies.firestore, dependencies.auth, uid, outcome.roomId).catch(() => undefined);
         if (roomCreatedAt && roomUpdatedAt && joinedAt) {
           try {
             await saveJoinedRoomProjection(await dependencies.database, result, uid,

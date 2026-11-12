@@ -16,6 +16,8 @@ export type CalculateBillCommand = {
   requestId: string;
   roomId: string;
   totalBillVnd: number;
+  /** Optional complete percentage allocation for first publication; omitted means Room score. */
+  shareOverrides?: BillShareOverride[];
 };
 
 export type ApplyBillOverridesCommand = {
@@ -193,7 +195,9 @@ export function createBillRepository(dependencies: Dependencies) {
 
           const members = frozenMembers;
           if (!members.some(member => member.uid === actor.uid)) throw new BillRepositoryError('permission-denied');
-          const allocation = calculateDefaultBillShares(command.totalBillVnd, members);
+          const allocation = command.shareOverrides?.length
+            ? calculateBillSharesWithOverrides(command.totalBillVnd, members, command.shareOverrides)
+            : calculateDefaultBillShares(command.totalBillVnd, members);
           const result = makeResult(command.roomId, command.requestId, command.totalBillVnd, allocation.shares);
           const sortedUids = result.shares.map(share => share.uid).sort((a, b) => a.localeCompare(b));
           const expectedUids = [...rosterMemberUids].sort((a, b) => a.localeCompare(b));

@@ -62,8 +62,13 @@ async function castVote(db, uid, choice, requestId) {
     const unanimous = choice === 'YES' && yesCount === vote.data().eligibleVoterCount;
     tx.set(ballotRef, { version: 1, voteId, requestId, choice, castAt: serverTimestamp() });
     tx.update(voteRef, { yesVoteCount: yesCount, ...(unanimous ? { status: 'CANCELLED', closedAt: serverTimestamp() } : {}) });
-    if (unanimous) tx.update(roomRef, { status: 'CANCELLED', endedAt: serverTimestamp(), updatedAt: serverTimestamp() });
-    return unanimous ? 'CANCELLED' : 'OPEN';
+    if (unanimous) tx.update(roomRef, {
+      status: 'COMPLETED', endedAt: serverTimestamp(), updatedAt: serverTimestamp(),
+      reconciliationStatus: 'PENDING', pendingMemberCount: room.data().participantCount,
+      completionRequestId: requestId, lastSyncAckMemberUid: null, lastSyncAckRequestId: null,
+      finalizedAt: null, finalizedBy: null, finalizationReason: null,
+    });
+    return unanimous ? 'COMPLETED' : 'OPEN';
   });
 }
 
@@ -120,7 +125,7 @@ test('Rules reject a ballot after the server-based deadline even while the room 
   assert.equal(room.data().status, 'ACTIVE');
 });
 
-test('unanimous YES transitions vote and room together; independent client room writes are denied', async t => {
+test('unanimous YES closes the vote and completes the room together; independent client room writes are denied', async t => {
   const env = await createRulesEnvironment();
   t.after(() => env.cleanup());
   await seedRoom(env);
@@ -128,12 +133,15 @@ test('unanimous YES transitions vote and room together; independent client room 
   const memberDb = env.authenticatedContext(memberId).firestore();
   await assertSucceeds(openVote(hostDb, hostId));
   assert.equal(await assertSucceeds(castVote(memberDb, memberId, 'YES', '00000000-0000-4000-8000-000000000096')), 'OPEN');
-  assert.equal(await assertSucceeds(castVote(hostDb, hostId, 'YES', '00000000-0000-4000-8000-000000000097')), 'CANCELLED');
+  assert.equal(await assertSucceeds(castVote(hostDb, hostId, 'YES', '00000000-0000-4000-8000-000000000097')), 'COMPLETED');
   const [room, vote] = await Promise.all([
     assertSucceeds(getDoc(doc(hostDb, `rooms/${roomId}`))),
     assertSucceeds(getDoc(doc(hostDb, `rooms/${roomId}/terminationVotes/current`))),
   ]);
-  assert.equal(room.data().status, 'CANCELLED');
+  assert.equal(room.data().status, 'COMPLETED');
+  assert.equal(room.data().reconciliationStatus, 'PENDING');
+  assert.equal(room.data().pendingMemberCount, room.data().participantCount);
+  assert.equal(room.data().completionRequestId, '00000000-0000-4000-8000-000000000097');
   assert.equal(vote.data().status, 'CANCELLED');
   await assertFails(setDoc(doc(hostDb, `rooms/${roomId}`), { status: 'CANCELLED' }, { merge: true }));
 });

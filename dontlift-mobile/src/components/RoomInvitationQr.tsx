@@ -23,7 +23,7 @@ export function RoomInvitationQr({ value, size = 200, accessibilityLabel = 'Room
     }
   }, [value]);
 
-  if (!result) return <Text accessibilityRole="alert">Không tạo được mã QR. Dùng đường dẫn lời mời hiển thị bên dưới.</Text>;
+  if (!result) return <Text accessibilityRole="alert">Could not generate the QR code. Use Share Invite instead.</Text>;
 
   return (
     <Svg width={size} height={size} viewBox={`-4 -4 ${result.dimension + 8} ${result.dimension + 8}`} accessibilityLabel={accessibilityLabel}>

@@ -7,6 +7,8 @@ export interface RegistrationProfile {
   displayName: string;
   isPremium: boolean;
   premiumExpiresAtUtcMs?: number | null;
+  avatarUri?: string | null;
+  avatarPublicId?: string | null;
   createdAtUtcMs: number;
 }
 

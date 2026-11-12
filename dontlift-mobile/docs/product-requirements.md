@@ -1,6 +1,6 @@
 # DontLift — Product Requirements Document
 
-> **Override 2026-10-23 — ADR-025:** SL-031/032 chuyển sang mua Premium online bằng payOS + Express ngoài Firebase, một entitlement có hạn `premiumExpiresAt`. Giá 89.000/178.000/356.000/623.000 VND nhận 1/3/6/12 tháng lịch. Activation/checksum, Local Premium riêng và redeemActivationCode đã superseded. Firebase giữ Spark; [ADR-025](decisions/ADR-025-payos-expiring-premium.md) và [plan mới](superpowers/plans/2026-10-23-sl-031-032-payos-premium.md) là nguồn hiện hành cho phạm vi này.
+> **Override 2026-11-08 — ADR-029:** Premium package pricing and paid/granted month counts are updated to 30.000/79.000/149.000/249.000 VND for 1/3/6/12 paid months, granting 1/4/8/16 months. The existing payOS + external Express flow, expiring server-owned entitlement, no-auto-renewal policy, and Firebase Spark boundary from [ADR-025](decisions/ADR-025-payos-expiring-premium.md) remain in force. [ADR-029](decisions/ADR-029-premium-pricing-update.md) supersedes ADR-025's package schedule only.
 
 > **Status:** APPROVED
 > **Sources:** `docs/project-brief.md` · `docs/project-context.md`

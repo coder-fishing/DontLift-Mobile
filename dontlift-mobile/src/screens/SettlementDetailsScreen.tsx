@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
 import {
   ActivityIndicator,
   FlatList,
@@ -119,6 +120,12 @@ export function SettlementDetailsScreen({
   const [bankSearch, setBankSearch] = useState("");
   const [selectedBank, setSelectedBank] = useState<BankOption | null>(null);
   const [manualBankEntry, setManualBankEntry] = useState(false);
+  const isDirty = details
+    ? fields.bankId.trim() !== details.bankId ||
+      fields.accountNumber.trim() !== details.accountNumber ||
+      fields.accountName.trim() !== details.accountName
+    : Boolean(fields.bankId.trim() || fields.accountNumber.trim() || fields.accountName.trim());
+  const canContinueWithoutSaving = Boolean(details && !isDirty && onContinueToBill);
 
   useEffect(() => {
     if (!fields.bankId) {
@@ -259,262 +266,289 @@ export function SettlementDetailsScreen({
           onPress={onBack}
           style={styles.backButton}
         >
-          <Text style={styles.backText}>‹ Group summary</Text>
+          <Ionicons
+            name="chevron-back"
+            size={18}
+            color={Colors.light.primary}
+            accessibilityElementsHidden
+          />
+          <Text style={styles.backText}>Group summary</Text>
         </Pressable>
         <GlassCard style={styles.card}>
-          <Text style={styles.eyebrow}>ROOM SETTLEMENT</Text>
-          <Text style={styles.title}>
-            {mode === "host" ? "Payment details" : "Host payment details"}
-          </Text>
-          <Text style={styles.body}>
-            {mode === "host"
-              ? "Members in this room can view these details for 30 days after the session ends."
-              : "These details are available only to members of this room and expire 30 days after the session ends."}
-          </Text>
-          {loading ? (
-            <View style={styles.loading}>
-              <ActivityIndicator color={Colors.light.primary} />
-              <Text style={styles.body}>Loading from Firebase…</Text>
-            </View>
-          ) : loadError ? (
-            <Text accessibilityRole="alert" style={styles.error}>
-              Could not load payment details. Check your connection and return
-              to retry.
+          <View style={styles.cardContent}>
+            <Text style={styles.eyebrow}>ROOM SETTLEMENT</Text>
+            <Text style={styles.title}>
+              {mode === "host" ? "Payment details" : "Host payment details"}
             </Text>
-          ) : mode === "member" && !details ? (
-            <Text style={styles.empty}>
-              The Host has not entered payment details yet.
+            <Text style={styles.body}>
+              {mode === "host"
+                ? "Add the account members will use to transfer their share."
+                : "These details are available only to members of this room and expire 30 days after the session ends."}
             </Text>
-          ) : (
-            <>
-              {mode === "host" ? (
-                <View style={styles.field}>
-                  <Text style={styles.label}>Bank</Text>
-                  {!manualBankEntry ? (
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={
-                        selectedBank
-                          ? `Selected bank: ${selectedBank.name}, BIN ${selectedBank.bin}`
-                          : "Choose bank"
-                      }
-                      accessibilityState={{ expanded: bankPickerVisible }}
-                      onPress={() => {
-                        setBankPickerVisible(true);
-                        setBankSearch("");
-                        if (!banks.length && !bankLoading) void loadBanks();
-                      }}
-                      style={styles.bankSelector}
-                    >
-                      {selectedBank ? (
-                        <BankLogo bank={selectedBank} />
-                      ) : (
-                        <View style={styles.bankLogoPlaceholder}>
-                          <Text style={styles.bankLogoFallback}>BANK</Text>
-                        </View>
-                      )}
-                      <View style={styles.bankSelectorText}>
-                        <Text
-                          numberOfLines={2}
-                          ellipsizeMode="tail"
-                          style={
-                            selectedBank ? styles.bankValue : styles.placeholder
-                          }
-                        >
-                          {selectedBank?.name ??
-                            (fields.bankId || "Choose a bank from the list")}
-                        </Text>
-                        {selectedBank ? (
-                          <Text style={styles.bankMeta}>
-                            BIN {selectedBank.bin}
-                          </Text>
-                        ) : null}
-                      </View>
-                      <Text
-                        accessibilityElementsHidden
-                        importantForAccessibility="no-hide-descendants"
-                        style={styles.bankChevron}
-                      >
-                        ›
-                      </Text>
-                    </Pressable>
-                  ) : (
-                    field(
-                      "bankId",
-                      "Bank name or identifier",
-                      "Enter a bank name or identifier",
-                    )
-                  )}
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={
-                      manualBankEntry
-                        ? "Choose from bank list"
-                        : "Enter bank manually"
-                    }
-                    onPress={() => {
-                      setManualBankEntry((value) => !value);
-                      setSelectedBank(null);
-                    }}
-                    style={styles.manualToggle}
-                  >
-                    <Text style={styles.manualToggleText}>
-                      {manualBankEntry
-                        ? "Choose from bank list"
-                        : "Enter bank manually"}
-                    </Text>
-                  </Pressable>
-                  {bankLoading ? (
-                    <View style={styles.loading}>
-                      <ActivityIndicator color={Colors.light.primary} />
-                      <Text style={styles.body}>Loading banks…</Text>
-                    </View>
-                  ) : null}
-                  {bankError ? (
-                    <Pressable
-                      accessibilityRole="button"
-                      onPress={() => {
-                        void loadBanks();
-                      }}
-                    >
-                      <Text style={styles.error}>
-                        Could not load banks. Tap to retry; manual entry is
-                        still available.
-                      </Text>
-                    </Pressable>
-                  ) : null}
-                  <Modal
-                    visible={bankPickerVisible}
-                    animationType="slide"
-                    onRequestClose={() => setBankPickerVisible(false)}
-                  >
-                    <View style={styles.modal}>
-                      <Text style={styles.eyebrow}>ROOM SETTLEMENT</Text>
-                      <Text style={styles.title}>Choose a bank</Text>
-                      <TextInput
-                        accessibilityLabel="Search banks"
-                        value={bankSearch}
-                        onChangeText={setBankSearch}
-                        placeholder="Search by bank name or code"
-                        placeholderTextColor={Colors.light.textSecondary}
-                        style={styles.input}
-                      />
-                      <FlatList
-                        data={banks.filter((bank) =>
-                          `${bank.name} ${bank.shortName} ${bank.code} ${bank.bin}`
-                            .toLocaleLowerCase()
-                            .includes(bankSearch.trim().toLocaleLowerCase()),
-                        )}
-                        keyExtractor={(item) => item.bin}
-                        keyboardShouldPersistTaps="handled"
-                        renderItem={({ item }) => (
-                          <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel={`${item.name}, BIN ${item.bin}`}
-                            accessibilityState={{
-                              selected: selectedBank?.bin === item.bin,
-                            }}
-                            onPress={() => {
-                              setManualBankEntry(false);
-                              change("bankId", item.bin);
-                              setBankPickerVisible(false);
-                            }}
-                            style={styles.bankRow}
-                          >
-                            <BankLogo bank={item} />
-                            <View style={styles.bankRowText}>
-                              <Text
-                                numberOfLines={2}
-                                ellipsizeMode="tail"
-                                style={styles.bankValue}
-                              >
-                                {item.name}
-                              </Text>
-                              <Text style={styles.bankMeta}>
-                                {/* {item.shortName} · BIN {item.bin} */}
-                              </Text>
-                            </View>
-                          </Pressable>
-                        )}
-                        ListEmptyComponent={
-                          <Text style={styles.empty}>
-                            {bankLoading
-                              ? "Loading banks…"
-                              : "No matching banks. You can enter a bank identifier manually."}
-                          </Text>
-                        }
-                      />
+            {loading ? (
+              <View style={styles.loading}>
+                <ActivityIndicator color={Colors.light.primary} />
+                <Text style={styles.body}>Loading from Firebase…</Text>
+              </View>
+            ) : loadError ? (
+              <Text accessibilityRole="alert" style={styles.error}>
+                Could not load payment details. Check your connection and return
+                to retry.
+              </Text>
+            ) : mode === "member" && !details ? (
+              <Text style={styles.empty}>
+                The Host has not entered payment details yet.
+              </Text>
+            ) : (
+              <>
+                {mode === "host" ? (
+                  <View style={styles.field}>
+                    {!manualBankEntry ? <Text style={styles.label}>Bank</Text> : null}
+                    {!manualBankEntry ? (
                       <Pressable
                         accessibilityRole="button"
-                        onPress={() => setBankPickerVisible(false)}
-                        style={styles.closePicker}
+                        accessibilityLabel={
+                          selectedBank
+                            ? `Selected bank: ${selectedBank.shortName}, ${selectedBank.name}`
+                            : "Choose bank"
+                        }
+                        accessibilityState={{ expanded: bankPickerVisible }}
+                        onPress={() => {
+                          setBankPickerVisible(true);
+                          setBankSearch("");
+                          if (!banks.length && !bankLoading) void loadBanks();
+                        }}
+                        style={styles.bankSelector}
                       >
-                        <Text style={styles.backText}>Close</Text>
+                        {selectedBank ? (
+                          <BankLogo bank={selectedBank} />
+                        ) : (
+                          <View style={styles.bankLogoPlaceholder}>
+                            <Text style={styles.bankLogoFallback}>BANK</Text>
+                          </View>
+                        )}
+                        <View style={styles.bankSelectorText}>
+                          <Text
+                            numberOfLines={1}
+                            ellipsizeMode="tail"
+                            style={
+                              selectedBank ? styles.bankValue : styles.placeholder
+                            }
+                          >
+                            {selectedBank?.shortName ??
+                              (fields.bankId || "Choose a bank from the list")}
+                          </Text>
+                          {selectedBank ? (
+                            <Text
+                              numberOfLines={1}
+                              ellipsizeMode="tail"
+                              style={styles.bankMeta}
+                            >
+                              {selectedBank.name}
+                            </Text>
+                          ) : null}
+                        </View>
+                        <Text
+                          accessibilityElementsHidden
+                          importantForAccessibility="no-hide-descendants"
+                          style={styles.bankChevron}
+                        >
+                          ›
+                        </Text>
                       </Pressable>
-                    </View>
-                  </Modal>
-                </View>
-              ) : (
-                field("bankId", "Bank", "Bank name or identifier")
-              )}
-              {field(
-                "accountNumber",
-                "Account number",
-                "Enter the recipient account number",
-                "number-pad",
-              )}
-              {field(
-                "accountName",
-                "Account holder name",
-                "Enter the name shown on the bank account",
-              )}
-              {details ? (
-                <Text style={styles.expiry}>
-                  Available until{" "}
-                  {new Date(details.expiresAtUtcMs).toLocaleDateString()}
-                </Text>
-              ) : null}
-              {mode === "host" ? (
-                <>
-                  <Text style={styles.note}>
-                    DontLift does not hold or move money. These details are
-                    saved only on this room.
-                  </Text>
-                  {saveError ? (
-                    <Text accessibilityRole="alert" style={styles.error}>
-                      {saveError}
-                    </Text>
-                  ) : null}
-                  {details && onContinueToBill ? (
-                    <Pressable
-                      accessibilityRole="button"
-                      onPress={onContinueToBill}
-                      style={({ pressed }) => [styles.continueButton, pressed && styles.pressed]}
+                    ) : (
+                      <View style={styles.manualBankField}>
+                        {field(
+                          "bankId",
+                          "Bank name or identifier",
+                          "Enter a bank name or identifier",
+                        )}
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel="Choose from bank list"
+                          onPress={() => {
+                            setBankPickerVisible(true);
+                            setBankSearch("");
+                            if (!banks.length && !bankLoading) void loadBanks();
+                          }}
+                          style={styles.inlineBankAction}
+                        >
+                          <Text style={styles.manualToggleText}>Choose from bank list</Text>
+                        </Pressable>
+                      </View>
+                    )}
+                    {bankLoading ? (
+                      <View style={styles.loading}>
+                        <ActivityIndicator color={Colors.light.primary} />
+                        <Text style={styles.body}>Loading banks…</Text>
+                      </View>
+                    ) : null}
+                    {bankError ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={() => {
+                          void loadBanks();
+                        }}
+                      >
+                        <Text style={styles.error}>
+                          Could not load banks. Tap to retry; manual entry is
+                          still available.
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                    <Modal
+                      visible={bankPickerVisible}
+                      animationType="slide"
+                      onRequestClose={() => setBankPickerVisible(false)}
                     >
-                      <Text style={styles.continueButtonText}>Continue to bill preview</Text>
-                    </Pressable>
-                  ) : null}
-                  <PrimaryButton
-                    title={
-                      saving
-                        ? "Saving…"
-                        : details
-                          ? "Update payment details"
-                          : "Save payment details"
-                    }
-                    disabled={saving || loading}
-                    accessibilityLabel={
-                      saving ? "Saving payment details" : "Save payment details"
-                    }
-                    onPress={() => {
-                      void submit();
-                    }}
-                    style={styles.saveButton}
-                  />
-                </>
-              ) : null}
-            </>
-          )}
+                      <View style={styles.modal}>
+                        <Text style={styles.eyebrow}>ROOM SETTLEMENT</Text>
+                        <Text style={styles.title}>Choose a bank</Text>
+                        <TextInput
+                          accessibilityLabel="Search banks"
+                          value={bankSearch}
+                          onChangeText={setBankSearch}
+                          placeholder="Search by bank name or code"
+                          placeholderTextColor={Colors.light.textSecondary}
+                          style={styles.input}
+                        />
+                        <FlatList
+                          style={styles.bankList}
+                          data={banks.filter((bank) =>
+                            `${bank.name} ${bank.shortName} ${bank.code} ${bank.bin}`
+                              .toLocaleLowerCase()
+                              .includes(bankSearch.trim().toLocaleLowerCase()),
+                          )}
+                          keyExtractor={(item) => item.bin}
+                          keyboardShouldPersistTaps="handled"
+                          renderItem={({ item }) => (
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityLabel={`${item.shortName}, ${item.name}`}
+                              accessibilityState={{
+                                selected: selectedBank?.bin === item.bin,
+                              }}
+                              onPress={() => {
+                                setManualBankEntry(false);
+                                change("bankId", item.bin);
+                                setBankPickerVisible(false);
+                              }}
+                              style={styles.bankRow}
+                            >
+                              <BankLogo bank={item} />
+                              <View style={styles.bankRowText}>
+                                <Text
+                                  numberOfLines={1}
+                                  ellipsizeMode="tail"
+                                  style={styles.bankValue}
+                                >
+                                  {item.shortName}
+                                </Text>
+                                <Text
+                                  numberOfLines={1}
+                                  ellipsizeMode="tail"
+                                  style={styles.bankMeta}
+                                >
+                                  {item.name}
+                                </Text>
+                              </View>
+                            </Pressable>
+                          )}
+                          ListEmptyComponent={
+                            <Text style={styles.empty}>
+                              {bankLoading
+                                ? "Loading banks…"
+                                : "No matching banks."}
+                            </Text>
+                          }
+                        />
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel="Enter bank manually"
+                          onPress={() => {
+                            setManualBankEntry(true);
+                            setSelectedBank(null);
+                            change("bankId", "");
+                            setBankPickerVisible(false);
+                          }}
+                          style={styles.manualPickerAction}
+                        >
+                          <Text style={styles.manualToggleText}>Enter bank manually</Text>
+                          <Text style={styles.manualPickerHint}>
+                            Use a bank name or identifier not listed here
+                          </Text>
+                        </Pressable>
+                        <Pressable
+                          accessibilityRole="button"
+                          onPress={() => setBankPickerVisible(false)}
+                          style={styles.closePicker}
+                        >
+                          <Text style={styles.backText}>Close</Text>
+                        </Pressable>
+                      </View>
+                    </Modal>
+                  </View>
+                ) : (
+                  field("bankId", "Bank", "Bank name or identifier")
+                )}
+                {field(
+                  "accountNumber",
+                  "Account number",
+                  "Enter the recipient account number",
+                  "number-pad",
+                )}
+                {field(
+                  "accountName",
+                  "Account holder name",
+                  "Enter the name shown on the bank account",
+                )}
+                {mode === "member" && details ? (
+                  <Text style={styles.expiry}>
+                    Available until {new Date(details.expiresAtUtcMs).toLocaleDateString()}
+                  </Text>
+                ) : null}
+                {mode === "host" ? (
+                  <>
+                    <Text style={styles.note}>
+                      {details
+                        ? `Saved for this room until ${new Date(details.expiresAtUtcMs).toLocaleDateString()}. DontLift does not hold or move money.`
+                        : "Available to room members for 30 days after the session ends. DontLift does not hold or move money."}
+                    </Text>
+                    {saveError ? (
+                      <Text accessibilityRole="alert" style={styles.error}>
+                        {saveError}
+                      </Text>
+                    ) : null}
+                    <PrimaryButton
+                      title={
+                        saving
+                          ? "Saving…"
+                          : canContinueWithoutSaving
+                            ? "Continue to bill preview"
+                            : "Save & continue to bill preview"
+                      }
+                      disabled={saving || loading}
+                      accessibilityLabel={
+                        saving
+                          ? "Saving payment details"
+                          : canContinueWithoutSaving
+                            ? "Continue to bill preview"
+                            : "Save payment details and continue to bill preview"
+                      }
+                      onPress={() => {
+                        if (canContinueWithoutSaving) {
+                          onContinueToBill?.();
+                        } else {
+                          void submit();
+                        }
+                      }}
+                      style={styles.saveButton}
+                    />
+                  </>
+                ) : null}
+              </>
+            )}
+          </View>
         </GlassCard>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -526,12 +560,21 @@ const styles = StyleSheet.create({
   container: { gap: 12, paddingBottom: BottomTabInset + 32 },
   backButton: {
     minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
     justifyContent: "center",
     alignSelf: "flex-start",
-    paddingHorizontal: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: Colors.light.roomUtilitySurface,
+    borderWidth: 1,
+    borderColor: Colors.light.glassBorder,
   },
   backText: { color: Colors.light.primary, fontSize: 14, fontWeight: "700" },
-  card: { gap: 12, padding: 16, borderRadius: 24 },
+  card: { padding: 16, borderRadius: 24 },
+  cardContent: { gap: 12 },
   eyebrow: {
     color: Colors.light.primary,
     fontSize: 11,
@@ -573,12 +616,8 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   expiry: { color: Colors.light.textSecondary, fontSize: 13 },
-  note: { color: Colors.light.textSecondary, fontSize: 12, lineHeight: 18 },
+  note: { color: Colors.light.textSecondary, fontSize: 13, lineHeight: 19 },
   saveButton: { marginTop: 4 },
-  continueButton: { minHeight: 48, alignItems: "center", justifyContent: "center", borderRadius: 12,
-    borderWidth: 1, borderColor: Colors.light.border },
-  continueButtonText: { color: Colors.light.primary, fontSize: 15, fontWeight: "800" },
-  pressed: { opacity: 0.78 },
   placeholder: {
     color: Colors.light.textSecondary,
     fontSize: 15,
@@ -598,6 +637,7 @@ const styles = StyleSheet.create({
     gap: 12,
     backgroundColor: Colors.light.background,
   },
+  bankList: { flex: 1 },
   bankRow: {
     minHeight: 72,
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -647,7 +687,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  bankLogoImage: { width: 40, height: 40 },
+  bankLogoImage: { width: 44, height: 44 },
   bankLogoFallback: {
     color: Colors.light.primary,
     fontSize: 10,
@@ -655,16 +695,28 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   bankRowText: { flex: 1, gap: 4 },
+  manualBankField: { gap: 2 },
+  inlineBankAction: {
+    minHeight: 44,
+    justifyContent: "center",
+    paddingHorizontal: 8,
+  },
+  manualPickerAction: {
+    minHeight: 58,
+    justifyContent: "center",
+    gap: 2,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Colors.light.border,
+  },
+  manualPickerHint: {
+    color: Colors.light.textSecondary,
+    fontSize: 12,
+    lineHeight: 16,
+  },
   closePicker: {
     minHeight: 48,
     justifyContent: "center",
     alignItems: "center",
-  },
-  manualToggle: {
-    minHeight: 44,
-    justifyContent: "center",
-    alignSelf: "flex-start",
-    paddingHorizontal: 2,
   },
   manualToggleText: {
     color: Colors.light.primary,

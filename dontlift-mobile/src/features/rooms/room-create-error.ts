@@ -28,21 +28,21 @@ export function mapRoomCreateError(error: unknown, stage: RoomCreateStage): Room
 }
 
 export function roomCreateErrorMessage(error: unknown): string {
-  if (!(error instanceof RoomCreateError)) return 'Không thể tạo phòng lúc này. Hãy thử lại.';
+  if (!(error instanceof RoomCreateError)) return 'Could not create the room. Please try again.';
   switch (error.code) {
     case 'quota-exhausted':
       return 'Monthly room limit reached (7/month). Upgrade to Premium for unlimited creations.';
     case 'unauthenticated':
-      return 'Phiên đăng nhập không còn hiệu lực. Hãy đăng nhập lại rồi thử lại.';
+      return 'Your session has expired. Sign in again and retry.';
     case 'unavailable':
-      return 'Chưa xác nhận được kết quả từ Firebase. Hãy kết nối mạng và thử lại; app sẽ kiểm tra yêu cầu cũ.';
+      return 'Could not confirm the result. Reconnect and retry to check your previous request.';
     case 'rejected':
       return error.stage === 'clock-write' || error.stage === 'clock-read'
-        ? 'Firebase chưa cho phép kiểm tra quyền tạo phòng (permission-denied). Rules Firestore trên Cloud có thể chưa được cập nhật.'
-        : 'Firebase từ chối giao dịch tạo phòng (permission-denied). Hãy kiểm tra Rules Firestore trên Cloud rồi thử lại.';
+        ? 'Room creation access could not be checked. Please contact support if this continues.'
+        : 'Room creation was denied. Please contact support if this continues.';
     case 'already-exists':
-      return 'Yêu cầu tạo phòng đã tồn tại với dữ liệu khác. Hãy thử lại.';
+      return 'This request already exists with different details. Please try again.';
     default:
-      return 'Không thể tạo phòng lúc này. Hãy thử lại.';
+      return 'Could not create the room. Please try again.';
   }
 }

@@ -84,7 +84,10 @@ test('only the Host can start WAITING once, with a safe same-request replay', as
   await assertFails(startTransaction(env.authenticatedContext(memberId).firestore(), memberId,
     '00000000-0000-4000-8000-000000000019'));
   await assertFails(updateDoc(doc(hostDb, `rooms/${roomId}`), { participantCount: 99 }));
-  const room = await env.withSecurityRulesDisabled(context => getDoc(doc(context.firestore(), `rooms/${roomId}`)));
+  let room;
+  await env.withSecurityRulesDisabled(async context => {
+    room = await getDoc(doc(context.firestore(), `rooms/${roomId}`));
+  });
   assert.equal(room.data().status, 'ACTIVE');
   assert.equal(room.data().lastStartRequestId, requestId);
 });

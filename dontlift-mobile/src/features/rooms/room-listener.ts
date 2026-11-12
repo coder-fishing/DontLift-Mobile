@@ -5,6 +5,7 @@ import {
 export type RoomLobbyMember = {
   uid: string;
   displayName: string;
+  avatarUri?: string;
   role: 'HOST' | 'MEMBER';
   status: string;
   penaltyScore: number;
@@ -38,6 +39,20 @@ export type RoomLobbyState =
   | { kind: 'live'; snapshot: RoomLobbySnapshot }
   | { kind: 'cached'; snapshot: RoomLobbySnapshot }
   | { kind: 'error'; snapshot: RoomLobbySnapshot | null };
+
+export function listenToOwnRoomRemoval(
+  firestore: Firestore, roomId: string, uid: string, onRemoved: () => void,
+): Unsubscribe {
+  let notified = false;
+  return onSnapshot(doc(firestore, 'rooms', roomId, 'members', uid), { includeMetadataChanges: true }, snapshot => {
+    if (!snapshot.metadata.fromCache && !snapshot.metadata.hasPendingWrites && !snapshot.exists() && !notified) {
+      notified = true;
+      onRemoved();
+    }
+  }, () => {
+    // Connectivity or permission errors do not establish that a member was removed.
+  });
+}
 
 export function listenToRoomLobby(
   firestore: Firestore,
@@ -125,6 +140,7 @@ export function listenToRoomLobby(
         return {
           uid: memberDoc.id,
           displayName: String(data.displayName ?? ''),
+          ...(typeof data.avatarUri === 'string' && data.avatarUri.trim() ? { avatarUri: data.avatarUri } : {}),
           role: data.role === 'HOST' ? 'HOST' : 'MEMBER',
           status: String(data.status ?? ''),
           penaltyScore: Number(data.penaltyScore ?? 0),
