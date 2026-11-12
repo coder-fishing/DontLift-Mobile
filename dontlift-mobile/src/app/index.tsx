@@ -2265,7 +2265,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
           style={styles.mainBodyScrollView}
           contentContainerStyle={[
             styles.scrollContent,
-            { paddingBottom: (currentScreen === '06-group-active' ? 132 : 115) + insets.bottom },
+            { paddingBottom: (currentScreen === '06-group-active' ? 132 : currentScreen === '13-group-summary' ? 220 : 115) + insets.bottom },
             currentScreen === '05-group-lobby' ? styles.lobbyScrollContent : null,
             currentScreen === '06-group-active' ? styles.activeSessionScrollContent : null,
           ]}
