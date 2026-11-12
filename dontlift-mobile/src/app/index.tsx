@@ -74,6 +74,7 @@ import { createEarlyExitRepository, EarlyExitError, type EarlyExitDecision, type
 import { listenToOpenEarlyExitRequests } from '../features/rooms/early-exit-listener';
 import { createTerminationVoteRepository, TerminationVoteError, type TerminationChoice } from '../features/rooms/termination-vote-repository';
 import { createRoomCompletionRepository, RoomCompletionError } from '../features/rooms/room-completion-repository';
+import { shouldNavigateToGroupSummary } from '../features/rooms/group-terminal-navigation';
 import { createSettlementDetailsRepository, type SettlementDetailsState } from '../features/settlement/settlement-details-repository';
 import { createBankDirectoryRepository } from '../features/settlement/bank-directory';
 import { createProfileRepository } from '../features/profile/profile-repository';
@@ -667,12 +668,17 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       && !terminalRoomCleanupInFlight.current.has(snapshot.roomId)) {
       const roomId = snapshot.roomId;
       const endedAtUtcMs = snapshot.endedAtUtcMs;
-      const shouldShowSummary = snapshot.status === 'COMPLETED'
-        && (currentScreen === '06-group-active' || snapshot.roomId === restoredGroupRoomId.current);
+      const shouldShowSummary = shouldNavigateToGroupSummary({
+        roomId: snapshot.roomId, roomStatus: snapshot.status,
+        currentScreen, restoredRoomId: restoredGroupRoomId.current,
+      });
       const ownMember = snapshot.members.find(member => member.uid === profile.uid);
       const earlyExitCutoffUtcMs = ownMember?.status === 'EARLY_EXIT' ? ownMember.earlyExitAtUtcMs : null;
       const startedAtUtcMs = snapshot.startedAtUtcMs;
       terminalRoomCleanupInFlight.current.add(roomId);
+      // The live Firestore snapshot is sufficient for Summary. Local SQLite
+      // projection is best-effort and must never hold navigation on Group Active.
+      if (shouldShowSummary) setCurrentScreen('13-group-summary');
       void (async () => {
         try {
           // Không chốt local interval cho tới khi lần ghi capture cuối cùng đã hoàn tất.
@@ -707,16 +713,12 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
             setCreatedRoom(current => current?.roomId === roomId ? null : current);
             setJoinedRoom(current => current?.roomId === roomId ? null : current);
           }
-          if (shouldShowSummary) setCurrentScreen('13-group-summary');
-          else if (snapshot.status !== 'COMPLETED') {
+          if (snapshot.status !== 'COMPLETED') {
             setCurrentScreen(current => current === '06-group-active' ? '05-group-lobby' : current);
           }
-        } catch {
+        } catch (error) {
           terminalRoomCleanupInFlight.current.delete(roomId);
-          Alert.alert(
-            'Could not close group session',
-            'The room has ended, but its local session could not be finalized. Reopen the room while connected to retry.',
-          );
+          if (__DEV__) console.warn('[group-terminal] local projection cleanup failed', error);
         }
       })();
     }
