@@ -1,9 +1,9 @@
 export function shouldNavigateToGroupSummary(input: {
   roomId: string;
   roomStatus: string;
-  currentScreen: string;
   restoredRoomId: string | null;
+  isRoomMember: boolean;
 }): boolean {
   return input.roomStatus === 'COMPLETED'
-    && (input.currentScreen === '06-group-active' || input.roomId === input.restoredRoomId);
+    && (input.isRoomMember || input.roomId === input.restoredRoomId);
 }

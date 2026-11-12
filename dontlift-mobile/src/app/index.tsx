@@ -670,7 +670,8 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       const endedAtUtcMs = snapshot.endedAtUtcMs;
       const shouldShowSummary = shouldNavigateToGroupSummary({
         roomId: snapshot.roomId, roomStatus: snapshot.status,
-        currentScreen, restoredRoomId: restoredGroupRoomId.current,
+        restoredRoomId: restoredGroupRoomId.current,
+        isRoomMember: snapshot.members.some(member => member.uid === profile.uid),
       });
       const ownMember = snapshot.members.find(member => member.uid === profile.uid);
       const earlyExitCutoffUtcMs = ownMember?.status === 'EARLY_EXIT' ? ownMember.earlyExitAtUtcMs : null;

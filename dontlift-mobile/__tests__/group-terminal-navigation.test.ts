@@ -3,14 +3,15 @@ import { shouldNavigateToGroupSummary } from '../src/features/rooms/group-termin
 const roomId = 'room-1';
 
 test.each([
-  ['Host on the active screen', 'COMPLETED', '06-group-active', null, true],
-  ['member on the active screen', 'COMPLETED', '06-group-active', null, true],
-  ['restored completed room', 'COMPLETED', '02-solo-select', roomId, true],
-  ['cancelled room', 'CANCELLED', '06-group-active', null, false],
-  ['completed room while viewing another screen', 'COMPLETED', '01-login', null, false],
-])('%s routes only a completed active/restored room to Summary', (_label, roomStatus, currentScreen, restoredRoomId, expected) => {
+  ['Host viewing another tab', 'COMPLETED', null, true, true],
+  ['member viewing another tab', 'COMPLETED', null, true, true],
+  ['restored completed room', 'COMPLETED', roomId, false, true],
+  ['non-member in unrelated screen', 'COMPLETED', null, false, false],
+  ['cancelled room member', 'CANCELLED', null, true, false],
+])('%s routes only an eligible completed room to Summary', (_label, roomStatus, restoredRoomId, isRoomMember, expected) => {
   expect(shouldNavigateToGroupSummary({
-    roomId, roomStatus: String(roomStatus), currentScreen: String(currentScreen),
+    roomId, roomStatus: String(roomStatus),
     restoredRoomId: restoredRoomId === null ? null : String(restoredRoomId),
+    isRoomMember: Boolean(isRoomMember),
   })).toBe(expected);
 });
