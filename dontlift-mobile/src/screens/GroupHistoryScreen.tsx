@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, BackHandler, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Network from 'expo-network';
 import { BottomTabInset, Colors } from '../constants/theme';
@@ -13,11 +12,12 @@ import { HistoryPaymentScreen } from './HistoryPaymentScreen';
 import type { GroupHistoryRepository, GroupHistoryDetail } from '../features/history/group-history-repository';
 import { mergeGroupHistory, type GroupHistoryCursor, type GroupHistoryEntry } from '../features/history/group-history-model';
 import { shouldRefreshGroupHistoryOnReconnect } from '../features/history/group-history-refresh-policy';
+import { PremiumAvatar } from '../components/PremiumAvatar';
 
-type Props = { userId: string; repository: GroupHistoryRepository; serverPremium: boolean; localPremium?: boolean; initialRoomId?: string; onBack: () => void; bankDirectory?: { list: () => Promise<{ name: string; shortName: string; code: string; bin: string }[]> } };
+type Props = { userId: string; repository: GroupHistoryRepository; serverPremium: boolean; currentUserPremiumExpiresAtUtcMs?: number | null; localPremium?: boolean; initialRoomId?: string; onBack: () => void; bankDirectory?: { list: () => Promise<{ name: string; shortName: string; code: string; bin: string }[]> } };
 type HistoryListRow = { kind: 'history'; entry: GroupHistoryEntry }
   | { kind: 'member'; member: GroupHistoryDetail['members'][number] };
-export function GroupHistoryScreen({ userId, repository, serverPremium, localPremium = serverPremium, initialRoomId, onBack, bankDirectory }: Props) {
+export function GroupHistoryScreen({ userId, repository, serverPremium, currentUserPremiumExpiresAtUtcMs, localPremium = serverPremium, initialRoomId, onBack, bankDirectory }: Props) {
   const colors = Colors.light;
   const [items, setItems] = useState<GroupHistoryEntry[]>([]);
   const [selected, setSelected] = useState<GroupHistoryEntry | null>(null);
@@ -294,7 +294,8 @@ export function GroupHistoryScreen({ userId, repository, serverPremium, localPre
           : share.paymentStatus === 'MARKED_AS_PAID' ? 'Host confirmed paid' : 'Awaiting confirmation' : null;
         return <View accessible accessibilityLabel={`${member.name}${member.uid === userId ? ', you' : ''}, ${member.score} points, ${member.status.replaceAll('_', ' ')}${share ? `, ${formatVND(share.shareVnd)} VND, ${paymentStatus}` : ''}`}
           style={[styles.memberCard, { borderColor: colors.border, backgroundColor: colors.glassSurface }]}>
-          <GroupMemberAvatar name={member.name} uri={member.avatarUri} initials={initials} />
+          <GroupMemberAvatar name={member.name} uri={member.avatarUri} initials={initials}
+            premiumExpiresAtUtcMs={member.uid === userId ? currentUserPremiumExpiresAtUtcMs : member.premiumExpiresAtUtcMs} />
           <View style={styles.memberIdentity}>
             <View style={styles.memberNameRow}>
               <Text style={[styles.name, text]} numberOfLines={2}>{member.name}</Text>
@@ -330,13 +331,11 @@ export function GroupHistoryScreen({ userId, repository, serverPremium, localPre
   />;
 }
 
-function GroupMemberAvatar({ name, uri, initials }: { name: string; uri?: string; initials: string }) {
-  const [failedUri, setFailedUri] = useState<string | null>(null);
-  return <View style={[styles.memberAvatar, { backgroundColor: Colors.light.roomMemberAvatar }]}>
-    {uri && failedUri !== uri
-      ? <Image source={{ uri }} contentFit="cover" style={styles.memberAvatarImage} onError={() => setFailedUri(uri)} accessibilityLabel={`${name}'s avatar`} />
-      : <Text style={[styles.memberAvatarText, { color: Colors.light.roomMemberAccent }]}>{initials}</Text>}
-  </View>;
+function GroupMemberAvatar({ name, uri, initials, premiumExpiresAtUtcMs }: { name: string; uri?: string; initials: string; premiumExpiresAtUtcMs?: number | null }) {
+  return <PremiumAvatar displayName={name} imageUri={uri} premiumExpiresAtUtcMs={premiumExpiresAtUtcMs}
+    initials={initials} size={42} backgroundColor={Colors.light.roomMemberAvatar}
+    fallbackColor={Colors.light.roomMemberAccent} borderColor={Colors.light.glassBorder}
+    style={styles.memberAvatar} textStyle={styles.memberAvatarText} />;
 }
 const styles = StyleSheet.create({
   content: { padding: 16, paddingBottom: 32, gap: 14 }, section: { gap: 14 },
@@ -389,8 +388,7 @@ const styles = StyleSheet.create({
   historyMeta: { fontSize: 14, lineHeight: 19 },
   statusPill: { paddingVertical: 4, paddingHorizontal: 10 }, statusText: { fontSize: 10, fontWeight: '800' },
   memberCard: { minHeight: 76, paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 20, borderWidth: 1 },
-  memberAvatar: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  memberAvatarImage: { width: '100%', height: '100%', borderRadius: 21 },
+  memberAvatar: { width: 42, height: 42, borderRadius: 21, borderWidth: 2, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   memberAvatarText: { fontSize: 14, fontWeight: '800', letterSpacing: 0.2 },
   memberIdentity: { flex: 1, minWidth: 64, gap: 3 },
   memberNameRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 },

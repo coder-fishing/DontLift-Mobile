@@ -1702,11 +1702,12 @@ service cloud.firestore {
           'violationDurationSeconds', 'joinedAt', 'earlyExitAt', 'syncedThroughAt', 'syncAcknowledgedAt'
           ])
           && request.resource.data.keys().hasOnly([
-            'displayName', 'avatarUri', 'role', 'status', 'penaltyScore', 'liftCount',
+            'displayName', 'avatarUri', 'premiumExpiresAt', 'role', 'status', 'penaltyScore', 'liftCount',
           'violationDurationSeconds', 'joinedAt', 'earlyExitAt', 'syncedThroughAt', 'syncAcknowledgedAt', 'lastViolationEventId', 'syncAckRequestId'
           ])
           && request.resource.data.displayName == get(profilePath(memberUid)).data.displayName
           && request.resource.data.get('avatarUri', null) == get(profilePath(memberUid)).data.get('avatarUri', null)
+          && request.resource.data.get('premiumExpiresAt', null) == get(profilePath(memberUid)).data.get('premiumExpiresAt', null)
           && request.resource.data.status == 'ACTIVE'
           && request.resource.data.penaltyScore == 0
           && request.resource.data.liftCount == 0
@@ -1730,8 +1731,9 @@ service cloud.firestore {
         allow list: if roomParticipant(roomId, request.auth.uid);
         allow update: if signedIn() && (
           (memberUid == request.auth.uid
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['avatarUri'])
-            && request.resource.data.get('avatarUri', null) == get(profilePath(memberUid)).data.get('avatarUri', null))
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['avatarUri', 'premiumExpiresAt'])
+            && request.resource.data.get('avatarUri', null) == get(profilePath(memberUid)).data.get('avatarUri', null)
+            && request.resource.data.get('premiumExpiresAt', null) == get(profilePath(memberUid)).data.get('premiumExpiresAt', null))
           ||
           // ACK is a separate transaction path. Evaluate it before the violation
           // validator, which dereferences lastViolationEventId for score updates.

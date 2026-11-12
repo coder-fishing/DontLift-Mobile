@@ -1,5 +1,5 @@
 import type { Auth } from 'firebase/auth';
-import { collection, deleteField, doc, getDocFromServer, getDocsFromServer, onSnapshot, runTransaction, serverTimestamp, updateDoc, writeBatch, type Firestore } from 'firebase/firestore';
+import { collection, deleteField, doc, getDocFromServer, getDocsFromServer, onSnapshot, runTransaction, serverTimestamp, Timestamp, updateDoc, writeBatch, type Firestore } from 'firebase/firestore';
 import type { RegistrationProfile } from '../auth/auth-controller';
 import { readRegistrationProfile } from '../auth/firebase-profile';
 import { getLocalDatabase } from '../local/database';
@@ -38,7 +38,7 @@ export function createProfileRepository(dependencies: {
   persistLocal?: (profile: RegistrationProfile) => Promise<void>;
 }) {
   const avatarApi = createAvatarApi(dependencies.auth);
-  async function syncAvatarToRooms(uid: string, avatarUri?: string): Promise<boolean> {
+  async function syncProfileToRooms(uid: string, avatarUri: string | undefined, premiumExpiresAtUtcMs: number | null | undefined): Promise<boolean> {
     if (dependencies.auth.currentUser?.uid !== uid) return false;
     try {
       const index = await getDocsFromServer(collection(dependencies.firestore, 'users', uid, 'groupRooms'));
@@ -50,8 +50,17 @@ export function createProfileRepository(dependencies: {
         const batch = writeBatch(dependencies.firestore);
         let updates = 0;
         snapshots.forEach((snapshot, indexInBatch) => {
-          if (!snapshot.exists() || snapshot.data().avatarUri === avatarUri) return;
-          batch.update(refs[indexInBatch], { avatarUri: avatarUri ?? deleteField() });
+          if (!snapshot.exists()) return;
+          const member = snapshot.data();
+          const memberExpiry = member.premiumExpiresAt instanceof Timestamp ? member.premiumExpiresAt.toMillis() : null;
+          const nextExpiry = premiumExpiresAtUtcMs ?? null;
+          const avatarChanged = member.avatarUri !== avatarUri;
+          const expiryChanged = memberExpiry !== nextExpiry;
+          if (!avatarChanged && !expiryChanged) return;
+          batch.update(refs[indexInBatch], {
+            ...(avatarChanged ? { avatarUri: avatarUri ?? deleteField() } : {}),
+            ...(expiryChanged ? { premiumExpiresAt: nextExpiry === null ? null : Timestamp.fromMillis(nextExpiry) } : {}),
+          });
           updates += 1;
         });
         if (updates) await batch.commit();
@@ -121,7 +130,7 @@ export function createProfileRepository(dependencies: {
         const canonical = readRegistrationProfile(uid, snapshot.data());
         if (!canonical.avatarUri || !canonical.avatarPublicId) throw new ProfileEditError('unavailable');
         await persistLocal(canonical);
-        const propagated = await syncAvatarToRooms(uid, canonical.avatarUri);
+        const propagated = await syncProfileToRooms(uid, canonical.avatarUri ?? undefined, canonical.premiumExpiresAtUtcMs);
         return { profile: canonical, cleanupPending: uploaded.cleanupPending || !propagated };
       } catch (error) {
         if (error instanceof ProfileEditError) throw error;
@@ -138,15 +147,15 @@ export function createProfileRepository(dependencies: {
         const canonical = readRegistrationProfile(uid, snapshot.data());
         if (canonical.avatarUri || canonical.avatarPublicId) throw new ProfileEditError('unavailable');
         await persistLocal(canonical);
-        const propagated = await syncAvatarToRooms(uid, canonical.avatarUri ?? undefined);
+        const propagated = await syncProfileToRooms(uid, canonical.avatarUri ?? undefined, canonical.premiumExpiresAtUtcMs);
         return { profile: canonical, cleanupPending: result.cleanupPending || !propagated };
       } catch (error) {
         if (error instanceof ProfileEditError) throw error;
         throw mapError(error);
       }
     },
-    async syncAvatarToRooms(uid: string, avatarUri?: string): Promise<boolean> {
-      return syncAvatarToRooms(uid, avatarUri);
+    async syncProfileToRooms(uid: string, avatarUri?: string, premiumExpiresAtUtcMs?: number | null): Promise<boolean> {
+      return syncProfileToRooms(uid, avatarUri, premiumExpiresAtUtcMs);
     },
   };
 }

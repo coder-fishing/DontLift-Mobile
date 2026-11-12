@@ -9,7 +9,6 @@ import {
   ViewStyle,
   useWindowDimensions,
 } from 'react-native';
-import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import {
   GlassView,
@@ -19,12 +18,14 @@ import {
 import { ScreenId } from '../types';
 import { SCREEN_TITLES } from '../constants';
 import { Colors } from '../constants/theme';
+import { PremiumAvatar } from './PremiumAvatar';
 
 interface HeaderProps {
   currentScreen: ScreenId;
   displayName: string;
   email: string;
   avatarUri?: string;
+  premiumExpiresAtUtcMs?: number | null;
   onNavigate: (screen: ScreenId) => void;
   onOpenSettings: () => void;
 }
@@ -40,29 +41,28 @@ function getFirstName(displayName: string, email: string): string {
 }
 
 function AccountAvatar({
+  displayName,
   initials,
   imageUri,
   size,
+  premiumExpiresAtUtcMs,
+  borderColor,
   style,
 }: {
+  displayName: string;
   initials: string;
   imageUri?: string;
   size: number;
+  premiumExpiresAtUtcMs?: number | null;
+  borderColor?: string;
   style?: ViewStyle;
 }) {
-  const [failedImageUri, setFailedImageUri] = useState<string | null>(null);
-  return (
-    <View style={[styles.avatarFrame, { width: size, height: size, borderRadius: size / 2 }, style]}>
-      {imageUri && failedImageUri !== imageUri ? (
-        <Image source={{ uri: imageUri }} contentFit="cover" style={styles.avatarImage} onError={() => setFailedImageUri(imageUri)} />
-      ) : (
-        <Text style={styles.avatarText}>{initials}</Text>
-      )}
-    </View>
-  );
+  return <PremiumAvatar displayName={displayName} imageUri={imageUri} premiumExpiresAtUtcMs={premiumExpiresAtUtcMs}
+    initials={initials} size={size} backgroundColor="#DBEAFE" fallbackColor="#1D4ED8"
+    borderColor={borderColor ?? '#FFFFFF'} style={style} textStyle={styles.avatarText} />;
 }
 
-export function Header({ currentScreen, displayName, email, avatarUri, onNavigate, onOpenSettings }: HeaderProps) {
+export function Header({ currentScreen, displayName, email, avatarUri, premiumExpiresAtUtcMs, onNavigate, onOpenSettings }: HeaderProps) {
   const [menuVisible, setMenuVisible] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<{ top: number; left: number } | null>(null);
   const [menuHeight, setMenuHeight] = useState(0);
@@ -91,7 +91,7 @@ export function Header({ currentScreen, displayName, email, avatarUri, onNavigat
             })}
             style={({ pressed }) => [styles.avatarButton, pressed && styles.pressed]}
           >
-            <AccountAvatar initials={getInitials(displayName, email)} imageUri={avatarUri} size={40} />
+            <AccountAvatar displayName={displayName} initials={getInitials(displayName, email)} imageUri={avatarUri} size={40} premiumExpiresAtUtcMs={premiumExpiresAtUtcMs} />
           </Pressable>
           <View style={styles.brandInfo}>
             <Text style={styles.brandTitle} numberOfLines={1}>Hello, {getFirstName(displayName, email)}</Text>
@@ -105,7 +105,7 @@ export function Header({ currentScreen, displayName, email, avatarUri, onNavigat
           <Pressable accessibilityRole="button" accessibilityLabel="Close account menu" style={styles.dismissArea} onPress={() => setMenuVisible(false)} />
           <View onLayout={event => setMenuHeight(event.nativeEvent.layout.height)} style={[styles.menu, { top: Math.min(menuAnchor?.top ?? 80, windowHeight - menuHeight - 12), left: menuAnchor?.left ?? 16, width: Math.min(270, windowWidth - 32) }]}>
             <View style={styles.menuIdentity}>
-              <AccountAvatar initials={getInitials(displayName, email)} imageUri={avatarUri} size={42} style={styles.menuAvatar} />
+              <AccountAvatar displayName={displayName} initials={getInitials(displayName, email)} imageUri={avatarUri} size={42} premiumExpiresAtUtcMs={premiumExpiresAtUtcMs} borderColor="#BFDBFE" style={styles.menuAvatar} />
               <View style={styles.menuIdentityText}>
                 <Text numberOfLines={1} style={styles.menuName}>{displayName || 'DontLift user'}</Text>
                 <Text numberOfLines={1} style={styles.menuEmail}>{email}</Text>
@@ -144,8 +144,6 @@ const styles = StyleSheet.create({
   brandTitle: { fontSize: 15, fontWeight: '800', color: Colors.light.text },
   brandSubtitle: { fontSize: 11, fontWeight: '600', color: Colors.light.textSecondary, marginTop: 2 },
   avatarButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  avatarFrame: { alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderWidth: 2, borderColor: '#FFFFFF', backgroundColor: '#DBEAFE' },
-  avatarImage: { width: '100%', height: '100%', borderRadius: 999 },
   avatarText: { color: '#1D4ED8', fontSize: 14, fontWeight: '900' },
   pressed: { opacity: 0.75 },
   modalRoot: { flex: 1 },

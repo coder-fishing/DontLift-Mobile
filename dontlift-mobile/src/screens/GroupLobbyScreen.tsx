@@ -13,6 +13,8 @@ import type { RoomLobbyState } from '../features/rooms/room-listener';
 type LobbyRoom = { roomId: string; pin: string; invitation: string; hostUid: string; hostDisplayName?: string; createdAt: string | null; localCacheSaved: boolean };
 
 interface GroupLobbyScreenProps {
+  currentUserId?: string;
+  currentUserPremiumExpiresAtUtcMs?: number | null;
   room: LobbyRoom | null;
   isCreating: boolean;
   errorMessage?: string;
@@ -46,7 +48,7 @@ interface GroupLobbyScreenProps {
   onLoadMoreActionableSessions?: () => void;
 }
 
-export function GroupLobbyScreen({ room, isCreating, errorMessage, onCreateRoom, onJoinRoom, onCancelCreate, lobbyState, isHost, isStarting, startError, onStartRoom, onOpenHistory, onLeaveRoom, isLeaving, leaveError, onRemoveMember, removingMemberUid, removeError, recentSessions = [], recentMemberPreviews = {}, recentSessionsState = 'loading', onOpenRecentSession, onRetryRecentSessions, actionableSessions = [], actionableSessionsState = 'loading', actionableErrorMessage, actionableHasMore = false, isLoadingMoreActionable = false, onOpenActionableSession, onRetryActionableSessions, onLoadMoreActionableSessions }: GroupLobbyScreenProps) {
+export function GroupLobbyScreen({ currentUserId, currentUserPremiumExpiresAtUtcMs, room, isCreating, errorMessage, onCreateRoom, onJoinRoom, onCancelCreate, lobbyState, isHost, isStarting, startError, onStartRoom, onOpenHistory, onLeaveRoom, isLeaving, leaveError, onRemoveMember, removingMemberUid, removeError, recentSessions = [], recentMemberPreviews = {}, recentSessionsState = 'loading', onOpenRecentSession, onRetryRecentSessions, actionableSessions = [], actionableSessionsState = 'loading', actionableErrorMessage, actionableHasMore = false, isLoadingMoreActionable = false, onOpenActionableSession, onRetryActionableSessions, onLoadMoreActionableSessions }: GroupLobbyScreenProps) {
   const visibleLobbyState = lobbyState?.snapshot && lobbyState.snapshot.roomId !== room?.roomId ? null : lobbyState;
   const busy = Boolean(isLeaving || isStarting || removingMemberUid);
   const canLeaveRoom = Boolean(onLeaveRoom && visibleLobbyState?.kind === 'live' && visibleLobbyState.snapshot.status === 'WAITING');
@@ -58,6 +60,8 @@ export function GroupLobbyScreen({ room, isCreating, errorMessage, onCreateRoom,
         errorMessage={errorMessage}
         recentSessions={recentSessions}
         recentMemberPreviews={recentMemberPreviews}
+        currentUserId={currentUserId}
+        currentUserPremiumExpiresAtUtcMs={currentUserPremiumExpiresAtUtcMs}
         recentSessionsState={recentSessionsState}
         actionableSessions={actionableSessions}
         actionableSessionsState={actionableSessionsState}
@@ -96,7 +100,9 @@ export function GroupLobbyScreen({ room, isCreating, errorMessage, onCreateRoom,
       {visibleLobbyState?.kind === 'error' ? <Text accessibilityRole="alert" style={styles.error}>Could not update members. Showing the latest saved list.</Text> : null}
       {visibleLobbyState?.snapshot ? (
         <RoomRoster
-          members={visibleLobbyState.snapshot.members}
+          members={visibleLobbyState.snapshot.members.map(member => member.uid === currentUserId
+            ? { ...member, premiumExpiresAtUtcMs: currentUserPremiumExpiresAtUtcMs }
+            : member)}
           participantCount={visibleLobbyState.snapshot.participantCount}
           isActive={visibleLobbyState.snapshot.status === 'ACTIVE'}
           hostUid={visibleLobbyState.snapshot.hostUid}

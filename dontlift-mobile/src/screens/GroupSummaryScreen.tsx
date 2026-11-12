@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Image } from 'expo-image';
 import { GlassCard } from '../components/GlassCard';
 import { Colors } from '../constants/theme';
+import { PremiumAvatar } from '../components/PremiumAvatar';
 import { formatTime } from '../constants';
 import { rankGroupMembers } from '../features/rooms/group-active-domain';
 import type { RoomLobbyMember, RoomLobbySnapshot } from '../features/rooms/room-listener';
@@ -12,6 +12,7 @@ import type { PublishedBillState } from '../features/settlement/published-bill-l
 type Props = {
   snapshot: RoomLobbySnapshot;
   actorUid: string;
+  currentUserPremiumExpiresAtUtcMs?: number | null;
   isOnline: boolean;
   isSyncing: boolean;
   isFinalizingOverride: boolean;
@@ -34,28 +35,13 @@ function getMemberInitials(displayName: string): string {
   return Array.from(words[0] || '?').slice(0, 2).join('').toUpperCase();
 }
 
-function MemberAvatar({ member }: { member: RoomLobbyMember }) {
-  const [failedImageUri, setFailedImageUri] = useState<string | null>(null);
+function MemberAvatar({ member, actorUid, currentUserPremiumExpiresAtUtcMs }: { member: RoomLobbyMember; actorUid: string; currentUserPremiumExpiresAtUtcMs?: number | null }) {
   const avatarBackground = member.role === 'HOST' ? Colors.light.roomHostAvatar : Colors.light.roomMemberAvatar;
   const avatarAccent = member.role === 'HOST' ? Colors.light.roomHostAccent : Colors.light.roomMemberAccent;
-  return (
-    <View style={[styles.avatar, { backgroundColor: avatarBackground }]}>
-      {member.avatarUri && failedImageUri !== member.avatarUri ? (
-        <Image
-          source={{ uri: member.avatarUri }}
-          contentFit="cover"
-          cachePolicy="memory-disk"
-          recyclingKey={member.avatarUri}
-          transition={0}
-          style={styles.avatarImage}
-          onError={() => setFailedImageUri(member.avatarUri ?? null)}
-          accessibilityLabel={`${member.displayName || 'Participant'} avatar`}
-        />
-      ) : (
-        <Text style={[styles.avatarInitials, { color: avatarAccent }]}>{getMemberInitials(member.displayName)}</Text>
-      )}
-    </View>
-  );
+  return <PremiumAvatar displayName={member.displayName} imageUri={member.avatarUri}
+    premiumExpiresAtUtcMs={member.uid === actorUid ? currentUserPremiumExpiresAtUtcMs : member.premiumExpiresAtUtcMs}
+    initials={getMemberInitials(member.displayName)} size={44} backgroundColor={avatarBackground}
+    fallbackColor={avatarAccent} borderColor={Colors.light.glassBorder} style={styles.avatar} textStyle={styles.avatarInitials} />;
 }
 
 function MemberSyncStatus({ acknowledged, finalizedByOverride }: { acknowledged: boolean; finalizedByOverride: boolean }) {
@@ -70,7 +56,7 @@ function MemberSyncStatus({ acknowledged, finalizedByOverride }: { acknowledged:
   );
 }
 
-export function GroupSummaryScreen({ snapshot, actorUid, isOnline, isSyncing, errorMessage,
+export function GroupSummaryScreen({ snapshot, actorUid, currentUserPremiumExpiresAtUtcMs, isOnline, isSyncing, errorMessage,
   isFinalizingOverride, overrideErrorMessage, onSyncAndAcknowledge, onFinalizeWithOverride,
   onOpenSettlementDetails, onOpenGroupHistory, billState, onOpenBillAllocation, onReturnToGroupHome }: Props) {
   const ownMember = snapshot.members.find(member => member.uid === actorUid);
@@ -152,7 +138,7 @@ export function GroupSummaryScreen({ snapshot, actorUid, isOnline, isSyncing, er
               <View style={styles.memberRow}>
                 <View style={styles.identityColumn}>
                   <View style={styles.avatarRankWrap}>
-                  <MemberAvatar member={member} />
+                  <MemberAvatar member={member} actorUid={actorUid} currentUserPremiumExpiresAtUtcMs={currentUserPremiumExpiresAtUtcMs} />
                     <View testID={`rank-badge-${member.uid}`} style={[styles.rankBadge, index === 0 && styles.topRankBadge]}>
                       <Text style={[styles.rankBadgeText, index === 0 && styles.topRankBadgeText]}>{index + 1}</Text>
                     </View>
@@ -316,7 +302,6 @@ const styles = StyleSheet.create({
   topRankBadge: { backgroundColor: Colors.light.successSurface },
   topRankBadgeText: { color: Colors.light.success },
   avatar: { width: 44, height: 44, borderRadius: 22, borderWidth: 2, borderColor: Colors.light.glassBorder, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  avatarImage: { width: '100%', height: '100%' },
   avatarInitials: { fontSize: 12, fontWeight: '800' },
   memberDetails: { flex: 1, minWidth: 0, justifyContent: 'center', gap: 4 },
   nameLine: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 },

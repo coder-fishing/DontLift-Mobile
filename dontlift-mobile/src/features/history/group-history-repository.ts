@@ -9,15 +9,16 @@ import { GROUP_HISTORY_PAGE_SIZE, GROUP_HISTORY_WINDOW_MS, mergeGroupHistory, re
   type GroupHistoryCursor, type GroupHistoryEntry, type GroupLocalSummary } from './group-history-model';
 import { createBillRepository, type PublishedBill } from '../settlement/bill-repository';
 import { listenToHistoryPayment, type HistoryPaymentState } from './group-history-payment';
+import { readPremiumExpiry } from '../premium/premium-entitlement';
 
 export type GroupHistoryDetail = {
   roomStatus: string; reconciliation: string | null; finalizationReason: string | null;
-  members: { uid: string; name: string; status: string; score: number; avatarUri?: string }[];
+  members: { uid: string; name: string; status: string; score: number; avatarUri?: string; premiumExpiresAtUtcMs?: number | null }[];
   excludedCount: number; excludedHasMore: boolean; bill: PublishedBill | null; billError: boolean;
 };
 export type GroupRoomRosterPreview = {
   totalCount: number;
-  members: { uid: string; displayName: string; avatarUri?: string }[];
+  members: { uid: string; displayName: string; avatarUri?: string; premiumExpiresAtUtcMs?: number | null }[];
 };
 export const GROUP_ACTIONABLE_PAGE_SIZE = 10;
 export type GroupActionableKind = 'RESUME_SESSION' | 'SET_UP_BILL' | 'WAITING_FOR_HOST_BILL'
@@ -464,7 +465,9 @@ export function createGroupHistoryRepository(dependencies: {
           if (preview && Number.isSafeInteger(preview.totalCount) && Array.isArray(preview.members)
             && preview.members.length <= 3 && preview.totalCount >= preview.members.length
             && preview.members.every(member => typeof member.uid === 'string' && typeof member.displayName === 'string'
-              && (member.avatarUri === undefined || typeof member.avatarUri === 'string'))) return preview;
+              && (member.avatarUri === undefined || typeof member.avatarUri === 'string')
+              && (member.premiumExpiresAtUtcMs === undefined || member.premiumExpiresAtUtcMs === null
+                || typeof member.premiumExpiresAtUtcMs === 'number'))) return preview;
         } catch { /* Fall back to the saved session detail. */ }
       }
       let cachedJson: string | null = null;
@@ -485,6 +488,7 @@ export function createGroupHistoryRepository(dependencies: {
             return { totalCount: detail.members.length, members: detail.members.slice(0, 3).map(member => ({
               uid: member.uid, displayName: member.name,
               ...(typeof member.avatarUri === 'string' ? { avatarUri: member.avatarUri } : {}),
+              premiumExpiresAtUtcMs: member.premiumExpiresAtUtcMs ?? null,
             })) };
           }
         } catch { /* Ignore malformed offline roster cache. */ }
@@ -504,7 +508,8 @@ export function createGroupHistoryRepository(dependencies: {
           const data = member.data();
           if (!['ACTIVE', 'EARLY_EXIT'].includes(String(data.status))) return [];
           return [{ uid: member.id, displayName: String(data.displayName ?? 'Member'),
-            ...(typeof data.avatarUri === 'string' && data.avatarUri.trim() ? { avatarUri: data.avatarUri } : {}) }];
+            ...(typeof data.avatarUri === 'string' && data.avatarUri.trim() ? { avatarUri: data.avatarUri } : {}),
+            premiumExpiresAtUtcMs: readPremiumExpiry(data.premiumExpiresAt) }];
         });
         const count = Number(room.data().participantCount);
         const preview = { totalCount: Number.isSafeInteger(count) && count >= members.length ? count : members.length, members };
@@ -537,7 +542,8 @@ export function createGroupHistoryRepository(dependencies: {
       const detail: GroupHistoryDetail = { roomStatus: data.status, reconciliation: data.reconciliationStatus ?? null,
         finalizationReason: data.finalizationReason ?? null, members: members.docs.map(m => ({ uid: m.id,
           name: m.data().displayName, status: m.data().status, score: m.data().penaltyScore,
-          ...(typeof m.data().avatarUri === 'string' && m.data().avatarUri.trim() ? { avatarUri: m.data().avatarUri } : {}) })),
+          ...(typeof m.data().avatarUri === 'string' && m.data().avatarUri.trim() ? { avatarUri: m.data().avatarUri } : {}),
+          premiumExpiresAtUtcMs: readPremiumExpiry(m.data().premiumExpiresAt) })),
         excludedCount: Math.min(excluded?.size ?? 0, 100),
         excludedHasMore: (excluded?.size ?? 0) > 100, bill, billError };
       const local = await database();

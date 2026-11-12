@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
-import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/theme';
 import type { RoomLobbyMember } from '../features/rooms/room-listener';
+import { PremiumAvatar } from './PremiumAvatar';
 
 interface RoomRosterProps {
   members: RoomLobbyMember[];
@@ -39,7 +39,7 @@ export function RoomRoster({ members, participantCount, isActive, hostUid, isLiv
           const isHost = member.uid === hostUid;
           return (
             <View key={member.uid} style={[styles.row, isHost ? styles.hostRow : styles.memberRow]}>
-              <MemberAvatar displayName={member.displayName} avatarUri={member.avatarUri} isHost={isHost} />
+              <MemberAvatar displayName={member.displayName} avatarUri={member.avatarUri} premiumExpiresAtUtcMs={member.premiumExpiresAtUtcMs} isHost={isHost} />
               <View style={styles.identity}>
                 <Text numberOfLines={1} style={styles.member}>{member.displayName}</Text>
                 <View style={[styles.roleBadge, isHost ? styles.hostBadge : styles.memberBadge]}>
@@ -69,28 +69,12 @@ export function RoomRoster({ members, participantCount, isActive, hostUid, isLiv
   );
 }
 
-function MemberAvatar({ displayName, avatarUri, isHost }: { displayName: string; avatarUri?: string; isHost: boolean }) {
-  const [failedImageUri, setFailedImageUri] = useState<string | null>(null);
-  return (
-    <View style={[styles.avatar, isHost ? styles.hostAvatar : styles.memberAvatar]}>
-      {avatarUri && failedImageUri !== avatarUri ? (
-        <Image
-          source={{ uri: avatarUri }}
-          contentFit="cover"
-          cachePolicy="memory-disk"
-          recyclingKey={avatarUri}
-          transition={0}
-          style={styles.avatarImage}
-          onError={() => setFailedImageUri(avatarUri)}
-          accessibilityLabel={`${displayName}'s avatar`}
-        />
-      ) : (
-        <Text style={[styles.initials, isHost ? styles.hostAccent : styles.memberAccent]}>
-          {displayName.trim().slice(0, 2).toUpperCase() || '?'}
-        </Text>
-      )}
-    </View>
-  );
+function MemberAvatar({ displayName, avatarUri, premiumExpiresAtUtcMs, isHost }: { displayName: string; avatarUri?: string; premiumExpiresAtUtcMs?: number | null; isHost: boolean }) {
+  return <PremiumAvatar displayName={displayName} imageUri={avatarUri} premiumExpiresAtUtcMs={premiumExpiresAtUtcMs}
+    initials={displayName.trim().slice(0, 2).toUpperCase() || '?'} size={42}
+    backgroundColor={isHost ? Colors.light.roomHostAvatar : Colors.light.roomMemberAvatar}
+    fallbackColor={isHost ? Colors.light.roomHostAccent : Colors.light.roomMemberAccent}
+    style={styles.avatar} textStyle={isHost ? styles.hostAccent : styles.memberAccent} />;
 }
 
 const styles = StyleSheet.create({
@@ -110,11 +94,7 @@ const styles = StyleSheet.create({
   row: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 19 },
   hostRow: { backgroundColor: Colors.light.roomHostSurface },
   memberRow: { backgroundColor: Colors.light.roomMemberSurface },
-  hostAvatar: { backgroundColor: Colors.light.roomHostAvatar },
-  memberAvatar: { backgroundColor: Colors.light.roomMemberAvatar },
-  avatar: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  avatarImage: { width: '100%', height: '100%' },
-  initials: { fontSize: 13, fontWeight: '800' },
+  avatar: { width: 42, height: 42, borderRadius: 21, borderWidth: 2, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   hostAccent: { color: Colors.light.roomHostAccent },
   memberAccent: { color: Colors.light.roomMemberAccent },
   identity: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 8 },
