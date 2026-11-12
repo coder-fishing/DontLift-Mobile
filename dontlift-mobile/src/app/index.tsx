@@ -34,11 +34,11 @@ import { SettingsScreen } from '../screens/SettingsScreen';
 import { createSettingsRepository } from '../features/settings/settings-repository';
 import { createFeedbackService } from '../features/settings/feedback-service';
 import { nativeFeedbackAdapters } from '../features/settings/native-feedback';
-import { createGroupHistoryRepository, type GroupRoomRosterPreview } from '../features/history/group-history-repository';
+import { createGroupHistoryRepository, type GroupActionableCursor, type GroupActionableSession, type GroupRoomRosterPreview } from '../features/history/group-history-repository';
 import type { GroupHistoryEntry } from '../features/history/group-history-model';
 import { createSoloHistoryRepository } from '../features/history/solo-history-repository';
 import { GroupLobbyScreen } from '../screens/GroupLobbyScreen';
-import type { RecentSessionsState } from '../components/GroupHomeDashboard';
+import type { ActionableSessionsState, RecentSessionsState } from '../components/GroupHomeDashboard';
 import { createLobbyLeaveRepository } from '../features/rooms/lobby-leave-repository';
 import { GroupActiveScreen } from '../screens/GroupActiveScreen';
 import { GroupSummaryScreen } from '../screens/GroupSummaryScreen';
@@ -324,6 +324,14 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const [recentGroupMemberPreviews, setRecentGroupMemberPreviews] = useState<Record<string, GroupRoomRosterPreview | null>>({});
   const [recentSessionsState, setRecentSessionsState] = useState<RecentSessionsState>('loading');
   const recentSessionsRequest = useRef(0);
+  const [actionableGroupSessions, setActionableGroupSessions] = useState<GroupActionableSession[]>([]);
+  const [actionableSessionsState, setActionableSessionsState] = useState<ActionableSessionsState>('loading');
+  const [actionableCursor, setActionableCursor] = useState<GroupActionableCursor | null>(null);
+  const [actionableHasMore, setActionableHasMore] = useState(false);
+  const [isLoadingMoreActionable, setIsLoadingMoreActionable] = useState(false);
+  const [actionableErrorMessage, setActionableErrorMessage] = useState<string>();
+  const actionableRequest = useRef(0);
+  const pendingGroupActionDestination = useRef<{ roomId: string; action: GroupActionableSession['action'] } | null>(null);
   const [isStartingRoom, setIsStartingRoom] = useState(false);
   const [roomStartError, setRoomStartError] = useState<string | undefined>();
   const [isLeavingRoom, setIsLeavingRoom] = useState(false);
@@ -400,11 +408,104 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     }
   }, [groupHistoryRepository, profile.isPremium, profile.uid]);
 
+  const loadActionableGroupSessions = useCallback(async () => {
+    const requestId = ++actionableRequest.current;
+    const isCurrent = () => actionableRequest.current === requestId;
+    setActionableErrorMessage(undefined);
+    setActionableSessionsState('loading');
+    try {
+      const savedPage = await groupHistoryRepository.readActionablePage(profile.uid, { online: false, cursor: null });
+      if (!isCurrent()) return;
+      setActionableGroupSessions(savedPage.items);
+      setActionableCursor(savedPage.cursor);
+      setActionableHasMore(savedPage.hasMore);
+      const network = await Network.getNetworkStateAsync();
+      if (!isCurrent()) return;
+      if (network.isConnected !== true || network.isInternetReachable === false) {
+        setActionableSessionsState('offline');
+        return;
+      }
+      const page = await groupHistoryRepository.readActionablePage(profile.uid, { online: true, cursor: null });
+      if (!isCurrent()) return;
+      setActionableGroupSessions(page.items);
+      setActionableCursor(page.cursor);
+      setActionableHasMore(page.hasMore);
+      setActionableSessionsState(page.cloudError ? 'cloud-error' : 'ready');
+    } catch {
+      if (isCurrent()) setActionableSessionsState('error');
+    }
+  }, [groupHistoryRepository, profile.uid]);
+
+  const loadMoreActionableGroupSessions = useCallback(async () => {
+    if (!actionableHasMore || isLoadingMoreActionable || actionableCursor === null) return;
+    const requestId = ++actionableRequest.current;
+    const isCurrent = () => actionableRequest.current === requestId;
+    setIsLoadingMoreActionable(true);
+    setActionableErrorMessage(undefined);
+    try {
+      const network = await Network.getNetworkStateAsync();
+      if (!isCurrent()) return;
+      if (network.isConnected !== true || network.isInternetReachable === false) {
+        setActionableSessionsState('offline');
+        return;
+      }
+      const page = await groupHistoryRepository.readActionablePage(profile.uid, { online: true, cursor: actionableCursor });
+      if (!isCurrent()) return;
+      setActionableGroupSessions(page.items);
+      setActionableCursor(page.cursor);
+      setActionableHasMore(page.hasMore);
+      setActionableSessionsState(page.cloudError ? 'cloud-error' : 'ready');
+    } catch { if (isCurrent()) setActionableSessionsState('cloud-error'); }
+    finally { if (isCurrent()) setIsLoadingMoreActionable(false); }
+  }, [actionableCursor, actionableHasMore, groupHistoryRepository, isLoadingMoreActionable, profile.uid]);
+
+  const openActionableGroupSession = useCallback(async (selected: GroupActionableSession) => {
+    setActionableErrorMessage(undefined);
+    pendingGroupActionDestination.current = null;
+    try {
+      const current = await groupHistoryRepository.readActionableSession(profile.uid, selected.roomId);
+      if (!current) throw new Error('This session no longer needs attention. The list has been refreshed.');
+      const room = await roomRepository.loadMemberRoom(selected.roomId,
+        current.action === 'RESUME_SESSION' ? 'ACTIVE' : 'COMPLETED');
+      if (current.action === 'AWAITING_CONFIRMATION') {
+        setGroupHistoryInitialRoomId(current.roomId);
+        setCurrentScreen('15-group-history');
+        return;
+      }
+      pendingGroupActionDestination.current = { roomId: current.roomId, action: current.action };
+      restoredGroupRoomId.current = current.roomId;
+      setRoomLobbyState(null);
+      setJoinedRoom(null);
+      setCreatedRoom(room);
+      setCurrentScreen('05-group-lobby');
+    } catch (error) {
+      const message = error instanceof Error && error.message.startsWith('This session')
+        ? error.message : 'Could not open this session. It may have changed or your membership may no longer be active.';
+      setActionableErrorMessage(message);
+      void loadActionableGroupSessions();
+    }
+  }, [groupHistoryRepository, loadActionableGroupSessions, profile.uid, roomRepository]);
+
   useEffect(() => {
     if (currentScreen !== '05-group-lobby' || lobbyRoom) return undefined;
-    void loadRecentGroupSessions();
-    return () => { recentSessionsRequest.current++; };
-  }, [currentScreen, lobbyRoom?.roomId, loadRecentGroupSessions]);
+    let active = true;
+    void (async () => {
+      // Keep the history and actionable queue SQLite passes serialized; both repositories cache server reads locally.
+      await loadRecentGroupSessions();
+      if (active) await loadActionableGroupSessions();
+    })();
+    return () => { active = false; recentSessionsRequest.current++; actionableRequest.current++; };
+  }, [currentScreen, lobbyRoom?.roomId, loadActionableGroupSessions, loadRecentGroupSessions]);
+
+  useEffect(() => {
+    actionableRequest.current++;
+    setActionableGroupSessions([]);
+    setActionableCursor(null);
+    setActionableHasMore(false);
+    setActionableSessionsState('loading');
+    setActionableErrorMessage(undefined);
+  }, [profile.uid]);
+
 
   const reconcileGroupLifecycleAtCutoff = useCallback(async (roomId: string, userId: string, cutoffUtcMs: number) => {
     const result = await backgroundRecovery.reconcileAtCutoff({ sessionId: roomId, userId }, cutoffUtcMs);
@@ -1261,6 +1362,14 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const groupRoomSnapshot = candidateGroupRoom?.status === 'ACTIVE'
     && candidateGroupRoom.startedAtUtcMs !== null ? candidateGroupRoom : null;
   const groupSummarySnapshot = candidateGroupRoom?.status === 'COMPLETED' ? candidateGroupRoom : null;
+
+  useEffect(() => {
+    const pending = pendingGroupActionDestination.current;
+    if (!pending || currentScreen !== '13-group-summary' || groupSummarySnapshot?.roomId !== pending.roomId
+      || groupSummarySnapshot.reconciliationStatus !== 'FINALIZED') return;
+    pendingGroupActionDestination.current = null;
+    if (pending.action === 'SET_UP_BILL' || pending.action === 'REVIEW_PAYMENTS') setCurrentScreen('07-bill-allocation');
+  }, [currentScreen, groupSummarySnapshot?.roomId, groupSummarySnapshot?.reconciliationStatus]);
   const [settlementDetailsMode, setSettlementDetailsMode] = useState<'host' | 'member'>('member');
   const [paymentDetailsState, setPaymentDetailsState] = useState<SettlementDetailsState>({ kind: 'loading' });
   const [paymentDetailsRevision, setPaymentDetailsRevision] = useState(0);
@@ -2350,8 +2459,16 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
             recentSessions={recentGroupSessions}
             recentMemberPreviews={recentGroupMemberPreviews}
             recentSessionsState={recentSessionsState}
+            actionableSessions={actionableGroupSessions}
+            actionableSessionsState={actionableSessionsState}
+            actionableErrorMessage={actionableErrorMessage}
+            actionableHasMore={actionableHasMore}
+            isLoadingMoreActionable={isLoadingMoreActionable}
             onOpenRecentSession={roomId => { setGroupHistoryInitialRoomId(roomId); setCurrentScreen('15-group-history'); }}
             onRetryRecentSessions={() => { void loadRecentGroupSessions(); }}
+            onOpenActionableSession={item => { void openActionableGroupSession(item); }}
+            onRetryActionableSessions={() => { void loadActionableGroupSessions(); }}
+            onLoadMoreActionableSessions={() => { void loadMoreActionableGroupSessions(); }}
             room={lobbyRoom ? {
               roomId: lobbyRoom.roomId, pin: lobbyRoom.pin, invitation: lobbyRoom.invitation,
               hostUid: lobbyRoom.hostUid,

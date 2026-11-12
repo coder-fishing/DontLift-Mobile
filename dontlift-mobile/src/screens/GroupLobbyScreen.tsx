@@ -5,9 +5,9 @@ import { Colors } from '../constants/theme';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { RoomInviteCard } from '../components/RoomInviteCard';
 import { RoomRoster } from '../components/RoomRoster';
-import { GroupHomeDashboard, type RecentSessionsState } from '../components/GroupHomeDashboard';
+import { GroupHomeDashboard, type ActionableSessionsState, type RecentSessionsState } from '../components/GroupHomeDashboard';
 import type { GroupHistoryEntry } from '../features/history/group-history-model';
-import type { GroupRoomRosterPreview } from '../features/history/group-history-repository';
+import type { GroupActionableSession, GroupRoomRosterPreview } from '../features/history/group-history-repository';
 import type { RoomLobbyState } from '../features/rooms/room-listener';
 
 type LobbyRoom = { roomId: string; pin: string; invitation: string; hostUid: string; hostDisplayName?: string; createdAt: string | null; localCacheSaved: boolean };
@@ -36,9 +36,17 @@ interface GroupLobbyScreenProps {
   recentSessionsState?: RecentSessionsState;
   onOpenRecentSession?: (roomId: string) => void;
   onRetryRecentSessions?: () => void;
+  actionableSessions?: GroupActionableSession[];
+  actionableSessionsState?: ActionableSessionsState;
+  actionableErrorMessage?: string;
+  actionableHasMore?: boolean;
+  isLoadingMoreActionable?: boolean;
+  onOpenActionableSession?: (item: GroupActionableSession) => void;
+  onRetryActionableSessions?: () => void;
+  onLoadMoreActionableSessions?: () => void;
 }
 
-export function GroupLobbyScreen({ room, isCreating, errorMessage, onCreateRoom, onJoinRoom, onCancelCreate, lobbyState, isHost, isStarting, startError, onStartRoom, onOpenHistory, onLeaveRoom, isLeaving, leaveError, onRemoveMember, removingMemberUid, removeError, recentSessions = [], recentMemberPreviews = {}, recentSessionsState = 'loading', onOpenRecentSession, onRetryRecentSessions }: GroupLobbyScreenProps) {
+export function GroupLobbyScreen({ room, isCreating, errorMessage, onCreateRoom, onJoinRoom, onCancelCreate, lobbyState, isHost, isStarting, startError, onStartRoom, onOpenHistory, onLeaveRoom, isLeaving, leaveError, onRemoveMember, removingMemberUid, removeError, recentSessions = [], recentMemberPreviews = {}, recentSessionsState = 'loading', onOpenRecentSession, onRetryRecentSessions, actionableSessions = [], actionableSessionsState = 'loading', actionableErrorMessage, actionableHasMore = false, isLoadingMoreActionable = false, onOpenActionableSession, onRetryActionableSessions, onLoadMoreActionableSessions }: GroupLobbyScreenProps) {
   const visibleLobbyState = lobbyState?.snapshot && lobbyState.snapshot.roomId !== room?.roomId ? null : lobbyState;
   const busy = Boolean(isLeaving || isStarting || removingMemberUid);
   const canLeaveRoom = Boolean(onLeaveRoom && visibleLobbyState?.kind === 'live' && visibleLobbyState.snapshot.status === 'WAITING');
@@ -51,12 +59,20 @@ export function GroupLobbyScreen({ room, isCreating, errorMessage, onCreateRoom,
         recentSessions={recentSessions}
         recentMemberPreviews={recentMemberPreviews}
         recentSessionsState={recentSessionsState}
+        actionableSessions={actionableSessions}
+        actionableSessionsState={actionableSessionsState}
+        actionableErrorMessage={actionableErrorMessage}
+        actionableHasMore={actionableHasMore}
+        isLoadingMoreActionable={isLoadingMoreActionable}
         onCreateRoom={onCreateRoom}
         onJoinRoom={onJoinRoom}
         onCancelCreate={onCancelCreate}
         onOpenHistory={onOpenHistory}
         onOpenRecentSession={onOpenRecentSession}
         onRetryRecentSessions={onRetryRecentSessions}
+        onOpenActionableSession={onOpenActionableSession}
+        onRetryActionableSessions={onRetryActionableSessions}
+        onLoadMoreActionableSessions={onLoadMoreActionableSessions}
       />
     );
   }

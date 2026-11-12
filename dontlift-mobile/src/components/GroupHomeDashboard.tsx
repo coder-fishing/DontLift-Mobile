@@ -6,10 +6,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { formatTime } from '../constants';
 import { Colors } from '../constants/theme';
 import type { GroupHistoryEntry } from '../features/history/group-history-model';
-import type { GroupRoomRosterPreview } from '../features/history/group-history-repository';
+import type { GroupActionableSession, GroupRoomRosterPreview } from '../features/history/group-history-repository';
 import { PrimaryButton } from './PrimaryButton';
+import { GroupActionableSessionsSkeleton } from './GroupActionableSessionsSkeleton';
 
 export type RecentSessionsState = 'loading' | 'ready' | 'offline' | 'cloud-error' | 'error';
+export type ActionableSessionsState = RecentSessionsState;
 
 type Props = {
   isCreating: boolean;
@@ -17,12 +19,20 @@ type Props = {
   recentSessions: GroupHistoryEntry[];
   recentMemberPreviews?: Record<string, GroupRoomRosterPreview | null>;
   recentSessionsState: RecentSessionsState;
+  actionableSessions?: GroupActionableSession[];
+  actionableSessionsState?: ActionableSessionsState;
+  actionableErrorMessage?: string;
+  actionableHasMore?: boolean;
+  isLoadingMoreActionable?: boolean;
   onCreateRoom: () => void;
   onJoinRoom: () => void;
   onCancelCreate: () => void;
   onOpenHistory?: () => void;
   onOpenRecentSession?: (roomId: string) => void;
   onRetryRecentSessions?: () => void;
+  onOpenActionableSession?: (item: GroupActionableSession) => void;
+  onRetryActionableSessions?: () => void;
+  onLoadMoreActionableSessions?: () => void;
 };
 
 const statusLabels: Record<GroupHistoryEntry['summary']['status'], string> = {
@@ -32,10 +42,19 @@ const statusLabels: Record<GroupHistoryEntry['summary']['status'], string> = {
   ABORTED: 'Interrupted',
 };
 const RECENT_AVATAR_SLOT_WIDTH = 32 + 3 * (32 - 9);
+const SESSION_LIST_BATCH_SIZE = 5;
 
 export function GroupHomeDashboard({ isCreating, errorMessage, recentSessions, recentSessionsState,
-  recentMemberPreviews = {}, onCreateRoom, onJoinRoom, onCancelCreate, onOpenHistory, onOpenRecentSession, onRetryRecentSessions }: Props) {
+  actionableSessions = [], actionableSessionsState = 'ready', actionableErrorMessage, actionableHasMore = false, isLoadingMoreActionable = false,
+  recentMemberPreviews = {}, onCreateRoom, onJoinRoom, onCancelCreate, onOpenHistory, onOpenRecentSession,
+  onRetryRecentSessions, onOpenActionableSession, onRetryActionableSessions, onLoadMoreActionableSessions }: Props) {
   const sessions = recentSessions.slice(0, 5);
+  const [visibleActionableCount, setVisibleActionableCount] = useState(SESSION_LIST_BATCH_SIZE);
+  const visibleActionableSessions = actionableSessions.slice(0, visibleActionableCount);
+  const hasMoreActionableToShow = actionableSessions.length > visibleActionableCount || actionableHasMore;
+  const showActionQueue = actionableSessions.length > 0 || actionableHasMore
+    || actionableSessionsState === 'loading' || actionableSessionsState === 'error'
+    || actionableSessionsState === 'cloud-error' || Boolean(actionableErrorMessage);
   return (
     <View style={styles.container}>
       <LinearGradient
@@ -71,7 +90,7 @@ export function GroupHomeDashboard({ isCreating, errorMessage, recentSessions, r
 
       <View style={styles.recentSection}>
         <View style={styles.sectionHeader}>
-          <Text accessibilityRole="header" style={styles.sectionTitle}>Recent Sessions</Text>
+          <Text accessibilityRole="header" style={styles.sectionTitle}>{showActionQueue ? 'Needs attention' : 'Recent Sessions'}</Text>
           {onOpenHistory ? <Pressable
             accessibilityRole="button"
             accessibilityLabel="View group history"
@@ -81,6 +100,35 @@ export function GroupHomeDashboard({ isCreating, errorMessage, recentSessions, r
             <Text numberOfLines={1} style={styles.historyText}>History  ›</Text>
           </Pressable> : null}
         </View>
+
+        {showActionQueue ? <View style={styles.actionSection}>
+          {actionableSessionsState === 'loading' && actionableSessions.length > 0 ? <ActivityIndicator
+            accessibilityLabel="Refreshing actions" size="small" color={Colors.light.primary} /> : null}
+          {actionableSessionsState === 'loading' && actionableSessions.length === 0
+            ? <GroupActionableSessionsSkeleton /> : null}
+          {actionableErrorMessage ? <Text accessibilityRole="alert" style={styles.error}>{actionableErrorMessage}</Text> : null}
+          {actionableSessionsState === 'offline' ? <Text style={styles.notice}>Offline · showing saved actions</Text> : null}
+          {actionableSessionsState === 'cloud-error' ? <Text accessibilityRole="alert" style={styles.notice}>Could not refresh actions. Showing saved items.</Text> : null}
+          {actionableSessionsState === 'error' ? <View style={styles.actionError}>
+            <Text accessibilityRole="alert" style={styles.secondary}>Could not load sessions that need attention.</Text>
+            {onRetryActionableSessions ? <Pressable accessibilityRole="button" accessibilityLabel="Retry loading sessions that need attention"
+              onPress={onRetryActionableSessions} style={styles.retryButton}><Text style={styles.historyText}>Try again</Text></Pressable> : null}
+          </View> : null}
+          {visibleActionableSessions.map(item => <ActionableSessionRow key={item.roomId} item={item}
+            memberPreview={recentMemberPreviews[item.roomId]} onPress={onOpenActionableSession} />)}
+          {hasMoreActionableToShow && (onLoadMoreActionableSessions || actionableSessions.length > visibleActionableCount) ? <Pressable accessibilityRole="button"
+            accessibilityLabel="Load more sessions that need attention" disabled={isLoadingMoreActionable}
+            onPress={() => {
+              if (actionableSessions.length > visibleActionableCount) {
+                setVisibleActionableCount(count => count + SESSION_LIST_BATCH_SIZE);
+              } else {
+                onLoadMoreActionableSessions?.();
+              }
+            }} style={({ pressed }) => [styles.loadMoreButton, pressed && styles.pressed]}>
+            {isLoadingMoreActionable ? <ActivityIndicator color={Colors.light.primary} />
+              : <Text style={styles.historyText}>Load more</Text>}
+          </Pressable> : null}
+        </View> : <>
 
         {recentSessionsState === 'loading' && sessions.length === 0 ? (
           <View accessibilityLabel="Loading recent sessions" style={styles.loadingState}>
@@ -109,9 +157,46 @@ export function GroupHomeDashboard({ isCreating, errorMessage, recentSessions, r
             <Text style={styles.secondary}>Completed sessions will appear here.</Text>
           </View>
         ) : null}
+        </>}
       </View>
     </View>
   );
+}
+
+const actionableCopy: Record<GroupActionableSession['action'], { label: string; description: string }> = {
+  RESUME_SESSION: { label: 'Resume session', description: 'Your group session is still active.' },
+  SET_UP_BILL: { label: 'Set up bill', description: 'Final scores are ready for the Host to publish a bill.' },
+  WAITING_FOR_HOST_BILL: { label: 'Waiting for Host bill', description: 'The Host has not published a bill yet.' },
+  AWAITING_CONFIRMATION: { label: 'Review payment', description: 'The Host has not confirmed your share yet.' },
+  REVIEW_PAYMENTS: { label: 'Review payments', description: 'Some member shares still need Host confirmation.' },
+};
+
+function ActionableSessionRow({ item, memberPreview, onPress }: {
+  item: GroupActionableSession; memberPreview?: GroupRoomRosterPreview | null; onPress?: (item: GroupActionableSession) => void;
+}) {
+  const copy = actionableCopy[item.action];
+  const when = item.endedAtUtcMs ?? item.startedAtUtcMs;
+  const date = when == null ? 'Group session' : new Date(when).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const time = when == null ? '' : new Date(when).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return <Pressable accessibilityRole="button" accessibilityLabel={`${copy.label}. ${copy.description}${item.source === 'SAVED' ? ' Saved copy, may be out of date.' : ''}`}
+    disabled={!onPress} onPress={() => onPress?.(item)} style={({ pressed }) => [styles.sessionRow, pressed && styles.pressed]}>
+    <View style={styles.sessionContent}>
+      <View style={styles.sessionLeading}>
+        {memberPreview?.members.length ? <MemberAvatarStack preview={memberPreview} /> : (
+          <View style={styles.sessionIcon}><Ionicons name={item.action === 'RESUME_SESSION' ? 'people-outline' : 'receipt-outline'} size={17} color={Colors.light.primary} /></View>
+        )}
+      </View>
+      <View style={styles.sessionDetails}>
+        <Text numberOfLines={1} style={styles.sessionDate}>{date}{time ? ` · ${time}` : ''}</Text>
+        <Text numberOfLines={1} style={styles.secondary}>{copy.description}</Text>
+        {item.source === 'SAVED' ? <Text numberOfLines={1} style={styles.savedLabel}>Saved copy · reconnect to refresh</Text> : null}
+      </View>
+      <View style={styles.actionTrailing}>
+        <Text numberOfLines={2} style={styles.actionLabel}>{copy.label}</Text>
+        {onPress ? <Ionicons name="chevron-forward" size={17} color={Colors.light.textSecondary} /> : null}
+      </View>
+    </View>
+  </Pressable>;
 }
 
 function RecentSessionRow({ entry, memberPreview, onPress }: {
@@ -211,6 +296,12 @@ const styles = StyleSheet.create({
   error: { color: Colors.light.error, fontSize: 13, lineHeight: 18, textAlign: 'center' },
   joinButton: { backgroundColor: Colors.light.groupHomeSecondarySurface, borderColor: Colors.light.groupHomeSecondaryBorder, shadowOpacity: 0, elevation: 0 },
   recentSection: { gap: 10 },
+  actionSection: { gap: 10 },
+  actionTrailing: { maxWidth: 126, flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  actionLabel: { flexShrink: 1, color: Colors.light.primary, fontSize: 13, lineHeight: 18, fontWeight: '800', textAlign: 'right' },
+  savedLabel: { color: Colors.light.warning, fontSize: 11, fontWeight: '700' },
+  actionError: { alignItems: 'center', gap: 4, paddingVertical: 10, borderRadius: 16, backgroundColor: Colors.light.groupHomeSecondarySurface },
+  loadMoreButton: { minHeight: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 },
   sectionHeader: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   sectionTitle: { color: Colors.light.text, fontSize: 17, fontWeight: '800' },
   historyButton: { minHeight: 44, flexShrink: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },

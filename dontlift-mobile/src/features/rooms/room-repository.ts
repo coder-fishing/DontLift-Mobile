@@ -203,6 +203,30 @@ async function ensureGroupRoomIndex(firestore: Firestore, auth: Auth, uid: strin
 
 export function createRoomRepository(dependencies: RoomCreateDependencies) {
   return {
+    async loadMemberRoom(roomId: string, expectedStatus: 'ACTIVE' | 'COMPLETED'): Promise<CreatedRoom> {
+      const actor = dependencies.auth.currentUser;
+      if (!actor) throw new RoomJoinError('unauthenticated');
+      if (!/^[0-9a-f-]{36}$/i.test(roomId)) throw new RoomJoinError('invalid-argument');
+      const [roomSnapshot, memberSnapshot] = await Promise.all([
+        getDocFromServer(doc(dependencies.firestore, 'rooms', roomId)),
+        getDocFromServer(doc(dependencies.firestore, 'rooms', roomId, 'members', actor.uid)),
+      ]);
+      if (dependencies.auth.currentUser?.uid !== actor.uid) throw new RoomJoinError('unauthenticated');
+      if (!roomSnapshot.exists() || !memberSnapshot.exists()) throw new RoomJoinError('not-found');
+      const room = roomSnapshot.data();
+      const member = memberSnapshot.data();
+      if (!['ACTIVE', 'EARLY_EXIT'].includes(String(member.status))) throw new RoomJoinError('rejected');
+      if (room.status !== expectedStatus || (expectedStatus === 'COMPLETED' && room.reconciliationStatus !== 'FINALIZED')) {
+        throw new RoomJoinError('failed-precondition');
+      }
+      if (typeof room.pin !== 'string' || !/^\d{8}$/.test(room.pin) || typeof room.hostId !== 'string') {
+        throw new RoomJoinError('failed-precondition');
+      }
+      return { roomId, pin: room.pin, invitation: encodeRoomInvitation(room.pin), hostUid: room.hostId,
+        hostDisplayName: member.role === 'HOST' && typeof member.displayName === 'string' ? member.displayName : 'Group host',
+        createdAt: room.createdAt instanceof Timestamp ? room.createdAt.toDate().toISOString() : null,
+        localCacheSaved: false };
+    },
     startCommand(roomId: string): RoomStartCommand {
       return { version: 1, roomId, requestId: dependencies.randomUUID() };
     },
