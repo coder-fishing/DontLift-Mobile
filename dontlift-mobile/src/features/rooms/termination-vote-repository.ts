@@ -169,8 +169,12 @@ export function createTerminationVoteRepository(dependencies: {
           }
           const yesVoteCount = Number(savedVote.yesVoteCount) + (input.choice === 'YES' ? 1 : 0);
           const eligibleVoterCount = Number(savedVote.eligibleVoterCount);
+          const roomData = room.data();
           // Chỉ ballot YES cuối cùng được phép đóng room; Rules xác nhận cùng lúc cả ba ghi.
           const unanimous = input.choice === 'YES' && yesVoteCount === eligibleVoterCount;
+          if (unanimous && (!Number.isInteger(roomData.participantCount) || roomData.participantCount < 1)) {
+            throw new TerminationVoteError('failed-precondition');
+          }
           transaction.set(ownBallotRef, {
             version: 1, voteId: input.voteId, requestId: input.requestId, choice: input.choice,
             castAt: serverTimestamp(),
@@ -180,7 +184,11 @@ export function createTerminationVoteRepository(dependencies: {
             ...(unanimous ? { status: 'CANCELLED', closedAt: serverTimestamp() } : {}),
           });
           if (unanimous) transaction.update(roomRef, {
-            status: 'CANCELLED', endedAt: serverTimestamp(), updatedAt: serverTimestamp(),
+            status: 'COMPLETED', endedAt: serverTimestamp(), updatedAt: serverTimestamp(),
+            reconciliationStatus: 'PENDING', pendingMemberCount: roomData.participantCount,
+            completionRequestId: input.requestId,
+            lastSyncAckMemberUid: null, lastSyncAckRequestId: null,
+            finalizedAt: null, finalizedBy: null, finalizationReason: null,
           });
           return { vote: { ...toVote(input.roomId, savedVote), yesVoteCount, status: unanimous ? 'CANCELLED' as const : 'OPEN' as const }, replayed: false };
         });

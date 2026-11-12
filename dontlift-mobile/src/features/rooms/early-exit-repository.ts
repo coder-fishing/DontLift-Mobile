@@ -181,18 +181,18 @@ export function createEarlyExitRepository(dependencies: Dependencies) {
             if (!Number.isInteger(roomData.activeMemberCount) && openVote) {
               throw new EarlyExitError('failed-precondition');
             }
-            let cancelRoom = false;
+            let completeRoom = false;
             if (openVote && Number.isInteger(roomData.activeMemberCount)) {
               // Cùng giao dịch loại voter đã rời khỏi mẫu số, tránh vote count lệch giữa các thiết bị.
               const voteData = vote.data();
               const votedYes = ballot.exists() && ballot.data().voteId === voteData.voteId && ballot.data().choice === 'YES';
               const nextVoteEligibleCount = Number(voteData.eligibleVoterCount) - 1;
               const nextVoteYesCount = Number(voteData.yesVoteCount) - (votedYes ? 1 : 0);
-              cancelRoom = nextVoteEligibleCount > 0 && nextVoteYesCount === nextVoteEligibleCount;
+              completeRoom = nextVoteEligibleCount > 0 && nextVoteYesCount === nextVoteEligibleCount;
               transaction.update(voteRef, {
                 eligibleVoterCount: nextVoteEligibleCount,
                 yesVoteCount: nextVoteYesCount,
-                ...(cancelRoom ? { status: 'CANCELLED', closedAt: serverTimestamp() } : {}),
+                ...(completeRoom ? { status: 'CANCELLED', closedAt: serverTimestamp() } : {}),
               });
             }
             if (Number.isInteger(roomData.activeMemberCount)) {
@@ -201,7 +201,13 @@ export function createEarlyExitRepository(dependencies: Dependencies) {
                 updatedAt: serverTimestamp(),
                 lastEarlyExitMemberUid: input.memberUid,
                 lastEarlyExitRequestId: input.requestId,
-                ...(cancelRoom ? { status: 'CANCELLED', endedAt: serverTimestamp() } : {}),
+                ...(completeRoom ? {
+                  status: 'COMPLETED', endedAt: serverTimestamp(),
+                  reconciliationStatus: 'PENDING', pendingMemberCount: roomData.participantCount,
+                  completionRequestId: input.requestId,
+                  lastSyncAckMemberUid: null, lastSyncAckRequestId: null,
+                  finalizedAt: null, finalizedBy: null, finalizationReason: null,
+                } : {}),
               });
             }
           }
