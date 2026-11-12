@@ -1723,7 +1723,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     };
   }, [groupCaptureRoomSnapshot?.roomId, profile.uid, groupViolationRepository]);
 
-  const handlePublishBill = async (totalBillVnd?: number) => {
+  const handlePublishBill = async (totalBillVnd?: number, shareOverrides?: BillShareOverride[]) => {
     const snapshot = groupSummarySnapshot;
     const ownMember = snapshot?.members.find(member => member.uid === profile.uid);
     if (!snapshot || snapshot.reconciliationStatus !== 'FINALIZED' || ownMember?.role !== 'HOST'
@@ -1733,14 +1733,17 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     if (!pending) {
       if (totalBillVnd == null) return;
       pending = {
-        command: { version: 1, requestId: Crypto.randomUUID(), roomId: snapshot.roomId, totalBillVnd },
+        command: { version: 1, requestId: Crypto.randomUUID(), roomId: snapshot.roomId, totalBillVnd,
+          ...(shareOverrides?.length ? { shareOverrides: [...shareOverrides].sort((a, b) => a.uid.localeCompare(b.uid)) } : {}) },
         rosterMemberUids: snapshot.members
           .filter(member => member.status === 'ACTIVE' || member.status === 'EARLY_EXIT')
           .map(member => member.uid),
       };
       pendingBillCommand.current = pending;
     } else if (pending.command.roomId !== snapshot.roomId
-      || (totalBillVnd != null && pending.command.totalBillVnd !== totalBillVnd)) {
+      || (totalBillVnd != null && pending.command.totalBillVnd !== totalBillVnd)
+      || (shareOverrides != null && JSON.stringify([...(pending.command.shareOverrides ?? [])].sort((a, b) => a.uid.localeCompare(b.uid)))
+        !== JSON.stringify([...shareOverrides].sort((a, b) => a.uid.localeCompare(b.uid))))) {
       return;
     }
 
@@ -2348,7 +2351,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
               mode={groupSummarySnapshot.members.find(member => member.uid === profile.uid)?.role === 'HOST' ? 'host' : 'member'}
               members={groupSummarySnapshot.members
                 .filter(member => member.status === 'ACTIVE' || member.status === 'EARLY_EXIT')
-                .map(member => ({ uid: member.uid, displayName: member.displayName, penaltyScore: member.penaltyScore }))}
+                .map(member => ({ uid: member.uid, displayName: member.displayName, penaltyScore: member.penaltyScore, avatarUri: member.avatarUri }))}
               state={billScreenState}
               pendingPaymentMemberUid={pendingPayment.current?.memberUid}
               isMarkingPayment={isMarkingPayment}
@@ -2360,11 +2363,12 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
               isOnline={groupIsOnline}
               isPublishing={isPublishingBill}
               pendingTotalVnd={pendingBillCommand.current?.command.totalBillVnd}
+              pendingShareOverrides={pendingBillCommand.current?.command.shareOverrides}
               isApplyingOverride={isApplyingBillOverride}
               hasPendingOverride={pendingBillOverride.current != null}
               publishError={billPublishError}
               overrideError={billOverrideError}
-              onPublish={amount => { void handlePublishBill(amount); }}
+              onPublish={(amount, overrides) => { void handlePublishBill(amount, overrides); }}
               onApplyOverrides={(overrides, revision) => { void handleApplyBillOverrides(overrides, revision); }}
               onRetry={() => { void handleRetryPublishedBill(); }}
               onRetryPublish={() => { void handlePublishBill(); }}

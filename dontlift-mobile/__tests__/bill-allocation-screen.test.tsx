@@ -5,9 +5,11 @@ import type { PublishedBill } from '../src/features/settlement/bill-repository';
 jest.mock('../src/components/GlassCard', () => ({
   GlassCard: ({ children }: { children: React.ReactNode }) => children,
 }));
+jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
 jest.mock('../src/constants/theme', () => ({ Colors: { light: {
   text: '#000000', textSecondary: '#60646C', primary: '#004AC6', onPrimary: '#FFFFFF',
-  error: '#B42318', border: '#E6E6E6',
+  error: '#B42318', border: '#E6E6E6', backgroundSelected: '#EFF6FF', inputSurface: '#FFFFFF',
+  backgroundElement: '#F2F4F7', success: '#059669', authFormSurface: '#FFFFFF', glassBorder: '#FFFFFF', glassShadow: '#000000',
 } } }));
 
 type Node = {
@@ -45,6 +47,71 @@ test.each(['published', 'cached', 'error'] as const)('Pay share navigation requi
     }
   } finally {
     await renderer.act(async () => mounted?.unmount());
+  }
+});
+
+test('AI scan entry point responds clearly while the scan API is not connected', async () => {
+  const { Alert } = require('react-native') as typeof import('react-native');
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+  let mounted: Rendered | undefined;
+  try {
+    await renderer.act(() => {
+      mounted = renderer.create(<BillAllocationScreen
+        roomId="room" mode="host"
+        members={[{ uid: 'host', displayName: 'Host', penaltyScore: 0 }]}
+        state={{ kind: 'unpublished', bill: null }} isOnline isPublishing={false}
+        onPublish={jest.fn()} onRetry={jest.fn()} onRetryPublish={jest.fn()} onBack={jest.fn()}
+      />);
+    });
+
+    const scanAction = mounted!.root.findByProps({ accessibilityLabel: 'AI bill scan coming soon' });
+    expect(scanAction.props.disabled).not.toBe(true);
+    await renderer.act(() => { (scanAction.props.onPress as () => void)(); });
+    expect(alert).toHaveBeenCalledWith('AI bill scan coming soon', expect.stringContaining('Enter the bill total manually'));
+    expect(mounted!.root.findAllByProps({ children: 'AI bill scan' }).length).toBeGreaterThan(0);
+    expect(mounted!.root.findAllByProps({ children: 'Receipt scanning is not connected to the Premium API yet. Enter the amount below.' }).length).toBeGreaterThan(0);
+    expect(mounted!.root.findAllByProps({ children: 'Room score' }).length).toBeGreaterThan(0);
+    expect(mounted!.root.findAllByProps({ children: 'Custom %' }).length).toBeGreaterThan(0);
+  } finally {
+    await renderer.act(async () => mounted?.unmount());
+    alert.mockRestore();
+  }
+});
+
+test('custom percentage split previews avatars and publishes only when percentages total 100%', async () => {
+  const { Alert } = require('react-native') as typeof import('react-native');
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+  const onPublish = jest.fn();
+  let mounted: Rendered | undefined;
+  try {
+    await renderer.act(() => { mounted = renderer.create(<BillAllocationScreen roomId="room" mode="host"
+      members={[{ uid: 'host', displayName: 'Host', penaltyScore: 0, avatarUri: 'https://example.com/host.jpg' },
+        { uid: 'member', displayName: 'Member', penaltyScore: 0}]}
+      state={{ kind: 'unpublished', bill: null }} isOnline isPublishing={false}
+      onPublish={onPublish} onRetry={jest.fn()} onRetryPublish={jest.fn()} onBack={jest.fn()} />); });
+    await renderer.act(() => { (mounted!.root.findByProps({ accessibilityLabel: 'Total bill amount in Vietnamese dong' }).props.onChangeText as (value: string) => void)('100000'); });
+    await renderer.act(() => { (mounted!.root.findByProps({ accessibilityLabel: 'Enter custom percentages' }).props.onPress as () => void)(); });
+    const hostPercent = mounted!.root.findByProps({ accessibilityLabel: 'Bill percentage for Host' });
+    const memberPercent = mounted!.root.findByProps({ accessibilityLabel: 'Bill percentage for Member' });
+    await renderer.act(() => { (hostPercent.props.onChangeText as (value: string) => void)('70'); });
+    expect(mounted!.root.findByProps({ accessibilityLabel: 'Publish bill shares once' }).props.disabled).toBe(true);
+    await renderer.act(() => { (memberPercent.props.onChangeText as (value: string) => void)('30'); });
+    expect(mounted!.root.findAllByProps({ accessibilityLabel: 'Host avatar' }).length).toBeGreaterThan(0);
+    const publish = mounted!.root.findByProps({ accessibilityLabel: 'Publish bill shares once' });
+    expect(publish.props.disabled).toBe(false);
+    expect((publish.props.style as Array<Record<string, unknown>>).some(style => style.backgroundColor === '#2563EB')).toBe(true);
+    const customMethod = mounted!.root.findByProps({ accessibilityLabel: 'Enter custom percentages' });
+    expect((customMethod.props.style as Array<Record<string, unknown>>).some(style => style.backgroundColor === '#2563EB')).toBe(true);
+    expect(mounted!.root.findByProps({ children: 'Custom %' }).props.style).toEqual(expect.arrayContaining([expect.objectContaining({ color: '#FFFFFF' })]));
+    await renderer.act(() => { (publish.props.onPress as () => void)(); });
+    const choices = alert.mock.calls[0][2]!;
+    await renderer.act(() => { choices[1].onPress!(); });
+    expect(onPublish).toHaveBeenCalledWith(100000, [
+      { uid: 'host', type: 'PERCENT_BPS', value: 7000 }, { uid: 'member', type: 'PERCENT_BPS', value: 3000 },
+    ]);
+  } finally {
+    await renderer.act(() => mounted?.unmount());
+    alert.mockRestore();
   }
 });
 
