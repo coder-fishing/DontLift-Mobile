@@ -111,6 +111,7 @@ export function createOutboxSyncRepository(database: SQLite.SQLiteDatabase) {
       leaseExpiresAtUtcMs: number;
       limit: number;
       ignoreBackoff?: boolean;
+      sessionId?: string;
     }): Promise<SoloSyncEvent[]> {
       let claimed: SoloSyncEvent[] = [];
       await database.withExclusiveTransactionAsync(async (transaction) => {
@@ -120,11 +121,14 @@ export function createOutboxSyncRepository(database: SQLite.SQLiteDatabase) {
            FROM sync_outbox
            WHERE actor_uid = ? AND event_type = 'SOLO_SESSION_COMPLETED'
              AND sync_status = 'PENDING'
+             AND (? IS NULL OR session_id = ?)
              AND (lease_expires_at IS NULL OR lease_expires_at <= ?)
              AND (? = 1 OR next_attempt_at IS NULL OR next_attempt_at <= ?)
            ORDER BY occurred_at_utc_ms ASC, aggregate_id ASC
            LIMIT ?`,
           input.userId,
+          input.sessionId ?? null,
+          input.sessionId ?? null,
           input.nowUtcMs,
           input.ignoreBackoff ? 1 : 0,
           input.nowUtcMs,
@@ -188,6 +192,16 @@ export function createOutboxSyncRepository(database: SQLite.SQLiteDatabase) {
            AND sync_status = 'PENDING'`,
         input.eventId, input.userId,
       );
+    },
+    async requeueFailedForSession(input: { userId: string; sessionId: string }): Promise<boolean> {
+      const result = await database.runAsync(
+        `UPDATE sync_outbox SET sync_status = 'PENDING', last_error_code = NULL,
+           next_attempt_at = NULL, lease_expires_at = NULL
+         WHERE actor_uid = ? AND session_id = ? AND event_type = 'SOLO_SESSION_COMPLETED'
+           AND sync_status = 'FAILED'`,
+        input.userId, input.sessionId,
+      );
+      return result.changes === 1;
     },
     async getStatus(input: { userId: string; sessionId: string }): Promise<'pending' | 'synced' | 'failed' | 'unknown'> {
       const row = await database.getFirstAsync<{ sync_status: string }>(

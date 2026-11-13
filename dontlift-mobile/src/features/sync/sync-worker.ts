@@ -30,7 +30,9 @@ type SyncWorkerRepository = {
     leaseExpiresAtUtcMs: number;
     limit: number;
     ignoreBackoff?: boolean;
+    sessionId?: string;
   }): Promise<SoloSyncEvent[]>;
+  requeueFailedForSession(input: { userId: string; sessionId: string }): Promise<boolean>;
   markSynced(input: { userId: string; eventId: string; syncedAtUtcMs: number }): Promise<void>;
   markFailed(input: { userId: string; eventId: string; errorCode: string }): Promise<void>;
   scheduleRetry(input: {
@@ -256,6 +258,7 @@ export function createSoloSyncWorker(dependencies: SyncWorkerDependencies) {
       leaseExpiresAtUtcMs: now() + LEASE_DURATION_MS,
       limit: MAX_BATCH_SIZE,
       ignoreBackoff: options.ignoreBackoff,
+      sessionId: options.sessionId,
     });
     await send(events);
     if (options.sessionId && !disposed && dependencies.getCurrentUserId() === dependencies.userId) {
@@ -270,8 +273,17 @@ export function createSoloSyncWorker(dependencies: SyncWorkerDependencies) {
     return currentRun;
   }
 
+  async function retrySession(sessionId: string): Promise<void> {
+    if (currentRun) await currentRun;
+    if (disposed || dependencies.getCurrentUserId() !== dependencies.userId) return;
+    await dependencies.repository.requeueFailedForSession({ userId: dependencies.userId, sessionId });
+    if (currentRun) await currentRun;
+    await kick({ ignoreBackoff: true, sessionId });
+  }
+
   return {
     kick,
+    retrySession,
     dispose() {
       disposed = true;
       if (retryTimer) clearTimeout(retryTimer);
