@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import { Accelerometer, type AccelerometerMeasurement } from 'expo-sensors';
 
 export interface SensorPermission {
@@ -10,7 +11,9 @@ export interface AccelerometerAdapter {
   getPermissionAsync(): Promise<SensorPermission>;
   requestPermissionAsync(): Promise<SensorPermission>;
   setUpdateInterval(intervalMs: number): void;
-  subscribe(onMeasurement: (measurement: AccelerometerMeasurement) => void): { remove(): void };
+  subscribe(onMeasurement: (measurement: AccelerometerMeasurement) => void): {
+    remove(): void;
+  };
 }
 
 export type SensorAvailabilityState =
@@ -22,16 +25,34 @@ export type SensorAvailabilityState =
 
 export const accelerometerAdapter: AccelerometerAdapter = {
   isAvailableAsync: () => Accelerometer.isAvailableAsync(),
+
   async getPermissionAsync() {
     const permission = await Accelerometer.getPermissionsAsync();
-    return { granted: permission.granted, canAskAgain: permission.canAskAgain };
+    return {
+      granted: permission.granted,
+      canAskAgain: permission.canAskAgain,
+    };
   },
+
   async requestPermissionAsync() {
     const permission = await Accelerometer.requestPermissionsAsync();
-    return { granted: permission.granted, canAskAgain: permission.canAskAgain };
+    return {
+      granted: permission.granted,
+      canAskAgain: permission.canAskAgain,
+    };
   },
-  setUpdateInterval: (intervalMs) => Accelerometer.setUpdateInterval(intervalMs),
+
+  setUpdateInterval: (intervalMs) => {
+    Accelerometer.setUpdateInterval(intervalMs);
+  },
+
   subscribe(onMeasurement) {
-    return Accelerometer.addListener(onMeasurement);
+    return Accelerometer.addListener((measurement) => {
+      const normalizedMeasurement = Platform.OS === 'ios'
+        ? { ...measurement, z: -measurement.z }
+        : measurement;
+
+      onMeasurement(normalizedMeasurement);
+    });
   },
 };
