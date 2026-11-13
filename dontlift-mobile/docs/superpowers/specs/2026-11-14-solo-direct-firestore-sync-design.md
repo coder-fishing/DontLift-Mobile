@@ -1,68 +1,68 @@
-# Solo Summary Sync Trực Tiếp Lên Firestore
+# Direct Firestore Sync for Solo Session Summaries
 
-**Status:** Design approved by the user on 2026-11-14 for personal-history data that may be submitted by the signed-in client. Implementation has not started.
+**Status:** The user approved this design on 2026-11-14 for personal history data that may be submitted by the signed-in client. Implementation has not started.
 
-## Mục tiêu
+## Goal
 
-Đồng bộ Solo summary từ SQLite/outbox lên Cloud Firestore bằng Firebase JS client SDK, bỏ lời gọi Cloud Function `syncEvents` khỏi luồng sync Solo mới. Summary vẫn lưu local trước; khi có mạng, thiết bị đang đăng nhập đúng tài khoản sẽ ghi summary của mình lên Firestore để Solo History trên thiết bị khác có thể đọc.
+Sync Solo summaries from SQLite and the local outbox to Cloud Firestore through the Firebase JS client SDK, removing the `syncEvents` Cloud Function call from the new Solo sync flow. A summary remains saved locally first. When online, the device signed in to the matching account writes its summary to Firestore so Solo History can read it on another device.
 
-Solo summary chỉ là lịch sử cá nhân. Người sở hữu tài khoản có thể tự gửi số liệu; Firestore Rules kiểm tra người gửi và hình dạng dữ liệu nhưng không chứng minh dữ liệu sensor là trung thực. Summary này không được dùng làm điểm leaderboard, phần thưởng, premium entitlement hoặc dữ liệu canonical của phiên nhóm.
+Solo summaries are personal history only. The account owner may submit their own numbers; Firestore Rules validate ownership and data shape but cannot prove that sensor events are genuine. These summaries must not be used for leaderboard scores, rewards, premium entitlements, or canonical group-session data.
 
-## Trạng thái hiện tại và thay đổi kiến trúc
+## Current State and Architecture Change
 
-- `createSoloSyncWorker` lấy `SOLO_SESSION_COMPLETED` từ SQLite `sync_outbox`; `createSyncEventsPort` gửi batch qua callable Function `syncEvents`.
-- Function hiện ghi `users/{uid}/sessions/{sessionId}` và `users/{uid}/syncReceipts/{eventId}` bằng transaction, đồng thời kiểm tra payload, payload hash và trùng event.
-- `firestore.rules` cho owner đọc `users/{uid}/sessions`, nhưng hiện deny mọi create/update/delete từ client.
-- Solo History đọc collection `users/{uid}/sessions`; schema đọc hiện có gồm thời lượng, lift count, thời gian vi phạm, điểm phạt, thời điểm bắt đầu và kết thúc.
-- Repository convention và ADR-003 hiện coi `syncEvents` là authority cho event ngoại tuyến. Thiết kế này tạo ngoại lệ rõ ràng chỉ cho `SOLO_SESSION_COMPLETED`; các lệnh nhóm, thanh toán, entitlement và event loại khác không đổi.
+- `createSoloSyncWorker` claims `SOLO_SESSION_COMPLETED` events from SQLite `sync_outbox`; `createSyncEventsPort` sends them through the callable `syncEvents` Function.
+- The Function currently writes `users/{uid}/sessions/{sessionId}` and `users/{uid}/syncReceipts/{eventId}` in a transaction, and validates the payload, payload hash, and duplicate events.
+- `firestore.rules` allows the owner to read `users/{uid}/sessions` but currently denies all client creates, updates, and deletes.
+- Solo History reads `users/{uid}/sessions`; its existing reader expects duration, lift count, violation duration, penalty score, start time, and completion time.
+- The repository convention and ADR-003 currently treat `syncEvents` as the authority for offline events. This design makes a narrow exception for `SOLO_SESSION_COMPLETED` only. Group commands, payments, entitlements, and other event types remain unchanged.
 
-## Hợp đồng dữ liệu và ghi Firestore
+## Data Contract and Firestore Writes
 
-- Giữ document path `users/{uid}/sessions/{sessionId}` để Solo History, cursor pagination và cache hiện tại tiếp tục đọc được.
-- Dùng `sessionId` làm document ID ổn định và idempotency key. Payload summary giữ các trường hiện tại: `durationSeconds`, `liftCount`, `violationDurationSeconds`, `penaltyScore`, `startedAt`, `completedAt`, `payloadHash` và `createdAt`.
-- `startedAt`/`completedAt` là Firestore Timestamp; `createdAt` dùng server timestamp. Hash được tạo theo đúng canonical event contract hiện có để Function cũ có thể nhận ra cùng payload trong giai đoạn chuyển tiếp.
-- Transport trực tiếp xác nhận người đăng nhập vẫn là `uid` của worker rồi chạy Firestore transaction trên document summary:
-  1. Nếu document chưa tồn tại, tạo document theo schema trên.
-  2. Nếu document đã tồn tại và `payloadHash` trùng, trả kết quả đồng bộ thành công mà không ghi lại.
-  3. Nếu ID trùng nhưng hash khác, trả lỗi permanent `already-exists`; không ghi đè document.
-- Transaction và document ID xác định làm cho retry sau mất mạng không tạo thêm summary. Firestore transaction yêu cầu online; khi offline worker giữ outbox pending và thử lại khi app/network hoạt động.
+- Keep the document path `users/{uid}/sessions/{sessionId}` so Solo History, cursor pagination, and its cache continue to work.
+- Use `sessionId` as the stable document ID and idempotency key. Keep the current summary fields: `durationSeconds`, `liftCount`, `violationDurationSeconds`, `penaltyScore`, `startedAt`, `completedAt`, `payloadHash`, and `createdAt`.
+- Store `startedAt` and `completedAt` as Firestore Timestamps and set `createdAt` using a server timestamp. Compute `payloadHash` using the current canonical event contract so the legacy Function can recognize the same payload during rollout.
+- The direct transport first confirms that the current authenticated UID still matches the worker UID, then runs a Firestore transaction for the summary document:
+  1. If the document does not exist, create it with the schema above.
+  2. If the document exists with the same `payloadHash`, return success without writing again.
+  3. If the ID exists with a different hash, return permanent `already-exists` and do not overwrite the document.
+- The transaction and deterministic document ID make retries after a lost response idempotent. Firestore transactions require connectivity; while offline, the worker leaves the outbox event pending and retries when the app or network becomes active.
 
-## Security Rules và quyền dữ liệu
+## Security Rules and Data Ownership
 
-- Owner chỉ được đọc/list summary ở `users/{uid}/sessions` của chính mình.
-- Client chỉ được tạo summary khi `request.auth.uid == uid`; client không được update hoặc delete summary.
-- Rule kiểm tra allowlist field, kiểu dữ liệu, UUID/document ID, miền số hợp lệ, thứ tự timestamp và giới hạn hợp lý của các trường summary. Không có quyền ghi sang UID khác.
-- `payloadHash` chỉ hỗ trợ phát hiện trùng/xung đột, không phải bằng chứng về độ trung thực. Vì đây là lịch sử cá nhân, owner có thể ghi số liệu tự khai của chính mình.
-- Trước khi thay Rules hoặc SDK behavior, xác minh database `(default)` của project `august-monument-508716-u0` là Firestore Standard. Nếu là Enterprise, dừng và rà lại SDK cùng hướng dẫn edition trước khi tiếp tục. Firebase CLI có trong repo nhưng lần gọi list database thất bại vì refresh token hết hạn và network không tới Google; chưa xác nhận được edition.
+- An owner may read and list summaries only under their own `users/{uid}/sessions` path.
+- A client may create a summary only when `request.auth.uid == uid`. Clients may not update or delete summaries.
+- Rules validate the allowed fields, field types, UUID/document ID, numeric ranges, timestamp ordering, and reasonable summary limits. A client cannot write under another UID.
+- `payloadHash` detects duplicates and conflicts; it does not prove data integrity. Since this is personal history, an owner may submit self-reported values for their own account.
+- Before changing Rules or SDK behavior, verify that project `august-monument-508716-u0` uses Firestore Standard for its `(default)` database. If it uses Enterprise, stop and review the edition-specific SDK guidance before proceeding. The Firebase CLI is installed in the repository, but listing databases failed because its refresh token expired and network access to Google was unavailable; the edition remains unverified.
 
-## Outbox, retry và phục hồi dữ liệu
+## Outbox, Retries, and Recovery
 
-- SQLite session/summary/outbox vẫn commit nguyên tử và tiếp tục là dữ liệu local-first. Firestore cache không thay outbox.
-- Worker status tiếp tục là `PENDING` khi offline/retryable, `SYNCED` sau khi Firestore transaction xác nhận, và `FAILED` khi payload xung đột hoặc lỗi Rules permanent.
-- Có thao tác retry cụ thể cho một session: đổi event `FAILED` về `PENDING`, xóa lease/backoff/error cũ, sau đó kick worker. Nút Retry gọi thao tác này trước khi sync; chỉ gọi `kick(ignoreBackoff)` là không đủ vì claim query hiện chỉ lấy PENDING.
-- Khi transport mới khởi động, requeue các record `FAILED` cũ có `last_error_code = 'not-found'` từ callable cũ. Giữ `eventId`, `sessionId`, payload và số lần thử; ghi/xác nhận lại qua deterministic Firestore path để không làm mất summary local.
-- Không tự requeue mọi lỗi permanent: `permission-denied`, payload sai và collision cần giữ nguyên trạng thái FAILED cho đến sửa Rules/dữ liệu hoặc người dùng chủ động retry.
+- SQLite session, summary, and outbox writes remain atomic and local-first. Firestore's cache does not replace the outbox.
+- Worker status remains `PENDING` while offline or retryable, becomes `SYNCED` after Firestore confirms the transaction, and becomes `FAILED` for payload conflicts or permanent Rules errors.
+- Add an explicit retry operation for a session: move its `FAILED` event back to `PENDING`, clear its lease, backoff, and prior error, then kick the worker. The Retry button must call this operation before syncing; calling only `kick(ignoreBackoff)` is insufficient because the current claim query selects only `PENDING` events.
+- When the new transport starts, requeue legacy `FAILED` records whose `last_error_code = 'not-found'` came from the old callable. Preserve `eventId`, `sessionId`, payload, and attempt count; retry against the deterministic Firestore path so no local summary is lost.
+- Do not automatically requeue every permanent error. Keep `permission-denied`, invalid payload, and collision failures as `FAILED` until Rules/data are corrected or the user explicitly retries.
 
-## Rollout và tương thích
+## Rollout and Compatibility
 
-- Thay transport của Solo worker bằng direct Firestore, giữ worker, lease, backoff và outbox repository contract càng nguyên trạng càng tốt.
-- Giữ callable `syncEvents` được deploy trong thời gian app cũ còn được dùng. Direct writer tạo cùng path và cùng `payloadHash` để Function cũ nhận diện document đã có nếu một client cũ gửi lại cùng session.
-- Sau khi phát hành client mới và kiểm chứng không còn client dựa vào callable, cập nhật api contract/architecture/ADR rồi mới xem xét gỡ `syncEvents`. Việc dừng Function không nằm trong rollout đầu tiên.
-- Firebase CLI tools are present locally, but cloud listing currently cannot authenticate because stored credentials expired and network access to Google endpoints is unavailable. Verify database edition and current deployment state in Firebase Console before release.
+- Replace the Solo worker transport with direct Firestore while preserving the worker, leases, backoff, and outbox repository contract as much as possible.
+- Keep the `syncEvents` callable deployed while older app versions may still use it. The direct writer uses the same path and `payloadHash` so the legacy Function can recognize an existing document if an older client resends the same session.
+- After releasing the new client and confirming that no clients depend on the callable, update the API contract, architecture docs, and ADR before considering removal of `syncEvents`. Removing the Function is not part of the initial rollout.
+- Firebase CLI tools are present locally, but cloud listing cannot currently authenticate because the stored credentials expired and network access to Google endpoints is unavailable. Verify database edition and deployment state in Firebase Console before release.
 
-## Chi phí
+## Cost
 
-- Client mới không gọi Cloud Function cho Solo summary. Mỗi summary cần một transaction với tối thiểu một document read và tối đa một document write; retry đọc lại cùng deterministic path.
-- SQLite/outbox vẫn xử lý offline. Firestore reads, writes, storage và bandwidth vẫn chịu quota của Firestore; không cam kết Firestore không bao giờ phát sinh phí nếu project vượt quota miễn phí hoặc dùng tính năng cần billing.
-- Không bật billing, tạo database mới, deploy Rules/Function hay thay đổi cloud resource trong phần implementation nếu chưa có yêu cầu riêng.
+- The new client does not call a Cloud Function for Solo summaries. Each summary requires a transaction with at least one document read and at most one document write; retries read the same deterministic path.
+- SQLite and the outbox continue to support offline operation. Firestore reads, writes, storage, and bandwidth still count against Firestore quotas; usage beyond no-cost quotas or features requiring billing may incur charges.
+- Do not enable billing, create a database, deploy Rules or Functions, or change cloud resources as part of implementation without a separate request.
 
-## Chấp nhận
+## Acceptance Criteria
 
-- Hoàn tất Solo offline vẫn lưu summary/outbox local và UI không báo synced trước xác nhận server.
-- Khi online, summary xuất hiện trong `users/{uid}/sessions/{sessionId}` và được Solo History đọc như trước.
-- Sync lại cùng event/payload cho kết quả thành công idempotent; cùng ID với payload khác bị từ chối và không ghi đè.
-- Người dùng không đọc/ghi summary của UID khác; client không update/delete summary đã tạo.
-- FAILED `not-found` cũ được thử lại bằng direct Firestore; nút Retry thực sự chuyển record phù hợp về PENDING rồi kick worker.
-- Lỗi offline được retry; `permission-denied` được giữ thành FAILED với mã lỗi để điều tra.
-- Emulator coverage xác nhận Rules, owner boundaries, validation, retry, conflict, idempotency và đọc Solo History; device validation trên Expo Go xác nhận summary sync giữa hai lần cài/thiết bị cùng tài khoản.
-- Không thay đổi dữ liệu canonical nhóm, group score, settlement, Premium hoặc các event khác.
+- Completing Solo offline still saves the summary and outbox event locally; the UI does not report `synced` before server confirmation.
+- When online, the summary appears at `users/{uid}/sessions/{sessionId}` and remains readable through Solo History.
+- Retrying the same event and payload succeeds idempotently; reusing an ID with a different payload is rejected without overwriting the document.
+- A user cannot read or write another UID's summary; clients cannot update or delete a created summary.
+- Legacy `FAILED` `not-found` events retry through direct Firestore; the Retry button moves eligible events to `PENDING` before kicking the worker.
+- Offline failures retry; `permission-denied` remains `FAILED` with its error code available for diagnosis.
+- Emulator coverage verifies Rules, owner boundaries, validation, retry, conflict, idempotency, and Solo History reads. Expo Go device validation confirms that a summary syncs across two installations/devices signed in to the same account.
+- No changes are made to canonical group data, group scoring, settlement, Premium, or other event types.
