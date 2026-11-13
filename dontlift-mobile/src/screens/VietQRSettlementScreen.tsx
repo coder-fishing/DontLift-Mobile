@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Clipboard, Pressable, Share, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, AppState, Clipboard, Linking, Platform, Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { GlassCard } from '../components/GlassCard';
@@ -9,6 +9,10 @@ import type { PublishedBillState } from '../features/settlement/published-bill-s
 import type { SettlementDetailsState } from '../features/settlement/settlement-details-repository';
 import type { BankOption } from '../features/settlement/bank-directory';
 import { buildVietQrPayment } from '../features/settlement/vietqr-payload';
+import { BankAppPicker } from '../features/bank-transfer/BankAppPicker';
+import { BankTransferButton } from '../features/bank-transfer/BankTransferButton';
+import { buildBankTransferDeeplink } from '../features/bank-transfer/deeplink';
+import type { BankAppOption, BankAppPlatform } from '../features/bank-transfer/bank-app-directory';
 
 type Props = {
   roomId: string; roomPin: string; actorUid: string;
@@ -17,12 +21,8 @@ type Props = {
   onRefresh: () => void; onBack: () => void;
   backLabel?: string;
   bankDirectory?: { list: () => Promise<BankOption[]> };
+  bankAppDirectory?: { list: (platform: BankAppPlatform) => Promise<BankAppOption[]> };
 };
-type PaymentActionState = {
-  paymentIdentity: string;
-  shareError: boolean;
-};
-
 function QrImage({ uri, colors, onRetry }: {
   uri: string; colors: typeof Colors.light | typeof Colors.dark; onRetry: () => void;
 }) {
@@ -75,8 +75,9 @@ export function VietQRSettlementScreen(props: Props) {
   const [imageAttempt, setImageAttempt] = useState(0);
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [bankLookup, setBankLookup] = useState<{ bankBin: string; name: string | null } | null>(null);
-  const [actionState, setActionState] = useState<PaymentActionState>({ paymentIdentity: '', shareError: false });
+  const bankTransferLinkLogged = useRef(false);
+  const [bankLookup, setBankLookup] = useState<{ bankBin: string; name: string | null; code: string | null } | null>(null);
+  const [bankPickerVisible, setBankPickerVisible] = useState(false);
   useEffect(() => {
     const timer = setInterval(() => setNowUtcMs(Date.now()), 1_000);
     const subscription = AppState.addEventListener('change', state => {
@@ -94,25 +95,19 @@ export function VietQRSettlementScreen(props: Props) {
   const bankBin = payment.kind === 'ready' ? payment.bankBin : null;
   const paymentIdentity = payment.kind === 'ready' ? payment.identity : payment.kind;
   const bankName = bankLookup?.bankBin === bankBin ? bankLookup.name : null;
-  const currentActionState = actionState.paymentIdentity === paymentIdentity
-    ? actionState : { paymentIdentity, shareError: false };
-  const { shareError } = currentActionState;
-  const updateActionState = (updates: Partial<PaymentActionState>) => {
-    setActionState(current => ({
-      ...(current.paymentIdentity === paymentIdentity
-        ? current
-        : { paymentIdentity, shareError: false }),
-      ...updates,
-    }));
-  };
+  const bankCode = bankLookup?.bankBin === bankBin ? bankLookup.code : null;
   useEffect(() => {
     if (!bankBin || !props.bankDirectory) return;
     let active = true;
     void props.bankDirectory.list().then(banks => {
-      if (active) setBankLookup({ bankBin, name: banks.find(bank => bank.bin === bankBin)?.name ?? null });
-    }).catch(() => { if (active) setBankLookup({ bankBin, name: null }); });
+      if (active) {
+        const bank = banks.find(option => option.bin === bankBin);
+        setBankLookup({ bankBin, name: bank?.name ?? null, code: bank?.code ?? null });
+      }
+    }).catch(() => { if (active) setBankLookup({ bankBin, name: null, code: null }); });
     return () => { active = false; };
   }, [bankBin, props.bankDirectory]);
+  useEffect(() => { setBankPickerVisible(false); }, [paymentIdentity]);
   const cardStyle = { backgroundColor: colors.authFormSurface, borderColor: colors.glassBorder, shadowColor: colors.glassShadow };
   const copyValue = (label: string, value: string) => {
     Clipboard.setString(value);
@@ -134,24 +129,26 @@ export function VietQRSettlementScreen(props: Props) {
       </View>
     </Pressable>
   );
-  const sharePayment = async () => {
-    if (payment.kind !== 'ready') return;
-    updateActionState({ shareError: false });
-    try {
-      await Share.share({
-        title: 'DontLift payment details',
-        message: [
-          `Amount: ${formatVND(payment.amountVnd)} VND`,
-          `Recipient: ${payment.accountName}`,
-          `Bank: ${bankName ?? `BIN ${payment.bankBin}`}`,
-          `Account: ${payment.accountNumber}`,
-          `Transfer memo: ${payment.memo}`,
-          `VietQR: ${payment.imageUrl}`,
-        ].join('\n'),
-      });
-    } catch {
-      updateActionState({ shareError: true });
+  const openBankPicker = () => {
+    if (payment.kind !== 'ready' || !bankCode) return;
+    setBankPickerVisible(true);
+  };
+  const openBankApp = async (app: BankAppOption) => {
+    if (payment.kind !== 'ready' || !bankCode) throw new Error('bank-transfer-details-unavailable');
+    const url = buildBankTransferDeeplink({
+      appId: app.appId,
+      bankCode,
+      accountNumber: payment.accountNumber,
+      accountName: payment.accountName,
+      amountVnd: payment.amountVnd,
+      memo: payment.memo,
+      returnUrl: __DEV__ ? 'https://www.vietqr.io/deeplink' : 'dontliftmobile://',
+    });
+    if (__DEV__ && !bankTransferLinkLogged.current) {
+      console.info('[VietQR bank transfer deeplink]', url);
+      bankTransferLinkLogged.current = true;
     }
+    await Linking.openURL(url);
   };
   return (
     <View style={styles.container}>
@@ -169,7 +166,7 @@ export function VietQRSettlementScreen(props: Props) {
             <Text style={[styles.eyebrow, { color: colors.primary }]}>VIETQR PAYMENT</Text>
             <Text style={[styles.room, { color: colors.textSecondary }]}>Room {props.roomPin}</Text>
           </View>
-          <Text style={[styles.title, { color: colors.text }]}>{payment.kind === 'paid' ? 'Payment confirmed'
+          <Text style={[styles.title, { color: Colors.light.text }]}>{payment.kind === 'paid' ? 'Payment confirmed'
             : payment.kind === 'zero' ? 'Nothing to pay' : 'Pay your share'}</Text>
         </View>
       </View>
@@ -192,6 +189,12 @@ export function VietQRSettlementScreen(props: Props) {
                 <Text accessibilityLabel={`${payment.amountVnd} Vietnamese dong`} style={[styles.amountBadgeText, { color: colors.primary }]}>
                   {formatVND(payment.amountVnd)} VND
                 </Text>
+                {Platform.OS !== 'web' ? (
+                  <View style={styles.bankTransferActions}>
+                    <BankTransferButton onPress={openBankPicker} disabled={!bankCode || !props.bankAppDirectory} />
+                    {!bankCode ? <Text style={[styles.caption, { color: colors.textSecondary }]}>Bank app transfer is unavailable for this bank. Use the QR code below.</Text> : null}
+                  </View>
+                ) : null}
               </View>
               <QrImage key={`${payment.identity}:${imageAttempt}`} uri={payment.imageUrl} colors={colors}
                 onRetry={() => setImageAttempt(attempt => attempt + 1)} />
@@ -199,11 +202,6 @@ export function VietQRSettlementScreen(props: Props) {
                 <Ionicons name="scan-outline" size={14} color={colors.primary} />
                 <Text style={[styles.caption, { color: colors.text }]}>Scan with your banking app</Text>
               </View>
-              <Pressable accessibilityRole="button" accessibilityLabel="Share payment details" onPress={() => { void sharePayment(); }}
-                style={({ pressed }) => [styles.shareActionButton, { backgroundColor: colors.backgroundSelected, borderColor: colors.border }, pressed && styles.pressed]}>
-                <Text style={[styles.shareButtonText, { color: colors.primary }]}>Share</Text>
-              </Pressable>
-              {shareError ? <Text accessibilityRole="alert" style={[styles.caption, { color: colors.error }]}>Could not open the share menu.</Text> : null}
             </View>
           </GlassCard>
         </>
@@ -230,6 +228,8 @@ export function VietQRSettlementScreen(props: Props) {
         </GlassCard>
       )}
       <Text style={[styles.footnote, { color: colors.textSecondary }]}>Your banking app completes the transfer. The Host confirms payment after checking their account.</Text>
+      <BankAppPicker visible={bankPickerVisible && payment.kind === 'ready'} directory={props.bankAppDirectory}
+        onClose={() => setBankPickerVisible(false)} onSelect={openBankApp} />
     </View>
   );
 }
@@ -268,11 +268,10 @@ const styles = StyleSheet.create({
   value: { flex: 1, fontSize: 14, lineHeight: 19, fontWeight: '600', textAlign: 'right' },
   accountNumber: { fontSize: 17, lineHeight: 22, fontVariant: ['tabular-nums'] },
   qrCaption: { maxWidth: 260, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14 },
-  amountBadge: { width: '100%', maxWidth: 260, alignSelf: 'center', alignItems: 'center', gap: 2, paddingVertical: 9, borderRadius: 16, borderWidth: 1 },
+  amountBadge: { width: '100%', maxWidth: 320, alignSelf: 'center', alignItems: 'center', gap: 2, paddingHorizontal: 8, paddingTop: 9, paddingBottom: 8, borderRadius: 16, borderWidth: 1 },
   amountLabel: { fontSize: 11, lineHeight: 16, fontWeight: '700', letterSpacing: 0.4 },
   amountBadgeText: { fontSize: 19, lineHeight: 24, fontWeight: '800', fontVariant: ['tabular-nums'] },
-  shareActionButton: { width: '100%', maxWidth: 260, minHeight: 44, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 14, borderWidth: 1, borderRadius: 16 },
-  shareButtonText: { fontSize: 14, fontWeight: '700', textAlign: 'center' },
+  bankTransferActions: { width: '100%', alignItems: 'center', gap: 6, marginTop: 8 },
   unavailable: { gap: 16, width: '100%' },
   refresh: { minHeight: 48, padding: 12, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   actionText: { fontSize: 14, fontWeight: '700', textAlign: 'center' },

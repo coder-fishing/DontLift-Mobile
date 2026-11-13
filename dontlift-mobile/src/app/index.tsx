@@ -77,6 +77,7 @@ import { createRoomCompletionRepository, RoomCompletionError } from '../features
 import { shouldNavigateToGroupSummary } from '../features/rooms/group-terminal-navigation';
 import { createSettlementDetailsRepository, type SettlementDetailsState } from '../features/settlement/settlement-details-repository';
 import { createBankDirectoryRepository } from '../features/settlement/bank-directory';
+import { createBankAppDirectoryRepository } from '../features/bank-transfer/bank-app-directory';
 import { createProfileRepository } from '../features/profile/profile-repository';
 import { createBillRepository, BillRepositoryError, type ApplyBillOverridesCommand, type CalculateBillCommand, type PublishedBill } from '../features/settlement/bill-repository';
 import type { BillShareOverride } from '../features/settlement/bill-allocation';
@@ -304,6 +305,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     auth: roomRuntime.auth,
   }), [roomRuntime]);
   const settlementBankDirectory = useMemo(() => createBankDirectoryRepository(), []);
+  const settlementBankAppDirectory = useMemo(() => createBankAppDirectoryRepository(), []);
   // Navigation
   const [currentScreen, setCurrentScreen] = useState<ScreenId>('02-solo-select');
   const [groupHistoryInitialRoomId, setGroupHistoryInitialRoomId] = useState<string>();
@@ -2591,6 +2593,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
           <VietQRSettlementScreen roomId={groupSummarySnapshot.roomId} roomPin={groupSummarySnapshot.pin}
             actorUid={profile.uid} member={groupSummarySnapshot.members.find(member => member.uid === profile.uid)}
             billState={billScreenState} detailsState={paymentDetailsState} isOnline={groupIsOnline} bankDirectory={settlementBankDirectory}
+            bankAppDirectory={settlementBankAppDirectory}
             onRefresh={() => {
               setPaymentDetailsState({ kind: 'loading' });
               setPaymentDetailsRevision(revision => revision + 1);
@@ -2599,7 +2602,8 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
             onBack={() => setCurrentScreen('07-bill-allocation')} />
         )}
 
-        {currentScreen === '09-activation' && <PremiumScreen key={profile.uid} uid={profile.uid} api={premiumApi} expiresAtUtcMs={profile.premiumExpiresAtUtcMs} />}
+        {currentScreen === '09-activation' && <PremiumScreen key={profile.uid} uid={profile.uid} api={premiumApi}
+          expiresAtUtcMs={profile.premiumExpiresAtUtcMs} bankDirectory={settlementBankDirectory} bankAppDirectory={settlementBankAppDirectory} />}
 
         {currentScreen === '10-hardware-diagnostics' && (
           <HardwareDiagnosticsScreen

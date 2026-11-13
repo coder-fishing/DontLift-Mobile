@@ -184,6 +184,7 @@ As a Member, I want to generate a VietQR code so I can pay the Host directly in 
 
 *Acceptance Criteria:*
 - QR is NAPAS/VietQR-compliant, contains Host bank details, exact member amount, and memo `DL [RoomCode] [MemberName]`.
+- On Android/iOS, the Member can choose a supported banking app and open a VietQR deep link with transfer details prefilled where the bank app supports them; QR remains available as fallback.
 - QR is scannable by at least the top-5 Vietnamese banking apps (to be validated in test cohort).
 - Payment state transitions: `UNPAID → MARKED_AS_PAID` (Host marks manually); no automatic verification.
 - DontLift never holds, transfers, or escrows money.
