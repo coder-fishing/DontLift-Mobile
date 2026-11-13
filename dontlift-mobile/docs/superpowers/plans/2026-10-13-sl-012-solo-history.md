@@ -72,7 +72,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 
 - Giữ approved architecture; newer human decisions và accepted ADR exceptions thắng prose cũ.
 - Không sao chép Firebase token vào SQLite, AsyncStorage hoặc SecureStore; SDK quản lý session.
-- Event offline-capable dùng SQLite domain record và sync_outbox trong một transaction; syncEvents là ingestion authority.
+- Event offline-capable dùng SQLite domain record và sync_outbox trong một transaction; Solo personal summaries dùng direct Firestore theo ADR-030, các event khác giữ nguyên ingestion authority.
 - Command lifecycle/vote/bill/payment không queue để replay muộn. Firestore cache không thay thế outbox.
 - Membership authority là rooms/{roomId}/members/{uid}. Functions derive actor từ Auth và tự authorization; Admin SDK bypass Rules.
 - Giữ 3-Second Grace Period ở cả foreground/background theo ADR-008.
@@ -89,7 +89,7 @@ Các đường dẫn sau tương đối với `dontlift-mobile/`. Đọc lại t
 SL-012 reuse owner path users/{uid}/sessions đã được SL-011 thêm vào firestore.rules, và bổ sung functions/tests/solo-history-rules.emulator.test.cjs. Reuse local config cùng Rules harness hiện có; chưa có thì dừng cloud integration.
 
 - [ ] Owner đọc list/detail/page của chính mình được; anonymous hoặc user khác bị deny.
-- [ ] Client direct-write Solo summaries bị deny, gồm create/update/delete; syncEvents vẫn là write authority.
+- [ ] Client không được sửa/xóa Solo summaries. Owner create-only direct sync theo ADR-030 supersedes điều kiện server-only write này; `syncEvents` vẫn hỗ trợ app versions cũ.
 - [ ] Retention/query constraints khớp approved server entitlement và query shape, không dùng Rules làm bộ lọc.
 - [ ] Seed bằng Admin chỉ tạo fixtures; assertions dùng client SDK trên emulator, không live project.
 - [ ] Regression default-deny và resource Rules cũ phải pass; SL-037 tiếp nhận canonical deployment file sau authorization, không tự tạo ở slice này.

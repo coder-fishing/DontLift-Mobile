@@ -165,7 +165,7 @@ describe('local database initialization', () => {
     expect(roomMembersTable?.name).toBe('room_members');
     expect(sessionColumns.map(({ name }) => name)).toContain('user_id');
     expect(sessionColumns.map(({ name }) => name)).toContain('duration_seconds');
-    expect(version?.user_version).toBe(15);
+    expect(version?.user_version).toBe(16);
     expect(columns?.map(({ name }) => name)).toEqual([
       'uid',
       'email',
@@ -175,6 +175,51 @@ describe('local database initialization', () => {
       'avatar_uri',
       'avatar_public_id',
     ]);
+  });
+
+  test('migration 16 requeues only legacy failed Solo not-found events and preserves their data', async () => {
+    const { getLocalDatabase } = await loadDatabaseModule();
+    const database = await getLocalDatabase();
+    const insert = async (row: {
+      id: string; type?: string; status: string; error: string | null; attempts: number;
+    }) => database.runAsync(
+      `INSERT INTO sync_outbox (
+         event_id, event_type, schema_version, aggregate_type, aggregate_id, session_id,
+         actor_uid, occurred_at_utc_ms, payload_json, sync_status, attempt_count,
+         next_attempt_at, lease_expires_at, last_error_code, created_at, synced_at
+       ) VALUES (?, ?, 1, 'SOLO_SESSION', ?, ?, 'owner-1', 1000, '{"kept":true}', ?, ?, 2000, 3000, ?, 'created', NULL)`,
+      row.id, row.type ?? 'SOLO_SESSION_COMPLETED', row.id, row.id, row.status, row.attempts, row.error,
+    );
+    await insert({ id: 'legacy-not-found', status: 'FAILED', error: 'not-found', attempts: 4 });
+    await insert({ id: 'permission-denied', status: 'FAILED', error: 'permission-denied', attempts: 5 });
+    await insert({ id: 'invalid-payload', status: 'FAILED', error: 'invalid-argument', attempts: 2 });
+    await insert({ id: 'collision', status: 'FAILED', error: 'already-exists', attempts: 7 });
+    await insert({ id: 'other-type', type: 'GROUP_SESSION_LOCAL_SUMMARY', status: 'FAILED', error: 'not-found', attempts: 1 });
+    await insert({ id: 'already-pending', status: 'PENDING', error: 'not-found', attempts: 6 });
+    await database.execAsync('PRAGMA user_version = 15');
+    await database.closeAsync();
+
+    const reopened = await (await loadDatabaseModule()).getLocalDatabase();
+    expect(await reopened.getFirstAsync(
+      'SELECT event_id, sync_status, attempt_count, payload_json, last_error_code, next_attempt_at, lease_expires_at FROM sync_outbox WHERE event_id = ?',
+      'legacy-not-found',
+    )).toEqual({
+      event_id: 'legacy-not-found', sync_status: 'PENDING', attempt_count: 4,
+      payload_json: '{"kept":true}', last_error_code: null, next_attempt_at: null, lease_expires_at: null,
+    });
+    expect(await reopened.getAllAsync<{ event_id: string; sync_status: string; last_error_code: string | null }>(
+      `SELECT event_id, sync_status, last_error_code FROM sync_outbox
+       WHERE event_id IN ('permission-denied', 'invalid-payload', 'collision', 'other-type', 'already-pending')
+       ORDER BY event_id`,
+    )).toEqual([
+      { event_id: 'already-pending', sync_status: 'PENDING', last_error_code: 'not-found' },
+      { event_id: 'collision', sync_status: 'FAILED', last_error_code: 'already-exists' },
+      { event_id: 'invalid-payload', sync_status: 'FAILED', last_error_code: 'invalid-argument' },
+      { event_id: 'other-type', sync_status: 'FAILED', last_error_code: 'not-found' },
+      { event_id: 'permission-denied', sync_status: 'FAILED', last_error_code: 'permission-denied' },
+    ]);
+    expect(await reopened.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 16 });
+    await reopened.closeAsync();
   });
 
   test('upgrades a version 2 database and preserves existing profile and session data', async () => {
@@ -197,7 +242,7 @@ describe('local database initialization', () => {
       .toEqual({ uid: 'owner-1', display_name: 'Owner' });
     expect(await reopened.getFirstAsync('SELECT id, user_id FROM sessions WHERE id = ?', 'session-1'))
       .toEqual({ id: 'session-1', user_id: 'owner-1' });
-    expect(await reopened.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 15 });
+    expect(await reopened.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 16 });
     expect(await reopened.getFirstAsync("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sync_outbox'"))
       .toEqual({ name: 'sync_outbox' });
     await reopened.closeAsync();
@@ -358,7 +403,7 @@ describe('local database initialization', () => {
     const version = await reopened.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
 
     expect(profile).toEqual({ uid: 'owner-1', display_name: 'Owner' });
-    expect(version?.user_version).toBe(15);
+    expect(version?.user_version).toBe(16);
     await reopened.closeAsync();
   });
 
@@ -410,7 +455,7 @@ describe('local database initialization', () => {
 
     expect(profile).toEqual({ uid: 'owner-1', display_name: 'Owner' });
     expect(sessionsTable?.name).toBe('sessions');
-    expect(version?.user_version).toBe(15);
+    expect(version?.user_version).toBe(16);
     await upgraded.closeAsync();
   });
 
@@ -512,7 +557,7 @@ test('adopts an existing profile table with a missing schema version without del
   const { getLocalDatabase } = await loadDatabaseModule();
   const database = await getLocalDatabase();
   expect(await database.getFirstAsync('SELECT uid, display_name FROM local_profiles')).toEqual({ uid: 'legacy-owner', display_name: 'Legacy Name' });
-  expect(await database.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 15 });
+  expect(await database.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 16 });
 });
 
 test('adopts existing profile and session tables if schema version metadata was reset', async () => {
@@ -524,7 +569,7 @@ test('adopts existing profile and session tables if schema version metadata was 
   const next = await loadDatabaseModule();
   const reopened = await next.getLocalDatabase();
   expect(await reopened.getFirstAsync('SELECT id FROM sessions')).toEqual({ id: 'saved-session' });
-  expect(await reopened.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 15 });
+  expect(await reopened.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 16 });
 });
 
 test('rejects an incompatible existing profile table without marking it migrated or dropping data', async () => {

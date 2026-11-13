@@ -9,6 +9,34 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == uid;
     }
 
+    function validSoloSummary(uid, sessionId, data) {
+      return isOwner(uid)
+        && sessionId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
+        && data.keys().hasAll([
+          'durationSeconds', 'liftCount', 'violationDurationSeconds', 'penaltyScore',
+          'startedAt', 'completedAt', 'payloadHash', 'createdAt'])
+        && data.keys().hasOnly([
+          'durationSeconds', 'liftCount', 'violationDurationSeconds', 'penaltyScore',
+          'startedAt', 'completedAt', 'payloadHash', 'createdAt'])
+        && data.durationSeconds is int && data.durationSeconds >= 0 && data.durationSeconds <= 604800
+        && data.liftCount is int && data.liftCount >= 0 && data.liftCount <= 100000
+        && data.violationDurationSeconds is int
+        && data.violationDurationSeconds >= 0
+        && data.violationDurationSeconds <= data.durationSeconds
+        && data.penaltyScore is int
+        && data.penaltyScore <= 1604800
+        && data.penaltyScore == data.liftCount * 10 + data.violationDurationSeconds
+        && data.startedAt is timestamp
+        && data.completedAt is timestamp
+        && data.completedAt >= data.startedAt
+        && data.completedAt >= data.startedAt + duration.value(data.durationSeconds, 's')
+        && data.completedAt < data.startedAt + duration.value(data.durationSeconds + 1, 's')
+        && data.payloadHash is string
+        && data.payloadHash.matches('^[0-9a-f]{64}$')
+        && data.createdAt is timestamp
+        && data.createdAt == request.time;
+    }
+
     function validProfileDisplayName(value) {
       // RE2 quantifier đếm ký tự Unicode; String.size() có thể đếm đơn vị UTF-16.
       return value is string && value.matches('^[\\s\\S]{1,40}$') && !value.matches('^\\s*$');
@@ -1560,10 +1588,11 @@ service cloud.firestore {
         allow create: if validGroupRoomIndex(uid, roomId, request.resource.data);
         allow update, delete: if false;
       }
-      // Solo summary được ghi bởi syncEvents; owner chỉ đọc history của chính mình.
+      // Solo summaries là personal history tự báo cáo; owner chỉ được tạo, không sửa/xóa.
       match /sessions/{sessionId} {
         allow get, list: if request.auth != null && request.auth.uid == uid;
-        allow create, update, delete: if false;
+        allow create: if validSoloSummary(uid, sessionId, request.resource.data);
+        allow update, delete: if false;
       }
 
       // Server-time probe chỉ trả giờ Rules; nó không thay đổi quota hoặc room state.

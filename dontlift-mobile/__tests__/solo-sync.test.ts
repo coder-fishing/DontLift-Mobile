@@ -24,7 +24,8 @@ function setup(overrides: Record<string, unknown> = {}) {
     markFailed: jest.fn(async () => undefined),
     scheduleRetry: jest.fn(async () => undefined),
     releaseLease: jest.fn(async () => undefined),
-    getStatus: jest.fn(async () => 'pending' as const),
+    requeueFailedForSession: jest.fn(async () => true),
+    getStatus: jest.fn(async () => 'pending' as 'pending' | 'synced' | 'failed' | 'unknown'),
   };
   const sendBatch = jest.fn<
     ReturnType<SyncWorkerTransport['sendBatch']>,
@@ -112,6 +113,31 @@ describe('Solo sync worker', () => {
 
     expect(repository.markSynced).not.toHaveBeenCalled();
     expect(repository.releaseLease).toHaveBeenCalledWith({ userId: 'user-1', eventId: event.eventId });
+    worker.dispose();
+  });
+
+  test('explicitly retries a failed session and claims only that session', async () => {
+    const { repository, sendBatch, worker } = setup();
+    await worker.retrySession(event.sessionId);
+
+    expect(repository.requeueFailedForSession).toHaveBeenCalledWith({ userId: 'user-1', sessionId: event.sessionId });
+    expect(repository.claimBatch).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 'user-1', sessionId: event.sessionId, ignoreBackoff: true,
+    }));
+    expect(sendBatch).toHaveBeenCalledTimes(1);
+    worker.dispose();
+  });
+
+  test('still refreshes status when there is no failed event to requeue', async () => {
+    const { repository, sendBatch, worker } = setup();
+    repository.requeueFailedForSession.mockResolvedValueOnce(false);
+    repository.claimBatch.mockResolvedValueOnce([]);
+    repository.getStatus.mockResolvedValueOnce('synced');
+    await worker.retrySession(event.sessionId);
+
+    expect(repository.requeueFailedForSession).toHaveBeenCalledWith({ userId: 'user-1', sessionId: event.sessionId });
+    expect(repository.getStatus).toHaveBeenCalledWith({ userId: 'user-1', sessionId: event.sessionId });
+    expect(sendBatch).not.toHaveBeenCalled();
     worker.dispose();
   });
 });

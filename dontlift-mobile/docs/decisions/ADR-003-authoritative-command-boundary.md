@@ -18,11 +18,13 @@ Dùng hybrid boundary:
 - Shared-state mutations đi qua callable Cloud Functions.
 - Offline queue chỉ chứa allowlisted facts/events, không chứa state-dependent commands.
 - Commands có `requestId`; events có `eventId`.
-- `syncEvents` là canonical ingestion path; client không direct `setDoc` violation hoặc Solo summary.
+- `syncEvents` là canonical ingestion path cho offline-capable events, ngoại trừ Solo personal-history summaries theo ADR-030. Client không direct-write group violations ngoài ADR-014 hoặc bất kỳ shared/canonical state nào.
 
 **Ngoại lệ có giới hạn:** `createRoom` dùng Firestore client transaction được Security Rules authorize theo [ADR-011](ADR-011-spark-room-creation.md); `joinRoomByPin` theo [ADR-012](ADR-012-spark-room-join.md); `startRoom` theo [ADR-013](ADR-013-spark-room-start.md); early-exit request/decision theo [ADR-015](ADR-015-spark-early-exit.md); room completion/sync acknowledgment theo [ADR-017](ADR-017-spark-room-completion.md); Host score finalization theo [ADR-018](ADR-018-spark-host-finalization-override.md); settlement details theo [ADR-020](ADR-020-spark-settlement-details.md); và default bill-share publication theo [ADR-021](ADR-021-spark-default-bill.md). Mỗi exception chỉ cho phép exact transaction được nêu trong ADR riêng; không mở direct writes cho các command khác.
 
 ADR-014 bổ sung ngoại lệ hẹp cho một confirmed group violation: client transaction được Rules kiểm tra chỉ có thể ghi event bất biến của chính member và tăng đúng các bộ đếm/điểm của member đó trong cùng room. Các outbox event khác vẫn đi qua `syncEvents`; client không được ghi điểm của người khác hoặc aggregate tùy ý.
+
+ADR-030 bổ sung ngoại lệ create-only cho `users/{uid}/sessions/{sessionId}`. Đây là lịch sử cá nhân do chính user tự báo cáo; Rules khóa owner, schema và tính bất biến nhưng không xác minh dữ liệu cảm biến. Không dùng summary này cho leaderboard, rewards, Premium hoặc canonical group data. Các `syncEvents` event khác giữ nguyên contract.
 
 Quyết định này là human-approved override của Feature Spec Section 6.3. Override giữ UUID idempotency nhưng chuyển schema, ownership, lifecycle validation và aggregate update vào một Cloud Function transaction.
 

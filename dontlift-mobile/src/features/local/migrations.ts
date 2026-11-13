@@ -397,6 +397,23 @@ const migrations: LocalMigration[] = [
       }
     },
   },
+  {
+    version: 16,
+    async migrate(database) {
+      const outbox = await database.getFirstAsync<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sync_outbox'",
+      );
+      if (!outbox) return;
+      await database.runAsync(
+        `UPDATE sync_outbox
+         SET sync_status = 'PENDING', last_error_code = NULL,
+             next_attempt_at = NULL, lease_expires_at = NULL
+         WHERE event_type = 'SOLO_SESSION_COMPLETED'
+           AND sync_status = 'FAILED'
+           AND last_error_code = 'not-found'`,
+      );
+    },
+  },
 ];
 
 const latestSchemaVersion = migrations.at(-1)?.version ?? 0;

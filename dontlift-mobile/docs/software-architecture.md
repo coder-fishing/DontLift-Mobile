@@ -117,7 +117,7 @@ Trên Android, lifecycle observer persist candidate tại `ON_STOP`; WorkManager
 | Resource | Read | Write authority |
 |---|---|---|
 | `users/{uid}` | Chính user | User chỉ sửa profile allowlist; Functions sửa entitlement |
-| `users/{uid}/sessions/{sessionId}` | Chính user | `syncEvents` Function |
+| `users/{uid}/sessions/{sessionId}` | Chính user | Owner create-only transaction for personal Solo history per ADR-030; `syncEvents` remains for older clients |
 | `rooms/{roomId}` | Host hoặc Member có membership | Rules-authorized transactions for create/start/early-exit; Functions for other lifecycle mutations |
 | `members/{uid}` | Thành viên room | Rules-authorized exact violation aggregate and early-exit transitions; Functions for other authoritative changes |
 | `violations/{eventId}` | Thành viên room | ADR-014 Spark transaction for group violations; `syncEvents` for other event types |
@@ -155,7 +155,7 @@ Firebase Auth remains the identity authority for email. Per accepted ADR-009, `c
 
 #### `users/{uid}/sessions/{sessionId}`
 
-`sessionId` là UUID do client tạo và đồng thời là idempotency key cho `SOLO_SESSION_COMPLETED`. Document chứa `durationSeconds`, `liftCount`, `violationDurationSeconds`, `penaltyScore`, `startedAt` và `completedAt`. Chỉ owner `uid` được đọc; client không ghi trực tiếp.
+`sessionId` là UUID do client tạo và đồng thời là idempotency key cho `SOLO_SESSION_COMPLETED`. Document chứa `durationSeconds`, `liftCount`, `violationDurationSeconds`, `penaltyScore`, `startedAt`, `completedAt`, `payloadHash` và `createdAt`. Theo ADR-030, client đã đăng nhập được tạo document cá nhân của mình đúng một lần; Rules kiểm tra owner, schema và bất biến. Client không đọc user khác, sửa hoặc xóa summary. Các số liệu là tự báo cáo và không có thẩm quyền đối với shared state.
 
 History query của US-16 đọc collection này theo owner path, sắp xếp `completedAt DESC`, dùng cursor pagination và merge qua repository với SQLite history. Free user chỉ nhận sessions có `completedAt` trong 7 ngày gần nhất; Scheduled Function purge document hết retention. Premium user giữ permanent history. Entitlement dùng tại thời điểm purge là verified server entitlement; local checksum không ngăn server purge.
 
@@ -283,7 +283,7 @@ Mọi side-effecting command nhận `requestId` UUID và `version = 1`; event in
 
 Sequence details: [`design/sequence-flows.mmd`](../design/sequence-flows.mmd).
 
-`syncEvents` là canonical ingestion path cho mọi offline-capable event. Client không dùng direct `setDoc` cho `rooms/{roomId}/violations/{eventId}` hoặc Solo summaries. Đây là human-approved override của Feature Spec Section 6.3: UUID vẫn là document/idempotency key, nhưng Cloud Function phải validate actor, ownership, schema và session window trước khi transaction ghi domain document cùng receipt.
+`syncEvents` là canonical ingestion path cho offline-capable events, ngoại trừ Solo personal-history summaries theo ADR-030 và group violations theo ADR-014. Direct Solo write không thay đổi group violation, lifecycle, scoring, settlement hoặc entitlement boundary. Legacy callable handling cho Solo vẫn được giữ để tương thích với app versions cũ.
 
 ### 8.1 Atomic local capture
 
@@ -300,25 +300,25 @@ Worker chạy sau local commit khi online, network recovery, app startup, auth r
 
 1. Chọn bounded batch các item `PENDING` đã đến `next_attempt_at` và chưa có lease còn hiệu lực.
 2. Trong SQLite transaction, gán `lease_expires_at` nhưng giữ `sync_status = PENDING`.
-3. Gửi `syncEvents`.
+3. Gửi event qua transport tương ứng: Solo summaries dùng Firestore transaction theo ADR-030; các event callable còn lại dùng `syncEvents`.
 4. Áp dụng per-event acknowledgment trong SQLite transaction.
 5. Success thành `SYNCED`.
 6. Transient error giữ `PENDING`, tăng attempt count và đặt exponential backoff với jitter.
 7. Expired lease được worker sau claim lại mà không đổi vocabulary.
 8. Permanent schema, ownership hoặc lifecycle rejection thành `FAILED`; không retry vô hạn.
 
-Ordering được giữ trong cùng aggregate. Các aggregate độc lập có thể sync song song. `SOLO_SESSION_COMPLETED` không vượt qua violation cũ hơn của cùng session.
+Ordering được giữ trong cùng aggregate cho callable events. Solo summary là document cá nhân riêng, được ghi sau local completion và không cập nhật canonical score.
 
 ### 8.4 Backend idempotency
 
-`syncEvents` xác thực actor từ Auth token, validate envelope và event schema, rồi dùng Firestore transaction:
+`syncEvents` xác thực actor từ Auth token, validate envelope và event schema, rồi dùng Firestore transaction cho các clients/event types còn dùng callable:
 
 1. Đọc `syncReceipts/{eventId}`.
 2. Nếu receipt cùng hash đã tồn tại, trả outcome cũ.
 3. Nếu receipt có hash khác, reject collision/tampering.
 4. Nếu chưa tồn tại, ghi domain event, cập nhật aggregate và ghi receipt trong cùng transaction.
 
-Semantics là at-least-once delivery với idempotent effect. Không tuyên bố exactly-once network delivery.
+Solo direct sync dùng document ID và canonical payload hash để idempotently xác nhận replay; hash khác trả permanent conflict và không ghi đè. Các path này có semantics at-least-once delivery với idempotent effect; không tuyên bố exactly-once network delivery.
 
 ### 8.5 Mark và cleanup
 
