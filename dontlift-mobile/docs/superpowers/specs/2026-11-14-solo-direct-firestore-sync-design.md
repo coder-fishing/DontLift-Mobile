@@ -1,6 +1,6 @@
 # Direct Firestore Sync for Solo Session Summaries
 
-**Status:** The user approved this design on 2026-11-14 for personal history data that may be submitted by the signed-in client. Implementation has not started.
+**Status:** The user approved this design on 2026-11-14 for personal history data that may be submitted by the signed-in client. Implementation is in progress.
 
 ## Goal
 
@@ -33,7 +33,7 @@ Solo summaries are personal history only. The account owner may submit their own
 - A client may create a summary only when `request.auth.uid == uid`. Clients may not update or delete summaries.
 - Rules validate the allowed fields, field types, UUID/document ID, numeric ranges, timestamp ordering, and reasonable summary limits. A client cannot write under another UID.
 - `payloadHash` detects duplicates and conflicts; it does not prove data integrity. Since this is personal history, an owner may submit self-reported values for their own account.
-- Before changing Rules or SDK behavior, verify that project `august-monument-508716-u0` uses Firestore Standard for its `(default)` database. If it uses Enterprise, stop and review the edition-specific SDK guidance before proceeding. The Firebase CLI is installed in the repository, but listing databases failed because its refresh token expired and network access to Google was unavailable; the edition remains unverified.
+- Before changing Rules or SDK behavior, verify that project `august-monument-508716-u0` uses Firestore Standard for its `(default)` database. This was confirmed in Firebase Console on 2026-11-14: Edition `Standard`, location `asia-southeast1`. The Firebase CLI database listing had previously failed because its refresh token expired and network access to Google was unavailable.
 
 ## Outbox, Retries, and Recovery
 
@@ -54,7 +54,7 @@ Solo summaries are personal history only. The account owner may submit their own
 
 - The new client does not call a Cloud Function for Solo summaries. Each summary requires a transaction with at least one document read and at most one document write; retries read the same deterministic path.
 - SQLite and the outbox continue to support offline operation. Firestore reads, writes, storage, and bandwidth still count against Firestore quotas; usage beyond no-cost quotas or features requiring billing may incur charges.
-- Do not enable billing, create a database, deploy Rules or Functions, or change cloud resources as part of implementation without a separate request.
+- Do not enable billing, create a database, deploy Functions, or change cloud resources beyond Firestore Rules as part of implementation. The user explicitly requested deployment of the updated Firestore Rules on 2026-11-14; no other cloud changes are authorized by that request.
 
 ## Acceptance Criteria
 

@@ -19,9 +19,13 @@
 - SQLite session, summary, and outbox writes remain atomic and local-first. Firestore cache does not replace the outbox.
 - Keep `users/{uid}/sessions/{sessionId}` and the fields required by Solo History.
 - The direct client may create its own summary, but may not read another owner’s data or update/delete a created summary.
-- Do not enable billing, create a database, deploy Firestore Rules or Functions, or change cloud resources as part of this plan.
+- Do not enable billing, create a database, deploy Functions, or change cloud resources beyond Firestore Rules. Rules deployment is authorized only by the later user update below.
 - Verify the target `(default)` Firestore database is Standard before changing SDK behavior or Rules. If it is Enterprise, stop and revise this plan before implementation.
 - Keep the `syncEvents` callable deployed for older app versions during the client rollout. Do not change group commands, settlement, Premium, or other event types.
+
+### User authorization update — 2026-11-14
+
+After confirming Firestore Standard in Firebase Console, the user explicitly requested deployment of the updated Firestore Rules and use of direct Firestore sync. This later instruction supersedes the no-Rules-deployment bullet above for this Rules change only. Do not deploy Functions, enable billing, create databases, or make other cloud resource changes. Local Firestore Emulator validation remains a separate check and requires Java; Java is not required to run Expo Go or deploy Rules.
 - Add no new runtime dependency.
 
 ---

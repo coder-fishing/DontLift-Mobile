@@ -192,6 +192,16 @@ After join succeeds, the client creates `users/{uid}/groupRooms/{roomId}` with o
 
 ## 5. `syncEvents`
 
+### 5.0 Solo summary — direct Firestore transaction (ADR-030)
+
+New app versions keep the summary and outbox event in one local SQLite transaction, then send the event through the authenticated Firestore client to `users/{uid}/sessions/{sessionId}`. The configured worker UID must match the current Firebase Auth UID. A transaction reads the deterministic path and creates the document when absent. A matching canonical SHA-256 `payloadHash` is idempotent success; a different hash returns permanent `already-exists` and leaves the document unchanged.
+
+The document contains exactly `durationSeconds`, `liftCount`, `violationDurationSeconds`, `penaltyScore`, `startedAt`, `completedAt`, `payloadHash`, and `createdAt`. The first two time values are Firestore Timestamps; `createdAt` uses a server timestamp. Rules allow owner reads and creates only, validate the shape and summary arithmetic, and deny update/delete. Connectivity and transaction abort errors remain retryable in the local outbox; permanent Rule or conflict errors remain `FAILED` until corrected or explicitly retried.
+
+The `syncEvents` `SOLO_SESSION_COMPLETED` handling remains for compatibility with older app versions during rollout. Other event types retain the callable contract below.
+
+### 5.1 Legacy callable request schema
+
 **Request schema**
 
 | Field | Type | Required | Rule |
@@ -215,7 +225,7 @@ After join succeeds, the client creates `users/{uid}/groupRooms/{roomId}` with o
 
 **Transaction outputs per new event:** validate actor/ownership/session window; read receipt; write destination domain document; update aggregate where applicable; write `users/{uid}/syncReceipts/{eventId}` in one transaction. A matching receipt returns its previous outcome without another domain effect.
 
-### 5.1 Group violation — Firestore transaction on Spark
+### 5.2 Group violation — Firestore transaction on Spark
 
 This boundary is for a single confirmed group violation and does not call `syncEvents` or a Cloud Function. Local capture first commits `violation_logs` and a `sync_outbox` row in one SQLite transaction. The row stays `PENDING` while offline.
 
@@ -230,7 +240,7 @@ The event document is the idempotency receipt. A retry with the same ID and iden
 
 Members of the room may read its violation documents. The leaderboard reads room member documents and sorts by ascending `penaltyScore`, then ascending UID for a stable tie. Outsiders and cross-room users remain denied. Firestore listeners provide updates after the transaction commits.
 
-### 5.2 SL-028: GROUP_SESSION_LOCAL_SUMMARY on Spark (ADR-024)
+### 5.3 SL-028: GROUP_SESSION_LOCAL_SUMMARY on Spark (ADR-024)
 
 Human approved D4 and the Spark exception on 2026-10-22. This event uses a dedicated Firestore client transaction instead of the syncEvents callable. Owner destination: users/{actorUid}/groupHistory/{roomId}. The command is a personal history projection, never canonical room completion or score authority.
 

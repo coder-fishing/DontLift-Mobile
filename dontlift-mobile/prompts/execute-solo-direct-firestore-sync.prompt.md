@@ -45,10 +45,14 @@ The local Firebase CLI previously failed database listing because its refresh to
 5. Requeue legacy Solo `FAILED/not-found` records with the planned local database migration. The Summary Retry action must requeue a failed event before kicking the worker.
 6. Keep the legacy `syncEvents` callable available for older app versions. The new Solo worker must use direct Firestore and must not call it.
 7. Keep Solo summaries out of leaderboards, rewards, Premium decisions, and canonical group data.
-8. Do not enable billing, create databases, deploy Firestore Rules or Functions, or modify cloud resources. Prepare and verify local Rules only; deployment requires a separate user request.
+8. Do not enable billing, create databases, deploy Functions, or modify cloud resources beyond Firestore Rules. Rules deployment is authorized only by the later user authorization recorded below.
 9. Work inline on the current non-main branch. Do not create a branch/worktree or spawn subagents unless the user asks.
 10. Commit each completed plan task with the plan slug and required `Plan:` and `Task:` trailers. Include this prompt in a prompt-only commit without a `Task:` trailer.
 11. If a task hits the edition gate, a test/toolchain blocker, or an ambiguity that changes security/data behavior, stop before guessing and report the exact blocker and required user action.
+
+## Later user authorization
+
+On 2026-11-14, after confirming the `(default)` database is Firestore Standard in `asia-southeast1`, the user explicitly requested: deploy the Firestore Rules and use Firestore for this sync. This supersedes item 8 only for deployment of the updated Firestore Rules. Do not deploy Functions, enable billing, create databases, or change any other cloud resources. Java is needed only for the local Emulator Suite, not for Expo Go or Rules deployment; do not block Expo Go work on installing Java.
 
 ## Completion report
 
