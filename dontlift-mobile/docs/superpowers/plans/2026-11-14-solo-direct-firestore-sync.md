@@ -359,4 +359,3 @@ git commit -m "[2026-11-14-solo-direct-firestore-sync] Document direct Solo sync
 - Placeholder scan: no TBD/TODO or unspecified validation/test step remains. The Firestore edition check is an explicit stop gate in Task 1.
 - Interface consistency: `createFirestoreSoloSyncPort` returns the existing `SyncWorkerTransport`; `retryFailedForSession` is consumed by worker `retrySession`; `retrySession(sessionId)` is consumed by the app callback.
 - Scope check: the plan changes only Solo personal-summary sync and its documentation. Group, settlement, and entitlement transports are unchanged.
-
