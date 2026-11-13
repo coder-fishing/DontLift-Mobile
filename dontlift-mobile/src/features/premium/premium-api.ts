@@ -43,6 +43,12 @@ export type PremiumOrder = {
   status: "CREATING" | "PENDING" | "PAID" | "CANCELLED" | "EXPIRED";
   checkoutUrl: string | null;
   qrCode?: string | null;
+  bankTransfer?: {
+    bankBin: string;
+    accountNumber: string;
+    accountName: string;
+    memo: string;
+  } | null;
   premiumExpiresAtUtcMs: number | null;
 };
 
@@ -50,6 +56,7 @@ function checkedOrder(value: unknown): PremiumOrder {
   if (!value || typeof value !== "object")
     throw new Error("Payment status is unavailable. Please retry.");
   const row = value as Partial<PremiumOrder>;
+  const bankTransfer = row.bankTransfer;
   if (
     row.version !== 1 ||
     typeof row.requestId !== "string" ||
@@ -70,6 +77,13 @@ function checkedOrder(value: unknown): PremiumOrder {
         row.qrCode.length > 0 &&
         row.qrCode.length <= 2048)
     ) ||
+    !(bankTransfer == null || (
+      typeof bankTransfer === 'object' &&
+      /^\d{6}$/.test(bankTransfer.bankBin) &&
+      /^[A-Za-z0-9]{1,19}$/.test(bankTransfer.accountNumber) &&
+      typeof bankTransfer.accountName === 'string' && bankTransfer.accountName.trim().length > 0 &&
+      /^[\x20-\x7E]{1,50}$/.test(bankTransfer.memo)
+    )) ||
     !(
       row.premiumExpiresAtUtcMs === null ||
       Number.isSafeInteger(row.premiumExpiresAtUtcMs)
@@ -77,7 +91,7 @@ function checkedOrder(value: unknown): PremiumOrder {
   ) {
     throw new Error("Payment status is unavailable. Please retry.");
   }
-  return { ...row, qrCode: row.qrCode ?? null } as PremiumOrder;
+  return { ...row, qrCode: row.qrCode ?? null, bankTransfer: bankTransfer ?? null } as PremiumOrder;
 }
 
 export function createPremiumApi(

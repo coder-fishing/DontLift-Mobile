@@ -549,9 +549,11 @@ export function BillAllocationScreen({
             <Pressable accessibilityRole="button" accessibilityLabel="View VietQR for your published share"
               disabled={!isOnline || state.kind !== 'published' || hasPendingOverride || isApplyingOverride}
               accessibilityState={{ disabled: !isOnline || state.kind !== 'published' || hasPendingOverride || isApplyingOverride }}
-              onPress={onPayShare} style={({ pressed }) => [styles.publishButton, pressed && styles.pressed,
+              onPress={onPayShare} style={({ pressed }) => [styles.publishButton,
+                { backgroundColor: colors.backgroundSelected, borderColor: colors.primary, borderWidth: 1 },
+                pressed && styles.pressed,
                 (!isOnline || state.kind !== 'published' || hasPendingOverride || isApplyingOverride) && styles.disabled]}>
-              <Text style={[styles.publishText, { color: colors.onPrimary }]}>{confirmedBill.shares.find(share => share.uid === actorUid)?.paymentStatus === 'MARKED_AS_PAID'
+              <Text style={[styles.publishText, { color: colors.primary }]}>{confirmedBill.shares.find(share => share.uid === actorUid)?.paymentStatus === 'MARKED_AS_PAID'
                 ? 'View payment confirmation' : 'Pay your share'}</Text>
             </Pressable>
           ) : null}

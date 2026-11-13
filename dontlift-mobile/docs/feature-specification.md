@@ -140,6 +140,7 @@
      `https://img.vietqr.io/image/<BANK_BIN>-<ACCOUNT_NO>-qr_only.svg?amount=<SHARE_VND>&addInfo=<ENCODED_MEMO>&accountName=<ENCODED_ACCOUNT_NAME>`
    - Follow API §6.5 for provider limits, memo normalization, expiry, zero-share handling, and invalidation on bill/account updates. Account name is Host-provided display text, not a verified bank-account lookup. No new Firestore write or paid backend is needed.
    - Member scans QR using banking app to complete payment.
+   - On Android/iOS, the Member may instead choose a supported app from VietQR's platform-specific directory. Open its VietQR deep link with the current bank code, account number, amount, recipient name, and memo. Prefill support depends on the app; QR stays available when the directory or launch is unavailable. Returning to DontLift does not confirm payment.
 6. **Payment Status Tracking (`US-15`):** Payment state defaults to `UNPAID`. Host manually toggles member state to `MARKED_AS_PAID` upon receiving bank notification. DontLift does NOT execute custodial transfers or bank API polling.
 
 ### 4.4 Monetization & Activation Code (`US-19`, `FR-06`)
