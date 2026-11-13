@@ -1978,7 +1978,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
             summary={soloSummary}
             syncStatus={soloSyncState?.sessionId === soloSummary.sessionId ? soloSyncState.status : 'pending'}
             onRetrySync={() => {
-              void soloSyncWorker.current?.kick({ ignoreBackoff: true, sessionId: soloSummary.sessionId });
+              void soloSyncWorker.current?.retrySession(soloSummary.sessionId);
             }}
             onNewFocus={() => {
               setSoloSummaryPendingView(false);

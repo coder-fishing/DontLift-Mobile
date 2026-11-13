@@ -19,7 +19,7 @@ import {
 } from '../foreground-detection-controller';
 import { createOutboxSyncRepository } from '../../sync/outbox-repository';
 import { createSoloSyncWorker } from '../../sync/sync-worker';
-import { createSyncEventsPort } from '../../sync/sync-events-port';
+import { createFirestoreSoloSyncPort } from '../../sync/firestore-solo-sync-port';
 import { getConfiguredFirebaseRuntime } from '../../auth/firebase-adapters';
 import { getLocalDatabase } from '../../local/database';
 
@@ -110,7 +110,11 @@ export function useSoloSessionRuntime({
           userId,
           getCurrentUserId: () => runtime.auth.currentUser?.uid ?? null,
           repository: createOutboxSyncRepository(database),
-          transport: createSyncEventsPort(runtime.functions),
+          transport: createFirestoreSoloSyncPort({
+            firestore: runtime.firestore,
+            auth: runtime.auth,
+            userId,
+          }),
           onStatusChange: (sessionId, status) => {
             if (!disposed) setSoloSyncState({ sessionId, status });
           },
