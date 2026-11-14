@@ -6,13 +6,13 @@
 
 ## Kết quả
 
-Còn một vấn đề Medium ở nội dung giải thích quyền camera trên iOS. Các phần scan API, kiểm tra entitlement/Host, xác nhận gợi ý hóa đơn và nhập thủ công trong source đã review phù hợp với plan.
+RC-001 đã được xử lý. Nội dung quyền camera trong cả hai Expo plugin giờ giữ mục đích quét QR và chụp hóa đơn; các phần scan API, kiểm tra entitlement/Host, xác nhận gợi ý hóa đơn và nhập thủ công cũng phù hợp với plan.
 
 ## Vấn đề
 
 ### RC-001 — Giữ mục đích quét QR trong thông báo quyền camera iOS
 
-- **Status:** OPEN
+- **Status:** RESOLVED
 - **Severity:** Medium
 - **Category:** Cấu hình / trải nghiệm quyền truy cập
 - **Location:** `app.json` → `expo.plugins[2]` (`expo-image-picker`).cameraPermission
@@ -21,7 +21,7 @@ Còn một vấn đề Medium ở nội dung giải thích quyền camera trên 
 - **Created At:** 2026-11-14
 - **Updated By:** Codex
 - **Updated At:** 2026-11-14
-- **Response:** Plan yêu cầu cập nhật nội dung quyền nhưng giữ mục đích quét QR hiện có. Source plugin Expo xác nhận image-picker ghi `NSCameraUsageDescription`, còn `app.json` đặt plugin này sau expo-camera với nội dung chỉ nói chụp hóa đơn. Source được giữ nguyên trong review mode.
+- **Response:** Đã cập nhật `expo-image-picker.cameraPermission` dùng cùng nội dung kết hợp với `expo-camera.cameraPermission`, giữ cả quét QR vào phòng và chụp hóa đơn. `pnpm exec expo config --type public` thành công và hiển thị cùng nội dung ở cả hai plugin.
 
 ## Giới hạn xác minh
 
@@ -34,5 +34,5 @@ Còn một vấn đề Medium ở nội dung giải thích quyền camera trên 
 
 - Xác nhận đây là review report duy nhất cho plan slug đã duyệt.
 - Đối chiếu lại source Expo plugin và các chuỗi quyền được nêu trong RC-001.
-- Giữ implementation ở chế độ chỉ đọc; chỉ thêm review report này.
+- RC-001 đã được xử lý trong feedback mode; source và report cùng phản ánh nội dung quyền kết hợp.
 - Ghi rõ giới hạn backend test, TypeScript và xác minh thiết bị, không nhận là các bước đó đã đạt.
