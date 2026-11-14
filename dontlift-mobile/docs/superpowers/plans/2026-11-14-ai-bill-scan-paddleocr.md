@@ -36,16 +36,16 @@
 - Express calls the configured PaddleOCR `/scan` endpoint using multipart field `image` and the server-only `X-API-Key` header.
 - The Express response includes version `1` and the scan service's `status`, `amount`, `suggested_amount`, `currency`, `needs_confirmation`, `evidence`, `warnings`, and `timings_ms` fields.
 
-- [ ] Write failing tests for authentication, entitlement, Host authority, image validation, and the OCR proxy.
-- [ ] Run the focused test and confirm it fails before implementation.
-- [ ] Add backend configuration for the deployed PaddleOCR scan URL, API key, and a 60-second provider timeout. If scan configuration is absent, leave the rest of the Premium API available and return a sanitized scan-unavailable error.
-- [ ] Use the existing Firebase authentication middleware to identify the caller. Read the user's Firestore profile and allow the request only when `premiumExpiresAt` is later than server time.
-- [ ] Read the requested room and caller's membership. Continue only when the caller is the room's current Host, has an active Host membership, and the room is completed with reconciliation finalized.
-- [ ] Reject an empty body, unsupported MIME type, or image larger than 10 MB before contacting PaddleOCR.
-- [ ] Forward valid image bytes to the existing service. Do not retry automatically. Do not log the image, API key, or raw OCR response.
-- [ ] Return sanitized errors: `unauthenticated` (401), `premium-required` or `host-required` (403), invalid image errors (4xx), `ocr-unavailable` (503), or `ocr-timeout` (504).
-- [ ] Run `npm test` from `D:\premium-api`; confirm the new and existing tests pass.
-- [ ] Commit: `[2026-11-14-ai-bill-scan-paddleocr] add authenticated receipt scan proxy`
+- [x] Write failing tests for authentication, entitlement, Host authority, image validation, and the OCR proxy.
+- [x] Run the focused test and confirm it fails before implementation.
+- [x] Add backend configuration for the deployed PaddleOCR scan URL, API key, and a 60-second provider timeout. If scan configuration is absent, leave the rest of the Premium API available and return a sanitized scan-unavailable error.
+- [x] Use the existing Firebase authentication middleware to identify the caller. Read the user's Firestore profile and allow the request only when `premiumExpiresAt` is later than server time.
+- [x] Read the requested room and caller's membership. Continue only when the caller is the room's current Host, has an active Host membership, and the room is completed with reconciliation finalized.
+- [x] Reject an empty body, unsupported MIME type, or image larger than 10 MB before contacting PaddleOCR.
+- [x] Forward valid image bytes to the existing service. Do not retry automatically. Do not log the image, API key, or raw OCR response.
+- [x] Return sanitized errors: `unauthenticated` (401), `premium-required` or `host-required` (403), invalid image errors (4xx), `ocr-unavailable` (503), or `ocr-timeout` (504).
+- [x] Run `npm test` from `D:\premium-api`; 37 tests pass, one existing calendar test fails because its expected catalog differs from the unchanged current Premium catalog, and one integration test is skipped. All 18 receipt-scan tests pass.
+- [x] Commit: `[2026-11-14-ai-bill-scan-paddleocr] add authenticated receipt scan proxy`
 
 **Test cases:**
 
@@ -69,13 +69,13 @@
 - Add a receipt-scan client that accepts the current room ID, local image URI, and MIME type, then returns the validated scan result.
 - Reuse `EXPO_PUBLIC_PREMIUM_API_URL`, Firebase Bearer authentication, and the existing `expo-file-system/legacy` upload pattern.
 
-- [ ] Write failing tests for authentication, supported MIME types, valid response variants, and API errors.
-- [ ] Run the focused test and confirm it fails before implementation.
-- [ ] Upload raw image bytes to the Premium API. Reject unsupported MIME types before network access.
-- [ ] Validate the version, currency, status, nullable amount fields, confirmation flag, evidence, and warnings. Treat `amount` and `suggested_amount` as suggestions, never as confirmed values.
-- [ ] If the user changes accounts during upload, discard the result. Do not retry automatically.
-- [ ] Run the new test and `pnpm exec tsc --noEmit` from `D:\DontLift-Mobile\dontlift-mobile`.
-- [ ] Commit: `[2026-11-14-ai-bill-scan-paddleocr] add receipt scan mobile client`
+- [x] Write failing tests for authentication, supported MIME types, valid response variants, and API errors.
+- [x] Run the focused test and confirm it fails before implementation.
+- [x] Upload raw image bytes to the Premium API. Reject unsupported MIME types before network access.
+- [x] Validate the version, currency, status, nullable amount fields, confirmation flag, evidence, and warnings. Treat `amount` and `suggested_amount` as suggestions, never as confirmed values.
+- [x] If the user changes accounts during upload, discard the result. Do not retry automatically.
+- [x] Run the new test (9 passing). `pnpm exec tsc --noEmit` was run; it remains non-zero due to existing errors in unrelated screens/hooks and test typings, with no diagnostics in the new API client.
+- [x] Commit: `[2026-11-14-ai-bill-scan-paddleocr] add receipt scan mobile client`
 
 **Test cases:**
 
@@ -98,16 +98,16 @@
 - Use the existing `expo-image-picker` dependency to offer camera capture and photo-library selection.
 - Add or update Expo permission copy for taking receipt photos and selecting photos, while preserving the existing room QR scanning purpose.
 
-- [ ] Write failing UI tests for Host/Premium visibility, picker cancellation, loading, result confirmation, and errors.
-- [ ] Run the focused test and confirm it fails before implementation.
-- [ ] Connect the mobile scan client to the bill screen. Members do not see the scan action; non-Premium Hosts see a route to the existing Premium screen.
-- [ ] Show a busy state during scan and prevent duplicate requests. Cancelling the camera or photo picker makes no request.
-- [ ] Display the suggested VND amount with its evidence label and any warnings. Do not display a rule score as a probability.
-- [ ] If the Host confirms a valid suggestion of at least 1,000 VND, fill the existing bill input. If the Host rejects it, the scan fails, or no suggestion exists, preserve the current input and keep manual entry available.
-- [ ] Keep the existing bill preview and Publish action as the only path to publishing.
-- [ ] If the selected image is HEIC or another unsupported format, show an actionable format message and do not upload it.
-- [ ] Run the screen test, scan API test, and `pnpm exec tsc --noEmit` from `D:\DontLift-Mobile\dontlift-mobile`.
-- [ ] Commit: `[2026-11-14-ai-bill-scan-paddleocr] connect receipt review flow`
+- [x] Write failing UI tests for Host/Premium visibility, picker cancellation, loading, result confirmation, and errors.
+- [x] Run the focused test and confirm it fails before implementation.
+- [x] Connect the mobile scan client to the bill screen. Members do not see the scan action; non-Premium Hosts see a route to the existing Premium screen.
+- [x] Show a busy state during scan and prevent duplicate requests. Cancelling the camera or photo picker makes no request.
+- [x] Display the suggested VND amount with its evidence label and any warnings. Do not display a rule score as a probability.
+- [x] If the Host confirms a valid suggestion of at least 1,000 VND, fill the existing bill input. If the Host rejects it, the scan fails, or no suggestion exists, preserve the current input and keep manual entry available.
+- [x] Keep the existing bill preview and Publish action as the only path to publishing.
+- [x] If the selected image is HEIC or another unsupported format, show an actionable format message and do not upload it.
+- [x] Run the screen and scan API tests (26 passing). `pnpm exec tsc --noEmit` was run; it remains non-zero due to existing unrelated TypeScript errors, with no diagnostics in the receipt-scan screen/client files.
+- [x] Commit: `[2026-11-14-ai-bill-scan-paddleocr] connect receipt review flow`
 
 **Test cases:**
 
@@ -125,12 +125,12 @@
 - Modify: `D:\DontLift-Mobile\dontlift-mobile\docs\api-contracts.md`, `docs\product-requirements.md`, `docs\feature-specification.md`
 - Modify: `D:\premium-api\README.md`
 
-- [ ] Document the mobile-to-Express request and response, the Express-to-PaddleOCR forwarding contract, entitlement and Host checks, image limits, timeout, and error behavior.
-- [ ] Update product scope to explicitly allow receipt OCR for Host bill entry, while keeping camera-based detection, AI coaching, and AI-generated penalties excluded.
-- [ ] Document the required backend configuration names and state that the PaddleOCR API key is server-only. Do not record secret values.
-- [ ] Run `npm test` from `D:\premium-api`; run the focused mobile tests and `pnpm exec tsc --noEmit` from `D:\DontLift-Mobile\dontlift-mobile`.
-- [ ] Verify on Android and iOS: capture, library selection, unsupported format, unclear/no total, expired Premium, busy OCR service, and confirm/reject behavior.
-- [ ] Commit documentation in the relevant repository with subject `[2026-11-14-ai-bill-scan-paddleocr] document receipt scan contract`.
+- [x] Document the mobile-to-Express request and response, the Express-to-PaddleOCR forwarding contract, entitlement and Host checks, image limits, timeout, and error behavior.
+- [x] Update product scope to explicitly allow receipt OCR for Host bill entry, while keeping camera-based detection, AI coaching, and AI-generated penalties excluded.
+- [x] Document the required backend configuration names and state that the PaddleOCR API key is server-only. Do not record secret values.
+- [x] Run `npm test` from `D:\premium-api`; run the focused mobile tests and `pnpm exec tsc --noEmit` from `D:\DontLift-Mobile\dontlift-mobile`. Results and the unrelated failures are recorded in Tasks 1–3 above.
+- [ ] Verify on Android and iOS: capture, library selection, unsupported format, unclear/no total, expired Premium, busy OCR service, and confirm/reject behavior. No Android/iOS device is attached to this environment; device verification remains outstanding.
+- [x] Commit documentation in the relevant repository with subject `[2026-11-14-ai-bill-scan-paddleocr] document receipt scan contract`.
 
 ## Assumptions
 

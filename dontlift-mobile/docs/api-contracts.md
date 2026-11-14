@@ -18,6 +18,16 @@ Package catalog values are defined by [ADR-029](decisions/ADR-029-premium-pricin
 
 Backend needs payOS client ID/API key/checksum key, Firebase Admin identity and public HTTPS origin. Mobile receives only EXPO_PUBLIC_PREMIUM_API_URL. Provider errors are sanitized in version/code errors; no credentials in responses. Live hosting/configuration requires user credentials; this does not enable Firebase billing.
 
+### Receipt scan proxy (SL-034)
+
+`POST /v1/bills/scan?roomId=<roomId>` uploads raw JPEG, PNG, or WEBP bytes to the Express Premium API. The request includes `Authorization: Bearer <Firebase ID token>` and the matching `Content-Type`; the app must not send JSON or multipart data. Maximum image size is 10 MiB. The app calls only the configured `EXPO_PUBLIC_PREMIUM_API_URL`; it never receives or sends the PaddleOCR API key.
+
+Express derives the UID from the verified token and permits the scan only when `users/{uid}.premiumExpiresAt` is later than server time, the caller is the room's current Host with an ACTIVE HOST membership, and the room is `COMPLETED` with reconciliation `FINALIZED`. Missing PaddleOCR configuration returns a sanitized unavailable error while other Premium API routes remain available. Express forwards the image as multipart field `image` to the configured HTTPS `/scan` endpoint with server-only `X-API-Key`, and applies a 60-second provider timeout without automatic retry.
+
+Success is version 1 and contains `status` (`suggested` or `needs_review`), nullable integer `amount` and `suggested_amount`, `currency: "VND"`, `needs_confirmation: true`, nullable `evidence`, string-array `warnings`, and non-negative `timings_ms`. Both amount fields are suggestions. The UI leaves the bill input unchanged until the Host explicitly applies a suggestion of at least 1,000 VND; bill preview and publish remain separate actions. Receipt bytes and raw OCR output are not written to Firestore, SQLite, or logs.
+
+Errors use `{version: 1, code}`: `unauthenticated` (401), `premium-required` or `host-required` (403), `invalid-image` (415), `image-too-large` (413), `invalid-argument` (400), `failed-precondition` (409), `ocr-unavailable` (503), `ocr-timeout` (504), or `ocr-invalid-response` (502). The mobile client presents a manual-entry fallback and does not retry automatically.
+
 
 
 > Runtime update 2026-10-18: [ADR-010](decisions/ADR-010-expo-go-firebase-js.md) replaces native Firebase with Firebase JS SDK / Expo Go and replaces callable registration bootstrap with create-only Firestore Rules. Other planned authoritative commands below remain future work.
