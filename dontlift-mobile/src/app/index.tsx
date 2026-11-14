@@ -47,6 +47,7 @@ import { VietQRSettlementScreen } from '../screens/VietQRSettlementScreen';
 import { SettlementDetailsScreen } from '../screens/SettlementDetailsScreen';
 import { PremiumScreen } from '../screens/PremiumScreen';
 import { createPremiumApi } from '../features/premium/premium-api';
+import { premiumIsActive } from '../features/premium/premium-entitlement';
 import { HardwareDiagnosticsScreen } from '../screens/HardwareDiagnosticsScreen';
 import { useAuthSession } from '../features/auth/auth-session';
 import { useSensorAvailability } from '../features/sensors/use-sensor-availability';
@@ -70,6 +71,7 @@ import { shouldNavigateToGroupSummary } from '../features/rooms/group-terminal-n
 import { createSettlementDetailsRepository, type SettlementDetailsState } from '../features/settlement/settlement-details-repository';
 import { createBankDirectoryRepository } from '../features/settlement/bank-directory';
 import { createBankAppDirectoryRepository } from '../features/bank-transfer/bank-app-directory';
+import { createReceiptScanApi } from '../features/settlement/receipt-scan-api';
 import { createProfileRepository } from '../features/profile/profile-repository';
 import { createBillRepository, BillRepositoryError, type ApplyBillOverridesCommand, type CalculateBillCommand, type PublishedBill } from '../features/settlement/bill-repository';
 import type { BillShareOverride } from '../features/settlement/bill-allocation';
@@ -203,6 +205,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   }), [roomRuntime]);
   const acceptCanonicalProfile = session.acceptCanonicalProfile;
   const premiumApi = useMemo(() => createPremiumApi(roomRuntime.auth), [roomRuntime.auth]);
+  const receiptScanApi = useMemo(() => createReceiptScanApi(roomRuntime.auth), [roomRuntime.auth]);
   const profileProjectionSync = useRef<{ uid: string; uri?: string; premiumExpiresAtUtcMs?: number | null; initialized: boolean }>(
     { uid: profile.uid, uri: profile.avatarUri ?? undefined, premiumExpiresAtUtcMs: profile.premiumExpiresAtUtcMs, initialized: false },
   );
@@ -1877,6 +1880,9 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
             <BillAllocationScreen
               roomId={groupSummarySnapshot.roomId}
               mode={groupSummarySnapshot.members.find(member => member.uid === profile.uid)?.role === 'HOST' ? 'host' : 'member'}
+              isPremium={premiumIsActive(profile.premiumExpiresAtUtcMs)}
+              onOpenPremium={() => navigateToScreen('09-activation')}
+              onScanReceipt={(roomId, uri, mimeType) => receiptScanApi.scan(roomId, uri, mimeType)}
               members={groupSummarySnapshot.members
                 .filter(member => member.status === 'ACTIVE' || member.status === 'EARLY_EXIT')
                 .map(member => ({ uid: member.uid, displayName: member.displayName, penaltyScore: member.penaltyScore,

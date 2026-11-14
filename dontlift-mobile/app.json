@@ -25,10 +25,18 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "DontLift cần quyền camera để quét mã mời vào phòng.",
+          "cameraPermission": "DontLift cần quyền camera để quét mã mời vào phòng hoặc chụp hóa đơn.",
           "microphonePermission": false,
           "recordAudioAndroid": false,
           "barcodeScannerEnabled": true
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "DontLift cần quyền camera để chụp hóa đơn.",
+          "photosPermission": "DontLift cần quyền truy cập ảnh để chọn hóa đơn cần quét.",
+          "microphonePermission": false
         }
       ],
       [

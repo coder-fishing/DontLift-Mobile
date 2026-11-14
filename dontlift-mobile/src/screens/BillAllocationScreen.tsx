@@ -2,12 +2,14 @@ import React, { useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, FlatList, Keyboard, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, useColorScheme, View,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { GlassCard } from '../components/GlassCard';
 import { PremiumAvatar } from '../components/PremiumAvatar';
 import { BottomTabInset, Colors } from '../constants/theme';
 import { formatVND } from '../constants';
 import { calculateBillSharesWithOverrides, calculateDefaultBillShares, type BillShareOverride } from '../features/settlement/bill-allocation';
 import { AiBillScanCard } from '../features/settlement/components/AiBillScanCard';
+import type { ReceiptScanResult } from '../features/settlement/receipt-scan-api';
 import type { BillShare } from '../features/settlement/bill-repository';
 import type { PublishedBillState } from '../features/settlement/published-bill-listener';
 
@@ -30,6 +32,9 @@ type Props = {
   onRetryPayment?: () => void;
   roomId: string;
   mode: 'host' | 'member';
+  isPremium?: boolean;
+  onOpenPremium?: () => void;
+  onScanReceipt?: (roomId: string, uri: string, mimeType: string) => Promise<ReceiptScanResult>;
   members: readonly BillAllocationMember[];
   state: PublishedBillState;
   isOnline: boolean;
@@ -116,6 +121,7 @@ export function BillAllocationScreen({
   isApplyingOverride = false, hasPendingOverride = false, publishError, overrideError,
   onPublish, onApplyOverrides = () => undefined, onRetry, onRetryPublish, onRetryOverride = () => undefined, onBack,
   pendingPaymentMemberUid, isMarkingPayment = false, paymentError, onMarkPaid, onRetryPayment,
+  isPremium = true, onOpenPremium = () => undefined, onScanReceipt,
 }: Props) {
   const colors = useColorScheme() === 'dark' ? Colors.dark : Colors.light;
   const [billInput, setBillInput] = useState('');
@@ -124,6 +130,10 @@ export function BillAllocationScreen({
     (pendingShareOverrides ?? []).filter(item => item.type === 'PERCENT_BPS').map(item => [item.uid, (item.value / 100).toFixed(2).replace(/\.00$/, '')]),
   ));
   const [submitted, setSubmitted] = useState(false);
+  const [isScanningReceipt, setIsScanningReceipt] = useState(false);
+  const [receiptScanResult, setReceiptScanResult] = useState<ReceiptScanResult | null>(null);
+  const [receiptScanError, setReceiptScanError] = useState<string>();
+  const receiptScanBusy = useRef(false);
   const [overrideEditingRequested, setIsEditingOverrides] = useState(false);
   const [overrideDrafts, setOverrideDrafts] = useState<Record<string, { type: BillShareOverride['type']; value: string }>>({});
   const billListRef = useRef<FlatList<BillShare>>(null);
@@ -230,6 +240,59 @@ export function BillAllocationScreen({
       `Mark ${shareLabel(membersByUid.get(share.uid))} as paid for ${formatVND(share.shareVnd)} VND? Check your bank account first. This cannot be undone, and the bill split will be locked.`,
       [{ text: 'Cancel', style: 'cancel' }, { text: 'I received the payment',
         onPress: () => onMarkPaid(share.uid, publication, revision) }]);
+  };
+
+  const scanReceiptAsset = async (asset: ImagePicker.ImagePickerAsset | undefined) => {
+    if (!asset || receiptScanBusy.current) return;
+    const extension = asset.fileName?.split('.').pop()?.toLowerCase();
+    const mimeType = asset.mimeType ?? (extension === 'png' ? 'image/png' : extension === 'webp' ? 'image/webp'
+      : extension === 'jpg' || extension === 'jpeg' ? 'image/jpeg' : undefined);
+    if (!mimeType || !['image/jpeg', 'image/png', 'image/webp'].includes(mimeType)) {
+      setReceiptScanError('This photo format is not supported. Choose a JPEG, PNG, or WebP image.');
+      return;
+    }
+    if (asset.fileSize != null && asset.fileSize > 10 * 1024 * 1024) {
+      setReceiptScanError('Choose an image smaller than 10 MB.');
+      return;
+    }
+    receiptScanBusy.current = true;
+    setIsScanningReceipt(true);
+    setReceiptScanError(undefined);
+    setReceiptScanResult(null);
+    try {
+      if (!onScanReceipt) throw new Error('Receipt scanning is not available. Enter the amount manually.');
+      setReceiptScanResult(await onScanReceipt(roomId, asset.uri, mimeType));
+    } catch (error) {
+      setReceiptScanError(error instanceof Error ? error.message : 'Could not scan this receipt. Enter the amount manually.');
+    } finally {
+      receiptScanBusy.current = false;
+      setIsScanningReceipt(false);
+    }
+  };
+
+  const captureReceipt = async () => {
+    setReceiptScanError(undefined);
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        setReceiptScanError('Allow camera access in Settings to take a receipt photo. You can also choose a photo.');
+        return;
+      }
+      const picked = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.9 });
+      if (!picked.canceled) await scanReceiptAsset(picked.assets?.[0]);
+    } catch {
+      setReceiptScanError('Could not open the camera. Check camera access or choose a photo instead.');
+    }
+  };
+
+  const selectReceipt = async () => {
+    setReceiptScanError(undefined);
+    try {
+      const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 });
+      if (!picked.canceled) await scanReceiptAsset(picked.assets?.[0]);
+    } catch {
+      setReceiptScanError('Could not open your photo library. Check photo access and retry.');
+    }
   };
 
   const requestPublish = () => {
@@ -345,8 +408,15 @@ export function BillAllocationScreen({
             <GlassCard style={[styles.entryCard, { backgroundColor: colors.authFormSurface, borderColor: colors.glassBorder, shadowColor: colors.glassShadow }]}>
               <AiBillScanCard
                 colors={colors}
-                disabledReason="Receipt scanning is not connected to the Premium API yet. Enter the amount below."
-                onPress={() => Alert.alert('AI bill scan coming soon', 'Receipt scanning is not connected yet. Enter the bill total manually below.')}
+                isPremium={isPremium}
+                isScanning={isScanningReceipt}
+                scanError={receiptScanError}
+                result={receiptScanResult}
+                onCapture={() => { void captureReceipt(); }}
+                onSelectPhoto={() => { void selectReceipt(); }}
+                onOpenPremium={onOpenPremium}
+                onConfirm={amount => { setBillInput(String(amount)); setSubmitted(false); setReceiptScanResult(null); }}
+                onReject={() => setReceiptScanResult(null)}
               />
               <View style={[styles.sectionDivider, { backgroundColor: colors.border }]} />
               <Text style={[styles.sectionTitle, { color: colors.text }]}>Bill total</Text>

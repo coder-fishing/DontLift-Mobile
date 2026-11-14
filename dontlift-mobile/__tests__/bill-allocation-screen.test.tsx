@@ -1,4 +1,6 @@
 import React from 'react';
+import { Text } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { BillAllocationScreen } from '../src/screens/BillAllocationScreen';
 import type { PublishedBill } from '../src/features/settlement/bill-repository';
 
@@ -6,6 +8,11 @@ jest.mock('../src/components/GlassCard', () => ({
   GlassCard: ({ children }: { children: React.ReactNode }) => children,
 }));
 jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
+jest.mock('expo-image-picker', () => ({
+  requestCameraPermissionsAsync: jest.fn().mockResolvedValue({ granted: true }),
+  launchCameraAsync: jest.fn(),
+  launchImageLibraryAsync: jest.fn(),
+}));
 jest.mock('../src/constants/theme', () => ({ Colors: { light: {
   text: '#000000', textSecondary: '#60646C', primary: '#004AC6', onPrimary: '#FFFFFF',
   error: '#B42318', border: '#E6E6E6', backgroundSelected: '#EFF6FF', inputSurface: '#FFFFFF',
@@ -16,8 +23,9 @@ type Node = {
   props: Record<string, unknown>;
   findByProps(props: Record<string, unknown>): Node;
   findAllByProps(props: Record<string, unknown>): Node[];
+  findAllByType(type: unknown): Node[];
 };
-type Rendered = { root: Node; update(element: React.ReactElement): void; unmount(): void };
+type Rendered = { root: Node; toJSON(): unknown; update(element: React.ReactElement): void; unmount(): void };
 const renderer = require('react-test-renderer') as {
   create(element: React.ReactElement): Rendered;
   act(task: () => void | Promise<void>): Promise<void>;
@@ -50,9 +58,7 @@ test.each(['published', 'cached', 'error'] as const)('Pay share navigation requi
   }
 });
 
-test('AI scan entry point responds clearly while the scan API is not connected', async () => {
-  const { Alert } = require('react-native') as typeof import('react-native');
-  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+test('AI scan entry point offers receipt capture and photo selection to a Premium Host', async () => {
   let mounted: Rendered | undefined;
   try {
     await renderer.act(() => {
@@ -64,18 +70,105 @@ test('AI scan entry point responds clearly while the scan API is not connected',
       />);
     });
 
-    const scanAction = mounted!.root.findByProps({ accessibilityLabel: 'AI bill scan coming soon' });
-    expect(scanAction.props.disabled).not.toBe(true);
-    await renderer.act(() => { (scanAction.props.onPress as () => void)(); });
-    expect(alert).toHaveBeenCalledWith('AI bill scan coming soon', expect.stringContaining('Enter the bill total manually'));
+    expect(mounted!.root.findByProps({ accessibilityLabel: 'Take receipt photo' })).toBeTruthy();
+    expect(mounted!.root.findByProps({ accessibilityLabel: 'Choose receipt photo' })).toBeTruthy();
     expect(mounted!.root.findAllByProps({ children: 'AI bill scan' }).length).toBeGreaterThan(0);
-    expect(mounted!.root.findAllByProps({ children: 'Receipt scanning is not connected to the Premium API yet. Enter the amount below.' }).length).toBeGreaterThan(0);
     expect(mounted!.root.findAllByProps({ children: 'Room score' }).length).toBeGreaterThan(0);
     expect(mounted!.root.findAllByProps({ children: 'Custom %' }).length).toBeGreaterThan(0);
   } finally {
     await renderer.act(async () => mounted?.unmount());
-    alert.mockRestore();
   }
+});
+
+test('member does not see receipt scan and non-Premium Host can open Premium', async () => {
+  let member: Rendered | undefined;
+  let host: Rendered | undefined;
+  const onOpenPremium = jest.fn();
+  try {
+    await renderer.act(() => { member = renderer.create(<BillAllocationScreen roomId="room" mode="member"
+      members={[{ uid: 'member', displayName: 'Member', penaltyScore: 0 }]} state={{ kind: 'unpublished', bill: null }}
+      isOnline isPublishing={false} onPublish={jest.fn()} onRetry={jest.fn()} onRetryPublish={jest.fn()} onBack={jest.fn()} />); });
+    expect(member!.root.findAllByProps({ accessibilityLabel: 'Take receipt photo' })).toHaveLength(0);
+    await renderer.act(() => { host = renderer.create(<BillAllocationScreen roomId="room" mode="host" isPremium={false} onOpenPremium={onOpenPremium}
+      members={[{ uid: 'host', displayName: 'Host', penaltyScore: 0 }]} state={{ kind: 'unpublished', bill: null }}
+      isOnline isPublishing={false} onPublish={jest.fn()} onRetry={jest.fn()} onRetryPublish={jest.fn()} onBack={jest.fn()} />); });
+    await renderer.act(() => { (host!.root.findByProps({ accessibilityLabel: 'View Premium' }).props.onPress as () => void)(); });
+    expect(onOpenPremium).toHaveBeenCalledTimes(1);
+  } finally {
+    await renderer.act(async () => { member?.unmount(); host?.unmount(); });
+  }
+});
+
+test('picker cancellation does not call the scan API', async () => {
+  const onScanReceipt = jest.fn();
+  jest.mocked(ImagePicker.launchImageLibraryAsync).mockResolvedValue({ canceled: true, assets: null });
+  let mounted: Rendered | undefined;
+  try {
+    await renderer.act(() => { mounted = renderer.create(<BillAllocationScreen roomId="room" mode="host" isPremium
+      onScanReceipt={onScanReceipt} members={[{ uid: 'host', displayName: 'Host', penaltyScore: 0 }]}
+      state={{ kind: 'unpublished', bill: null }} isOnline isPublishing={false}
+      onPublish={jest.fn()} onRetry={jest.fn()} onRetryPublish={jest.fn()} onBack={jest.fn()} />); });
+    await renderer.act(async () => { (mounted!.root.findByProps({ accessibilityLabel: 'Choose receipt photo' }).props.onPress as () => void)(); });
+    expect(onScanReceipt).not.toHaveBeenCalled();
+  } finally { await renderer.act(async () => mounted?.unmount()); }
+});
+
+test('unsupported photo format shows an actionable message without uploading', async () => {
+  const onScanReceipt = jest.fn();
+  jest.mocked(ImagePicker.launchImageLibraryAsync).mockResolvedValue({ canceled: false, assets: [{ uri: 'file:///receipt.heic', mimeType: 'image/heic' } as ImagePicker.ImagePickerAsset] });
+  let mounted: Rendered | undefined;
+  try {
+    await renderer.act(() => { mounted = renderer.create(<BillAllocationScreen roomId="room" mode="host" isPremium
+      onScanReceipt={onScanReceipt} members={[{ uid: 'host', displayName: 'Host', penaltyScore: 0 }]}
+      state={{ kind: 'unpublished', bill: null }} isOnline isPublishing={false}
+      onPublish={jest.fn()} onRetry={jest.fn()} onRetryPublish={jest.fn()} onBack={jest.fn()} />); });
+    await renderer.act(async () => { (mounted!.root.findByProps({ accessibilityLabel: 'Choose receipt photo' }).props.onPress as () => void)(); });
+    expect(onScanReceipt).not.toHaveBeenCalled();
+    expect(mounted!.root.findByProps({ accessibilityRole: 'alert' }).props.children).toContain('JPEG, PNG, or WebP');
+  } finally { await renderer.act(async () => mounted?.unmount()); }
+});
+
+test('shows loading state and blocks duplicate scans', async () => {
+  let resolveScan!: (result: unknown) => void;
+  const onScanReceipt = jest.fn(() => new Promise(resolve => { resolveScan = resolve; }));
+  jest.mocked(ImagePicker.launchImageLibraryAsync).mockResolvedValue({ canceled: false, assets: [{ uri: 'file:///receipt.png', mimeType: 'image/png' } as ImagePicker.ImagePickerAsset] });
+  let mounted: Rendered | undefined;
+  try {
+    await renderer.act(() => { mounted = renderer.create(<BillAllocationScreen roomId="room" mode="host" isPremium
+      onScanReceipt={onScanReceipt as never} members={[{ uid: 'host', displayName: 'Host', penaltyScore: 0 }]}
+      state={{ kind: 'unpublished', bill: null }} isOnline isPublishing={false}
+      onPublish={jest.fn()} onRetry={jest.fn()} onRetryPublish={jest.fn()} onBack={jest.fn()} />); });
+    await renderer.act(async () => { (mounted!.root.findByProps({ accessibilityLabel: 'Choose receipt photo' }).props.onPress as () => void)(); });
+    expect(mounted!.root.findByProps({ accessibilityLabel: 'Choose receipt photo' }).props.disabled).toBe(true);
+    await renderer.act(async () => { resolveScan({ version: 1, status: 'needs_review', amount: null, suggested_amount: null,
+      currency: 'VND', needs_confirmation: true, evidence: null, warnings: [], timings_ms: { total: 1 } }); });
+    expect(mounted!.root.findByProps({ accessibilityLabel: 'Dismiss scan result' })).toBeTruthy();
+  } finally { await renderer.act(async () => mounted?.unmount()); }
+});
+
+test('scan result stays a suggestion until the Host confirms it; rejection preserves the current value', async () => {
+  const onScanReceipt = jest.fn().mockResolvedValue({ version: 1, status: 'suggested', amount: 128000, suggested_amount: 128000,
+    currency: 'VND', needs_confirmation: true, evidence: { label: 'Total', amount_text: '128,000 VND' }, warnings: [], timings_ms: { total: 1 } });
+  jest.mocked(ImagePicker.launchImageLibraryAsync).mockResolvedValue({ canceled: false, assets: [{ uri: 'file:///receipt.jpg', mimeType: 'image/jpeg', fileSize: 1000 } as ImagePicker.ImagePickerAsset] });
+  let mounted: Rendered | undefined;
+  try {
+    await renderer.act(() => { mounted = renderer.create(<BillAllocationScreen roomId="room" mode="host" isPremium
+      onScanReceipt={onScanReceipt} members={[{ uid: 'host', displayName: 'Host', penaltyScore: 0 }]}
+      state={{ kind: 'unpublished', bill: null }} isOnline isPublishing={false}
+      onPublish={jest.fn()} onRetry={jest.fn()} onRetryPublish={jest.fn()} onBack={jest.fn()} />); });
+    await renderer.act(async () => { (mounted!.root.findByProps({ accessibilityLabel: 'Total bill amount in Vietnamese dong' }).props.onChangeText as (value: string) => void)('45000'); });
+    await renderer.act(async () => { (mounted!.root.findByProps({ accessibilityLabel: 'Choose receipt photo' }).props.onPress as () => void)(); });
+    expect(onScanReceipt).toHaveBeenCalledWith('room', 'file:///receipt.jpg', 'image/jpeg');
+    expect(mounted!.root.findByProps({ accessibilityLabel: 'Total bill amount in Vietnamese dong' }).props.value).toBe('45000');
+    expect(mounted!.root.findByProps({ accessibilityLabel: 'Receipt scan suggestion' })).toBeTruthy();
+    expect(mounted!.root.findAllByType(Text).some(node => Array.isArray(node.props.children)
+      && node.props.children.includes('Evidence: ') && node.props.children.includes('Total: 128,000 VND'))).toBe(true);
+    await renderer.act(() => { (mounted!.root.findByProps({ accessibilityLabel: 'Keep current amount' }).props.onPress as () => void)(); });
+    expect(mounted!.root.findByProps({ accessibilityLabel: 'Total bill amount in Vietnamese dong' }).props.value).toBe('45000');
+    await renderer.act(async () => { (mounted!.root.findByProps({ accessibilityLabel: 'Choose receipt photo' }).props.onPress as () => void)(); });
+    await renderer.act(() => { (mounted!.root.findByProps({ accessibilityLabel: 'Use this amount' }).props.onPress as () => void)(); });
+    expect(mounted!.root.findByProps({ accessibilityLabel: 'Total bill amount in Vietnamese dong' }).props.value).toBe('128000');
+  } finally { await renderer.act(async () => mounted?.unmount()); }
 });
 
 test('custom percentage split previews avatars and publishes only when percentages total 100%', async () => {
