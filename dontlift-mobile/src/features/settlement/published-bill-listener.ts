@@ -107,6 +107,7 @@ export function listenToPublishedBill(
           billRevision: Number.isSafeInteger(room.billRevision) ? room.billRevision : 0,
           billPaidCount,
           overrideApplied: overrideRequestId !== null,
+          ...(typeof room.receiptEvidencePath === 'string' ? { receiptEvidencePath: room.receiptEvidencePath } : {}),
         };
         if (sumShareVnd !== bill.totalBillVnd) {
           if (sharesSnapshot.metadata.fromCache) onState({ kind: 'cached', bill: null });

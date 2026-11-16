@@ -15,6 +15,22 @@ export type ReceiptScanResult = {
 
 const supportedMimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
+function localOcrUrl(baseUrl = process.env.EXPO_PUBLIC_RECEIPT_SCAN_API_URL?.trim() ?? ''): string | null {
+  if (!baseUrl) return null;
+  if (!__DEV__) throw new Error('Direct PaddleOCR access is available only in development builds.');
+  let url: URL;
+  try { url = new URL(baseUrl); }
+  catch { throw new Error('Set EXPO_PUBLIC_RECEIPT_SCAN_API_URL to the local PaddleOCR /scan URL.'); }
+  const host = url.hostname;
+  const localHost = host === 'localhost' || host === '127.0.0.1' || host === '10.0.2.2'
+    || /^10\.\d+\.\d+\.\d+$/.test(host) || /^192\.168\.\d+\.\d+$/.test(host)
+    || /^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/.test(host);
+  if (url.protocol !== 'http:' || !localHost || url.pathname !== '/scan' || url.search || url.hash) {
+    throw new Error('The development PaddleOCR URL must be a local HTTP /scan endpoint.');
+  }
+  return url.toString().replace(/\/$/, '');
+}
+
 function apiOrigin(baseUrl = process.env.EXPO_PUBLIC_PREMIUM_API_URL ?? ''): string {
   if (!/^https:\/\/[^/?#]+/.test(baseUrl)
     && !(__DEV__ && /^http:\/\/(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+)(:\d+)?$/.test(baseUrl))) {
@@ -70,29 +86,54 @@ export function createReceiptScanApi(auth: Auth, baseUrl?: string) {
     async scan(roomId: string, uri: string, mimeType: string): Promise<ReceiptScanResult> {
       if (!supportedMimeTypes.has(mimeType)) throw new Error('Choose a JPEG, PNG, or WebP image.');
       if (!roomId || !uri) throw new Error('Choose a room and receipt image before scanning.');
+      const paddleOcrUrl = localOcrUrl();
+      if (__DEV__ && !paddleOcrUrl && !baseUrl) {
+        throw new Error('Local PaddleOCR is not configured. Set EXPO_PUBLIC_RECEIPT_SCAN_API_URL and restart Expo with cache cleared.');
+      }
       const user = auth.currentUser;
       if (!user) throw new Error('Sign in to scan a receipt.');
-      const token = await user.getIdToken();
+      const token = paddleOcrUrl ? null : await user.getIdToken();
       if (auth.currentUser?.uid !== user.uid) throw new Error('The signed-in account changed. Please retry.');
 
-      let response: FileSystem.FileSystemUploadResult;
+      let response: FileSystem.FileSystemUploadResult | null | undefined;
+      let uploadTask: ReturnType<typeof FileSystem.createUploadTask> | undefined;
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      let didTimeout = false;
+      const targetName = paddleOcrUrl ? 'PaddleOCR' : 'Premium API';
       try {
-        response = await FileSystem.uploadAsync(
-          `${apiOrigin(baseUrl)}/v1/bills/scan?roomId=${encodeURIComponent(roomId)}`,
-          uri,
-          {
+        const url = paddleOcrUrl ?? `${apiOrigin(baseUrl)}/v1/bills/scan?roomId=${encodeURIComponent(roomId)}`;
+        const headers: Record<string, string> = paddleOcrUrl
+          ? { 'bypass-tunnel-reminder': '1' }
+          : { Authorization: `Bearer ${token}`, 'Content-Type': mimeType, 'bypass-tunnel-reminder': '1' };
+        const options = {
             httpMethod: 'POST',
-            uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-            headers: {
-              Authorization: `Bearer ${token}`,
-              'Content-Type': mimeType,
-              'bypass-tunnel-reminder': '1',
-            },
-          },
-        );
+            uploadType: paddleOcrUrl ? FileSystem.FileSystemUploadType.MULTIPART : FileSystem.FileSystemUploadType.BINARY_CONTENT,
+            ...(paddleOcrUrl ? { fieldName: 'image', mimeType } : {}),
+            headers,
+          } as const;
+        const request = typeof FileSystem.createUploadTask === 'function'
+          ? (uploadTask = FileSystem.createUploadTask(url, uri, options)).uploadAsync()
+          : FileSystem.uploadAsync(url, uri, options);
+        response = await Promise.race([
+          request,
+          new Promise<never>((_, reject) => {
+            timeoutId = setTimeout(() => {
+              didTimeout = true;
+              void uploadTask?.cancelAsync();
+              reject(new Error('receipt-scan-timeout'));
+            }, 45_000);
+          }),
+        ]);
       } catch {
-        throw new Error('Receipt scanning is temporarily unavailable. Check your connection and try again.');
+        if (timeoutId) clearTimeout(timeoutId);
+        if (uploadTask) await uploadTask.cancelAsync().catch(() => undefined);
+        throw new Error(didTimeout
+          ? `Receipt scan timed out after 45 seconds. Check that ${targetName} is running and the phone can reach its address, then retry.`
+          : `Could not reach ${targetName}. Check that it is running and the phone can reach its address, then retry.`);
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
       }
+      if (!response) throw new Error('Receipt scanning was cancelled. Please retry.');
       if (auth.currentUser?.uid !== user.uid) throw new Error('The signed-in account changed. Please retry.');
 
       let body: unknown;
@@ -105,7 +146,9 @@ export function createReceiptScanApi(auth: Auth, baseUrl?: string) {
         const code = body && typeof body === 'object' && !Array.isArray(body) ? (body as Record<string, unknown>).code : null;
         throw new Error(errorMessage(response.status, code));
       }
-      return checkedResult(body);
+      return checkedResult(paddleOcrUrl && body && typeof body === 'object' && !Array.isArray(body)
+        ? { version: 1, ...body }
+        : body);
     },
   };
 }

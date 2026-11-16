@@ -4,7 +4,7 @@
 >
 > **Goal:** Let a Premium Host photograph or select a receipt, receive a total suggestion from the existing PaddleOCR API, review it, then choose whether to fill the bill form.
 >
-> **Architecture:** The mobile app uploads the image to the existing Express Premium API. Express authenticates the user, checks Premium entitlement and Host authority, then proxies the image to the deployed PaddleOCR API. OCR results remain suggestions until the Host confirms them.
+> **Architecture:** In development, the mobile app sends the local image directly to PaddleOCR over the LAN; the Express Premium API remains the production scan gateway. After local OCR succeeds, the Host may accept the suggestion; only then does the app upload the image through the Premium API to private Cloudinary media. The published room bill stores the media path, and room members can view that image after publication through a short-lived URL issued by the API.
 >
 > **Tech Stack:** Expo SDK 58, React Native, Firebase Auth and Firestore Admin, Express 5, existing PaddleOCR FastAPI service.
 >
@@ -14,9 +14,10 @@
 
 ## Global Constraints
 
-- Keep Firebase on Spark; route OCR through Express and the existing PaddleOCR service.
+- Keep Firebase on Spark; use direct local PaddleOCR only in development and retain the authenticated Express scan gateway for production.
 - Keep the PaddleOCR API key on the server; never include it in the mobile app.
-- Do not persist receipt images or raw OCR output in Firestore, SQLite, or logs.
+- Persist only Host-accepted receipt images as private Cloudinary media. Store only the private media path with the published bill; do not persist raw OCR output or download URLs in Firestore, SQLite, or logs.
+- Restrict receipt image uploads to the active Premium Host, JPEG/PNG/WEBP, and 10 MiB. Restrict signed URL issuance to members of the same room after bill publication.
 - Require explicit Host confirmation before filling the bill amount; keep the existing preview and publish flow.
 - Accept JPEG, PNG, or WEBP images up to 10 MB, matching the current scan service contract.
 
@@ -138,3 +139,47 @@
 - The PaddleOCR endpoint URL and API key will be configured in the Premium API environment, not committed to the app or repository.
 - The server checks `premiumExpiresAt` as the entitlement authority; a client-side Premium flag is only for presentation.
 - Version 1 supports JPEG, PNG, and WEBP only. HEIC conversion is out of scope.
+
+## Addendum: Confirmed Receipt Evidence (2026-11-16)
+
+This addendum supersedes the earlier constraint against persisting receipt images and the initial Firebase Storage implementation. It implements the Host's clarified flow: scan the phone's local image with local PaddleOCR first; when the Host accepts the suggested amount, upload that same image to Cloudinary through the existing Premium API; attach its private media path to the first published bill; let room members view the evidence while they review that bill. The image is not sent to the Premium API for OCR, Cloudinary credentials stay server-side, and no downloadable URL is persisted in Firestore.
+
+### Task 5: Upload accepted receipt images as private evidence
+
+**Files:**
+
+- Create: `src/features/settlement/receipt-evidence-api.ts`, `src/services/receiptEvidenceService.js`
+- Modify: `src/routes/receipt-scan.js`, `src/app.js`, `src/server.js`, `src/screens/BillAllocationScreen.tsx`, `src/features/settlement/components/AiBillScanCard.tsx`, `.env.example`, `firebase.json`, `docs/api-contracts.md`
+- Use the existing server-only `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET` environment variables; do not add a Firebase Storage bucket requirement.
+
+**Behavior:**
+
+- Keep the selected local image URI after OCR returns. Rejecting a suggestion does not upload the image.
+- When the Host accepts a valid suggestion, upload the image once to the current room's evidence folder through the Premium API using Firebase Auth. The API verifies Premium Host status, validates JPEG/PNG/WEBP up to 10 MiB, and signs the server-to-Cloudinary upload as private media.
+- Keep uploaded objects unreadable by room members until the published bill points to that exact evidence path. The API issues a five-minute private download URL only after checking the caller's room membership and the published path.
+- If upload fails, retain the accepted amount, show a retryable evidence-upload error, and keep bill publication available without evidence only after the Host explicitly chooses to continue without it.
+- A rejected scan or abandoned unpublished bill must not expose its image to room members. Allow the Host to remove an unlinked image.
+
+### Task 6: Publish and show evidence to room members
+
+**Files:**
+
+- Modify: `src/features/settlement/bill-repository.ts`, `src/features/settlement/published-bill-listener.ts`, `src/features/settlement/published-bill-state.ts`, `src/screens/BillAllocationScreen.tsx`, `src/app/index.tsx`, `firestore.rules`, `firebase.json`, `docs/api-contracts.md`
+
+**Behavior:**
+
+- Carry the optional private media path with the existing first bill publication request. Do not include it in a replacement share calculation or payment command.
+- Validate and persist the path only when the Host publishes the bill. Older bills without an evidence path remain valid and display no image.
+- Allow image URL issuance only to active or early-exit members of the same room, only when the image path matches that room's currently published receipt evidence.
+- Show the image in the published bill view to room members. Do not expose it on unpublished previews or store a download URL in Firestore.
+
+**Acceptance checks:**
+
+- Successful local scan followed by rejecting the amount -> no Cloudinary asset is created.
+- Successful local scan followed by Host confirmation -> one private image object is uploaded; the amount remains editable before publication.
+- Host publishes the bill -> the evidence path appears with the published bill and room members can view the image.
+- Non-members, unauthenticated users, and room members before publication -> cannot read the image.
+- Existing published bill without evidence -> loads and renders as before.
+- Evidence upload failure -> visible retry/continue-without-evidence choice; amount entry and publication remain available.
+
+The user requested no automatic commits. Keep all plan and source changes uncommitted for review.

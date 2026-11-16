@@ -72,6 +72,7 @@ import { createSettlementDetailsRepository, type SettlementDetailsState } from '
 import { createBankDirectoryRepository } from '../features/settlement/bank-directory';
 import { createBankAppDirectoryRepository } from '../features/bank-transfer/bank-app-directory';
 import { createReceiptScanApi } from '../features/settlement/receipt-scan-api';
+import { createReceiptEvidenceApi } from '../features/settlement/receipt-evidence-api';
 import { createProfileRepository } from '../features/profile/profile-repository';
 import { createBillRepository, BillRepositoryError, type ApplyBillOverridesCommand, type CalculateBillCommand, type PublishedBill } from '../features/settlement/bill-repository';
 import type { BillShareOverride } from '../features/settlement/bill-allocation';
@@ -206,6 +207,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const acceptCanonicalProfile = session.acceptCanonicalProfile;
   const premiumApi = useMemo(() => createPremiumApi(roomRuntime.auth), [roomRuntime.auth]);
   const receiptScanApi = useMemo(() => createReceiptScanApi(roomRuntime.auth), [roomRuntime.auth]);
+  const receiptEvidenceApi = useMemo(() => createReceiptEvidenceApi(roomRuntime.auth), [roomRuntime.auth]);
   const profileProjectionSync = useRef<{ uid: string; uri?: string; premiumExpiresAtUtcMs?: number | null; initialized: boolean }>(
     { uid: profile.uid, uri: profile.avatarUri ?? undefined, premiumExpiresAtUtcMs: profile.premiumExpiresAtUtcMs, initialized: false },
   );
@@ -1654,7 +1656,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     };
   }, [groupCaptureRoomSnapshot?.roomId, profile.uid, groupViolationRepository]);
 
-  const handlePublishBill = async (totalBillVnd?: number, shareOverrides?: BillShareOverride[]) => {
+  const handlePublishBill = async (totalBillVnd?: number, shareOverrides?: BillShareOverride[], receiptEvidencePath?: string) => {
     const snapshot = groupSummarySnapshot;
     const ownMember = snapshot?.members.find(member => member.uid === profile.uid);
     if (!snapshot || snapshot.reconciliationStatus !== 'FINALIZED' || ownMember?.role !== 'HOST'
@@ -1665,6 +1667,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       if (totalBillVnd == null) return;
       pending = {
         command: { version: 1, requestId: Crypto.randomUUID(), roomId: snapshot.roomId, totalBillVnd,
+          ...(receiptEvidencePath ? { receiptEvidencePath } : {}),
           ...(shareOverrides?.length ? { shareOverrides: [...shareOverrides].sort((a, b) => a.uid.localeCompare(b.uid)) } : {}) },
         rosterMemberUids: snapshot.members
           .filter(member => member.status === 'ACTIVE' || member.status === 'EARLY_EXIT')
@@ -1673,6 +1676,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       pendingBillCommand.current = pending;
     } else if (pending.command.roomId !== snapshot.roomId
       || (totalBillVnd != null && pending.command.totalBillVnd !== totalBillVnd)
+      || (receiptEvidencePath != null && pending.command.receiptEvidencePath !== receiptEvidencePath)
       || (shareOverrides != null && JSON.stringify([...(pending.command.shareOverrides ?? [])].sort((a, b) => a.uid.localeCompare(b.uid)))
         !== JSON.stringify([...shareOverrides].sort((a, b) => a.uid.localeCompare(b.uid))))) {
       return;
@@ -1883,6 +1887,9 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
               isPremium={premiumIsActive(profile.premiumExpiresAtUtcMs)}
               onOpenPremium={() => navigateToScreen('09-activation')}
               onScanReceipt={(roomId, uri, mimeType) => receiptScanApi.scan(roomId, uri, mimeType)}
+              onUploadReceiptEvidence={receiptEvidenceApi.upload}
+              onDeleteReceiptEvidence={receiptEvidenceApi.deleteUnpublished}
+              getReceiptEvidenceImageSource={receiptEvidenceApi.imageSource}
               members={groupSummarySnapshot.members
                 .filter(member => member.status === 'ACTIVE' || member.status === 'EARLY_EXIT')
                 .map(member => ({ uid: member.uid, displayName: member.displayName, penaltyScore: member.penaltyScore,
@@ -1904,7 +1911,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
               hasPendingOverride={pendingBillOverride.current != null}
               publishError={billPublishError}
               overrideError={billOverrideError}
-              onPublish={(amount, overrides) => { void handlePublishBill(amount, overrides); }}
+              onPublish={(amount, overrides, evidencePath) => { void handlePublishBill(amount, overrides, evidencePath); }}
               onApplyOverrides={(overrides, revision) => { void handleApplyBillOverrides(overrides, revision); }}
               onRetry={() => { void handleRetryPublishedBill(); }}
               onRetryPublish={() => { void handlePublishBill(); }}

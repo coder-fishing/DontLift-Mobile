@@ -1,6 +1,6 @@
 import React from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Colors } from '../../../constants/theme';
 import type { ReceiptScanResult } from '../receipt-scan-api';
 
@@ -8,13 +8,18 @@ type Props = {
   colors: typeof Colors.light | typeof Colors.dark;
   isPremium: boolean;
   isScanning: boolean;
+  isSavingEvidence?: boolean;
+  hasSavedEvidence?: boolean;
+  previewUri?: string;
   scanError?: string;
+  evidenceError?: string;
   result?: ReceiptScanResult | null;
   onCapture: () => void;
   onSelectPhoto: () => void;
   onOpenPremium: () => void;
   onConfirm: (amountVnd: number) => void;
   onReject: () => void;
+  onContinueWithoutEvidence?: () => void;
 };
 
 function evidenceLabel(result: ReceiptScanResult): string | null {
@@ -26,21 +31,21 @@ function evidenceLabel(result: ReceiptScanResult): string | null {
   return null;
 }
 
-function ActionButton({ label, icon, colors, onPress, disabled = false, busy = false }: {
+function ActionButton({ label, icon, colors, onPress, disabled = false, busy = false, tile = false }: {
   label: string; icon: keyof typeof Ionicons.glyphMap; colors: typeof Colors.light | typeof Colors.dark;
-  onPress: () => void; disabled?: boolean; busy?: boolean;
+  onPress: () => void; disabled?: boolean; busy?: boolean; tile?: boolean;
 }) {
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled, busy }}
       disabled={disabled} onPress={onPress}
-      style={({ pressed }) => [styles.action, { backgroundColor: colors.backgroundSelected, borderColor: colors.primary }, pressed && styles.pressed, disabled && styles.disabled]}>
+      style={({ pressed }) => [styles.action, tile && styles.actionTile, { backgroundColor: colors.backgroundSelected, borderColor: colors.primary }, pressed && styles.pressed, disabled && styles.disabled]}>
       {busy ? <ActivityIndicator color={colors.primary} /> : <Ionicons name={icon} size={19} color={colors.primary} />}
-      <Text style={[styles.actionText, { color: colors.primary }]}>{label}</Text>
+      <Text style={[styles.actionText, tile && styles.actionTileText, { color: colors.primary }]}>{label}</Text>
     </Pressable>
   );
 }
 
-export function AiBillScanCard({ colors, isPremium, isScanning, scanError, result, onCapture, onSelectPhoto, onOpenPremium, onConfirm, onReject }: Props) {
+export function AiBillScanCard({ colors, isPremium, isScanning, isSavingEvidence = false, hasSavedEvidence = false, previewUri, scanError, evidenceError, result, onCapture, onSelectPhoto, onOpenPremium, onConfirm, onReject, onContinueWithoutEvidence }: Props) {
   const suggestedAmount = result?.suggested_amount ?? result?.amount ?? null;
   const canApply = suggestedAmount != null && suggestedAmount >= 1_000;
   const evidence = result ? evidenceLabel(result) : null;
@@ -70,9 +75,11 @@ export function AiBillScanCard({ colors, isPremium, isScanning, scanError, resul
               {evidence ? <Text style={[styles.statusText, { color: colors.textSecondary }]}>Evidence: {evidence}</Text> : null}
               {result.warnings.map((warning, index) => <Text key={`${index}-${warning}`} style={[styles.warning, { color: colors.textSecondary }]}>{warning}</Text>)}
               <View style={styles.actions}>
-                <ActionButton label="Use this amount" icon="checkmark-circle-outline" colors={colors} onPress={() => onConfirm(suggestedAmount!)} />
+                <ActionButton label={isSavingEvidence ? 'Saving receipt evidence…' : 'Use this amount and save evidence'} icon="checkmark-circle-outline" colors={colors} onPress={() => onConfirm(suggestedAmount!)} disabled={isSavingEvidence} busy={isSavingEvidence} />
                 <ActionButton label="Keep current amount" icon="close-circle-outline" colors={colors} onPress={onReject} />
               </View>
+              {evidenceError ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.error }]}>{evidenceError}</Text> : null}
+              {evidenceError ? <ActionButton label="Use amount without evidence" icon="checkmark-outline" colors={colors} onPress={onContinueWithoutEvidence ?? onReject} /> : null}
             </>
           ) : (
             <>
@@ -83,10 +90,17 @@ export function AiBillScanCard({ colors, isPremium, isScanning, scanError, resul
           )}
         </View>
       ) : (
-        <View style={styles.actions}>
-          <ActionButton label="Take receipt photo" icon="camera-outline" colors={colors} onPress={onCapture} disabled={isScanning} busy={isScanning} />
-          <ActionButton label="Choose receipt photo" icon="image-outline" colors={colors} onPress={onSelectPhoto} disabled={isScanning} busy={isScanning} />
+        <>
+        {previewUri ? <View style={styles.preview}>
+          <Image accessibilityLabel="Selected receipt photo preview" source={{ uri: previewUri }} style={styles.previewImage} resizeMode="cover" />
+          <Text style={[styles.statusText, { color: colors.textSecondary }]}>{isScanning ? 'Sending photo to local PaddleOCR…' : 'Selected receipt photo'}</Text>
+        </View> : null}
+        {hasSavedEvidence ? <Text style={[styles.statusText, { color: colors.textSecondary }]}>Receipt saved privately. Room members can view it after publication.</Text> : null}
+        <View style={styles.actionRow}>
+          <ActionButton label="Take receipt photo" icon="camera-outline" colors={colors} onPress={onCapture} disabled={isScanning} tile />
+          <ActionButton label="Choose receipt photo" icon="image-outline" colors={colors} onPress={onSelectPhoto} disabled={isScanning} tile />
         </View>
+        </>
       )}
 
       {isScanning ? <View accessibilityLiveRegion="polite" style={styles.status}>
@@ -107,8 +121,13 @@ const styles = StyleSheet.create({
   title: { fontSize: 17, fontWeight: '800' },
   description: { fontSize: 13, lineHeight: 18 },
   actions: { gap: 8 },
+  actionRow: { flexDirection: 'row', gap: 8 },
+  preview: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  previewImage: { width: 72, height: 72, borderRadius: 12, backgroundColor: '#E5E7EB' },
   action: { minHeight: 48, borderWidth: 1, borderRadius: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, paddingHorizontal: 14 },
+  actionTile: { minHeight: 72, flex: 1, flexDirection: 'column', gap: 4, paddingHorizontal: 8 },
   actionText: { fontSize: 15, fontWeight: '700' },
+  actionTileText: { fontSize: 13, lineHeight: 17, textAlign: 'center' },
   result: { gap: 8, borderWidth: 1, borderRadius: 14, padding: 14 },
   resultLabel: { fontSize: 13 },
   amount: { fontSize: 22, fontWeight: '800' },

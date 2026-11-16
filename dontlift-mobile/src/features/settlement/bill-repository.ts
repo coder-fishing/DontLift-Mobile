@@ -18,6 +18,8 @@ export type CalculateBillCommand = {
   totalBillVnd: number;
   /** Optional complete percentage allocation for first publication; omitted means Room score. */
   shareOverrides?: BillShareOverride[];
+  /** Private Cloudinary media path for the Host-confirmed receipt. */
+  receiptEvidencePath?: string;
 };
 
 export type ApplyBillOverridesCommand = {
@@ -41,6 +43,7 @@ export type PublishedBill = {
   billRevision?: number;
   billPaidCount?: number;
   overrideApplied?: boolean;
+  receiptEvidencePath?: string;
 };
 
 export type BillErrorCode = 'unauthenticated' | 'invalid-argument' | 'not-found'
@@ -54,6 +57,14 @@ export class BillRepositoryError extends Error {
 }
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const RECEIPT_FILE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(jpg|png|webp)$/i;
+
+function validReceiptEvidencePath(roomId: string, path: unknown): path is string {
+  if (typeof path !== 'string') return false;
+  const prefix = `rooms/${roomId}/billEvidence/`;
+  const fileName = path.startsWith(prefix) ? path.slice(prefix.length) : '';
+  return RECEIPT_FILE.test(fileName) && !fileName.includes('/');
+}
 
 function mapError(error: unknown): BillRepositoryError {
   if (error instanceof BillRepositoryError) return error;
@@ -81,13 +92,14 @@ function parseShares(data: readonly Record<string, unknown>[]): BillShare[] {
     .sort((a, b) => a.uid.localeCompare(b.uid));
 }
 
-function makeResult(roomId: string, requestId: string, totalBillVnd: number, shares: BillShare[]): PublishedBill {
+function makeResult(roomId: string, requestId: string, totalBillVnd: number, shares: BillShare[], receiptEvidencePath?: string): PublishedBill {
   const sumShareVnd = shares.reduce((sum, share) => sum + share.shareVnd, 0);
   if (!Number.isSafeInteger(sumShareVnd) || sumShareVnd !== totalBillVnd) {
     throw new BillRepositoryError('failed-precondition');
   }
   return { version: 1, requestId, roomId, totalBillVnd, calculationVersion: 1, shares, sumShareVnd,
-    billPaidCount: shares.filter(share => share.paymentStatus === 'MARKED_AS_PAID').length };
+    billPaidCount: shares.filter(share => share.paymentStatus === 'MARKED_AS_PAID').length,
+    ...(receiptEvidencePath ? { receiptEvidencePath } : {}) };
 }
 
 function sameOverrides(value: unknown, expected: readonly BillShareOverride[]): boolean {
@@ -107,6 +119,8 @@ export function createBillRepository(dependencies: Dependencies) {
       if (!actor) throw new BillRepositoryError('unauthenticated');
       if (command.version !== 1 || !UUID_V4.test(command.roomId) || !UUID_V4.test(command.requestId)
         || !Number.isSafeInteger(command.totalBillVnd) || command.totalBillVnd < 1_000
+        || (command.receiptEvidencePath !== undefined
+          && !validReceiptEvidencePath(command.roomId, command.receiptEvidencePath))
         || rosterMemberUids.length === 0
         || rosterMemberUids.some(uid => typeof uid !== 'string' || uid.length === 0)
         || new Set(rosterMemberUids).size !== rosterMemberUids.length) {
@@ -143,7 +157,13 @@ export function createBillRepository(dependencies: Dependencies) {
         }
         const savedShares = parseShares(snapshot.docs.map(item => item.data()));
         if (savedShares.length !== saved.shareCount) throw new BillRepositoryError('failed-precondition');
-        return makeResult(command.roomId, requestId, expectedTotal, savedShares);
+        const evidencePath = saved.receiptEvidencePath;
+        if ((evidencePath != null && !validReceiptEvidencePath(command.roomId, evidencePath))
+          || (command.receiptEvidencePath != null && command.receiptEvidencePath !== evidencePath)) {
+          throw new BillRepositoryError('failed-precondition');
+        }
+        return makeResult(command.roomId, requestId, expectedTotal, savedShares,
+          typeof evidencePath === 'string' ? evidencePath : undefined);
       };
 
       try {
@@ -178,7 +198,8 @@ export function createBillRepository(dependencies: Dependencies) {
 
           const room = roomSnapshot.data();
           if (room.calculationVersion === 1) {
-            if (room.billRequestId !== command.requestId || room.totalBillVnd !== command.totalBillVnd) {
+            if (room.billRequestId !== command.requestId || room.totalBillVnd !== command.totalBillVnd
+              || (room.receiptEvidencePath ?? undefined) !== command.receiptEvidencePath) {
               throw new BillRepositoryError('already-exists');
             }
             return { kind: 'published' as const, requestId: command.requestId };
@@ -198,7 +219,7 @@ export function createBillRepository(dependencies: Dependencies) {
           const allocation = command.shareOverrides?.length
             ? calculateBillSharesWithOverrides(command.totalBillVnd, members, command.shareOverrides)
             : calculateDefaultBillShares(command.totalBillVnd, members);
-          const result = makeResult(command.roomId, command.requestId, command.totalBillVnd, allocation.shares);
+          const result = makeResult(command.roomId, command.requestId, command.totalBillVnd, allocation.shares, command.receiptEvidencePath);
           const sortedUids = result.shares.map(share => share.uid).sort((a, b) => a.localeCompare(b));
           const expectedUids = [...rosterMemberUids].sort((a, b) => a.localeCompare(b));
           if (sortedUids.length !== expectedUids.length || sortedUids.some((uid, index) => uid !== expectedUids[index])) {
@@ -210,6 +231,7 @@ export function createBillRepository(dependencies: Dependencies) {
             if (preparation.status !== 'PREPARING' || preparation.hostUid !== actor.uid
               || preparation.requestId !== room.billRequestId || preparation.totalBillVnd !== command.totalBillVnd
               || preparation.roomId !== command.roomId || preparation.shareCount !== result.shares.length
+              || (room.receiptEvidencePath ?? undefined) !== command.receiptEvidencePath
               || preparation.sumShareVnd !== result.sumShareVnd || !Array.isArray(preparation.shareUids)
               || preparation.shareUids.length !== sortedUids.length
               || preparation.shareUids.some((uid: unknown, index: number) => uid !== sortedUids[index])) {
@@ -218,7 +240,7 @@ export function createBillRepository(dependencies: Dependencies) {
             return {
               kind: 'preparing' as const,
               requestId: preparation.requestId,
-              result: makeResult(command.roomId, preparation.requestId, command.totalBillVnd, allocation.shares),
+              result: makeResult(command.roomId, preparation.requestId, command.totalBillVnd, allocation.shares, command.receiptEvidencePath),
             };
           }
 
@@ -229,6 +251,7 @@ export function createBillRepository(dependencies: Dependencies) {
             billRequestId: command.requestId,
             billShareCount: result.shares.length,
             billPreparationStartedAt: serverTimestamp(),
+            ...(command.receiptEvidencePath ? { receiptEvidencePath: command.receiptEvidencePath } : {}),
           });
           transaction.set(preparationRef, {
             version: 1,
@@ -335,6 +358,7 @@ export function createBillRepository(dependencies: Dependencies) {
             shareCount: prepared.result.shares.length,
             shareUids: prepared.result.shares.map(share => share.uid).sort(),
             sumShareVnd: prepared.result.sumShareVnd,
+            ...(command.receiptEvidencePath ? { receiptEvidencePath: command.receiptEvidencePath } : {}),
             createdAt: serverTimestamp(),
           });
           return { kind: 'result' as const, result: prepared.result };
@@ -394,7 +418,14 @@ export function createBillRepository(dependencies: Dependencies) {
           throw new BillRepositoryError('already-exists');
         }
         const shares = await readVersionShares(command.requestId, saved.shareUids);
-        return { ...makeResult(command.roomId, command.requestId, saved.totalBillVnd, shares),
+        const currentRoom = await getDocFromServer(roomRef);
+        if (!currentRoom.exists()) throw new BillRepositoryError('failed-precondition');
+        const evidencePath = currentRoom.data().receiptEvidencePath;
+        if (evidencePath != null && !validReceiptEvidencePath(command.roomId, evidencePath)) {
+          throw new BillRepositoryError('failed-precondition');
+        }
+        return { ...makeResult(command.roomId, command.requestId, saved.totalBillVnd, shares,
+          typeof evidencePath === 'string' ? evidencePath : undefined),
           billRevision: saved.billRevision, overrideApplied: true };
       };
 
@@ -575,7 +606,12 @@ export function createBillRepository(dependencies: Dependencies) {
         const sharesSnapshot = await getDocsFromServer(sharesRef);
         const shares = parseShares(sharesSnapshot.docs.map(item => item.data()));
         if (shares.length !== room.billShareCount) throw new BillRepositoryError('failed-precondition');
-        return { ...makeResult(roomId, requestId, room.totalBillVnd, shares),
+        const evidencePath = room.receiptEvidencePath;
+        if (evidencePath != null && !validReceiptEvidencePath(roomId, evidencePath)) {
+          throw new BillRepositoryError('failed-precondition');
+        }
+        return { ...makeResult(roomId, requestId, room.totalBillVnd, shares,
+          typeof evidencePath === 'string' ? evidencePath : undefined),
           billRevision: Number.isSafeInteger(room.billRevision) ? room.billRevision : 0,
           billPaidCount: Number.isSafeInteger(room.billPaidCount) ? room.billPaidCount : 0,
           overrideApplied: typeof room.billOverrideRequestId === 'string' };
