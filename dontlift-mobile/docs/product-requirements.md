@@ -167,6 +167,9 @@ As a Host, I want to enter the total bill amount so the app can calculate each m
 - Input is a positive integer value in VND.
 - Only accessible on a `COMPLETED` session with reconciliation `FINALIZED`.
 - Only the Host can submit the bill amount.
+- An active-Premium Host may capture or select a JPEG, PNG, or WEBP receipt (up to 10 MB) to request a total suggestion from the existing PaddleOCR service through the authenticated Express API. The server checks current Premium entitlement and Host authority.
+- Receipt OCR is an optional bill-entry aid. It does not publish a bill, calculate member shares, or change the bill input until the Host explicitly confirms a suggested amount of at least 1,000 VND. Unclear totals, errors, rejection, or picker cancellation preserve the current input and allow manual entry.
+- Receipt images and raw OCR responses are not persisted or logged. Every recognized amount requires Host confirmation.
 
 **US-14 — Bill Breakdown**
 As any participant, I want to see the calculated breakdown so I know exactly what each person owes.
@@ -346,8 +349,8 @@ As a user who purchased Premium, I want to enter my activation code so I can unl
 - No payment gateway, in-app wallet, escrow, or custodial balances.
 - No Kiosk Mode, Device Administrator, forced screen lock, or OS lockdown.
 - No in-app chat, social feeds, or friend directories.
-- No camera-based detection, computer vision, or gaze tracking.
-- No AI assistant, AI coaching, or AI-generated penalties.
+- No camera-based phone-use detection or gaze tracking. Narrow exception: Host-initiated receipt OCR may suggest a VND total for bill entry, subject to explicit confirmation.
+- No AI assistant, AI coaching, or AI-generated penalties. OCR does not influence penalty scores or bill-share calculations.
 - No automatic bank-transfer verification.
 - No MCP or unsupported platform enhancements.
 

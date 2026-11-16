@@ -98,6 +98,11 @@ service cloud.firestore {
       return /databases/$(database)/documents/rooms/$(roomId)/billPaymentCommands/$(requestId);
     }
 
+    function validReceiptEvidencePath(roomId, value) {
+      return value is string
+        && value.matches('^rooms/' + roomId + '/billEvidence/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}\\.(jpg|png|webp)$');
+    }
+
     function currentBillPublication(room) {
       return room.get('billOverrideRequestId', null) is string
         ? room.billOverrideRequestId : room.get('billRequestId', '');
@@ -175,8 +180,9 @@ service cloud.firestore {
         && before.get('calculationVersion', null) == null
         && before.get('billRequestId', null) == null
         && after.diff(before).affectedKeys().hasOnly([
-          'totalBillVnd', 'billRequestId', 'billShareCount', 'billPreparationStartedAt'
+          'totalBillVnd', 'billRequestId', 'billShareCount', 'billPreparationStartedAt', 'receiptEvidencePath'
         ])
+        && (!after.keys().hasAny(['receiptEvidencePath']) || validReceiptEvidencePath(roomId, after.receiptEvidencePath))
         && after.totalBillVnd is int && after.totalBillVnd >= 1000
         && after.billRequestId is string
         && after.billRequestId.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
@@ -324,7 +330,7 @@ service cloud.firestore {
         ])
         && data.keys().hasOnly([
           'version', 'requestId', 'roomId', 'hostUid', 'totalBillVnd',
-          'calculationVersion', 'shareCount', 'shareUids', 'sumShareVnd', 'createdAt'
+          'calculationVersion', 'shareCount', 'shareUids', 'sumShareVnd', 'receiptEvidencePath', 'createdAt'
         ])
         && data.version == 1
         && data.requestId == requestId
@@ -347,6 +353,7 @@ service cloud.firestore {
         && getAfter(roomAfterPath).data.billRequestId == requestId
         && getAfter(roomAfterPath).data.totalBillVnd == data.totalBillVnd
         && getAfter(roomAfterPath).data.billShareCount == data.shareCount
+        && getAfter(roomAfterPath).data.get('receiptEvidencePath', null) == data.get('receiptEvidencePath', null)
         && existsAfter(preparationPath)
         && getAfter(preparationPath).data.status == 'PUBLISHED'
         && getAfter(preparationPath).data.totalBillVnd == data.totalBillVnd
