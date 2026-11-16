@@ -10,7 +10,7 @@ let violationPlayer: AudioPlayer | null = null;
 let endSessionPlayer: AudioPlayer | null = null;
 let audioModeReady: Promise<void> | null = null;
 
-async function playThreeTimes(player: AudioPlayer): Promise<void> {
+async function playTimes(player: AudioPlayer, playCount: number): Promise<void> {
   player.loop = false;
   await player.seekTo(0);
 
@@ -22,7 +22,7 @@ async function playThreeTimes(player: AudioPlayer): Promise<void> {
       handlingCompletion = true;
       completedPlays += 1;
 
-      if (completedPlays >= 3) {
+      if (completedPlays >= playCount) {
         subscription.remove();
         resolve();
         return;
@@ -52,7 +52,7 @@ async function playViolationBeep(): Promise<void> {
     require("../../../assets/audio/notification_message-notification-alert-2-331726.mp3"),
   );
 
-  await playThreeTimes(violationPlayer);
+  await playTimes(violationPlayer, 1);
 }
 
 async function playEndSessionRing(): Promise<void> {
@@ -65,7 +65,7 @@ async function playEndSessionRing(): Promise<void> {
   endSessionPlayer ??= createAudioPlayer(
     require("../../../assets/audio/sound_1_drop_ring.mp3"),
   );
-  await playThreeTimes(endSessionPlayer);
+  await playTimes(endSessionPlayer, 3);
 }
 
 export const nativeFeedbackAdapters: FeedbackAdapters = {
