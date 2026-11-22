@@ -6,6 +6,7 @@
 
 - [Kiến trúc](docs/architecture.md)
 - [Sản phẩm](docs/product-overview.md)
+- [Bộ sơ đồ báo cáo: Use Case, Activity, Sequence, State, Class, ERD và kiến trúc](docs/diagrams/README.md)
 - [API](docs/api-guide.md)
 - [Mã nguồn](docs/code-guide.md)
 - [Hướng dẫn sử dụng](docs/user-guide.md)

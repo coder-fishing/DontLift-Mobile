@@ -1,0 +1,20 @@
+@startuml
+left to right direction
+skinparam shadowing false
+title UC-06 — Mua Premium
+actor "Người dùng" as U
+actor "payOS" as P
+rectangle "DontLift" {
+  usecase "Xem các gói Premium" as PREM01
+  usecase "Tạo yêu cầu thanh toán" as PREM02
+  usecase "Thanh toán gói Premium" as PREM03
+  usecase "Kiểm tra trạng thái đơn" as PREM04
+  usecase "Khôi phục hoặc hủy đơn đang chờ" as PREM05
+}
+U -- PREM01
+U -- PREM02
+U -- PREM03
+U -- PREM04
+U -- PREM05
+P -- PREM03
+@enduml

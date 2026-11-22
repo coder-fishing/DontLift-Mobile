@@ -1,0 +1,17 @@
+@startuml
+left to right direction
+skinparam shadowing false
+title UC-02 — Tập trung cá nhân
+actor "Người dùng Solo" as U
+rectangle "DontLift" {
+  usecase "Bắt đầu phiên cá nhân" as SOLO01
+  usecase "Chọn đếm ngược hoặc bấm giờ" as SOLO02
+  usecase "Ghi nhận vi phạm" as SOLO03
+  usecase "Kết thúc và xem tổng kết" as SOLO04
+  usecase "Xem lịch sử cá nhân" as SOLO05
+}
+U -- SOLO01
+U -- SOLO04
+U -- SOLO05
+SOLO01 ..> SOLO02 : <<include>>
+@enduml

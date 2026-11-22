@@ -1,0 +1,26 @@
+@startuml
+left to right direction
+skinparam shadowing false
+title UC-00 — Tổng quan hệ thống
+actor "Người dùng" as U
+actor "Host" as H
+actor "Member" as M
+rectangle "DontLift" {
+  usecase "Quản lý tài khoản" as G01
+  usecase "Tập trung cá nhân" as G02
+  usecase "Tham gia phiên nhóm" as G03
+  usecase "Điều phối phiên nhóm" as G04
+  usecase "Chia hóa đơn" as G05
+  usecase "Xem phần tiền và VietQR" as G06
+  usecase "Xem lịch sử" as G07
+  usecase "Mua Premium" as G08
+}
+U -- G01
+U -- G02
+U -- G07
+U -- G08
+H -- G04
+H -- G05
+M -- G03
+M -- G06
+@enduml

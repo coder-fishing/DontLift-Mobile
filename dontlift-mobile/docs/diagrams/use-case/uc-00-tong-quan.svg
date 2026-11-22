@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1260 985" role="img" aria-labelledby="title desc">
+<title id="title">UC-00 — Tổng quan hệ thống</title><desc id="desc">Sơ đồ Use Case DontLift; nguồn mô hình đi kèm trong file PlantUML.</desc>
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M1,1 L9,5 L1,9" fill="none" stroke="#334155"/></marker></defs>
+<style>text{font-family:Arial,sans-serif;fill:#172033;font-size:17px}.edge{fill:none;stroke:#64748b;stroke-width:1.5}.relation{fill:none;stroke:#334155;stroke-width:1.5;stroke-dasharray:6 4;marker-end:url(#arrow)}</style>
+<rect width="1260" height="985" fill="white"/>
+<text x="630" y="34" text-anchor="middle" font-size="22">UC-00 — Tổng quan hệ thống</text>
+<rect x="340" y="62" width="880" height="895" rx="5" fill="#f8fafc" stroke="#334155"/>
+<text x="780" y="88" text-anchor="middle">Hệ thống DontLift</text>
+<path class="edge" d="M180,165.0 L420,155"/>
+<path class="edge" d="M180,165.0 L420,255"/>
+<path class="edge" d="M180,165.0 L420,755"/>
+<path class="edge" d="M180,165.0 L420,855"/>
+<path class="edge" d="M180,537.5 L420,455"/>
+<path class="edge" d="M180,537.5 L420,555"/>
+<path class="edge" d="M180,910.0 L420,355"/>
+<path class="edge" d="M180,910.0 L420,655"/>
+<circle cx="160" cy="110.0" r="14" fill="white" stroke="#172033" stroke-width="2"/>
+<path d="M160,124.0 v48 m-30,-30 h60 m-30,30 l-24,34 m24,-34 l24,34" stroke="#172033" stroke-width="2" fill="none"/>
+<text x="160" y="232.0" text-anchor="middle">Người dùng</text>
+<circle cx="160" cy="482.5" r="14" fill="white" stroke="#172033" stroke-width="2"/>
+<path d="M160,496.5 v48 m-30,-30 h60 m-30,30 l-24,34 m24,-34 l24,34" stroke="#172033" stroke-width="2" fill="none"/>
+<text x="160" y="604.5" text-anchor="middle">Host</text>
+<circle cx="160" cy="855.0" r="14" fill="white" stroke="#172033" stroke-width="2"/>
+<path d="M160,869.0 v48 m-30,-30 h60 m-30,30 l-24,34 m24,-34 l24,34" stroke="#172033" stroke-width="2" fill="none"/>
+<text x="160" y="977.0" text-anchor="middle">Member</text>
+<ellipse cx="695" cy="155" rx="275" ry="36" fill="white" stroke="#334155" stroke-width="1.7"/>
+<text x="695" y="161" text-anchor="middle">Quản lý tài khoản</text>
+<ellipse cx="695" cy="255" rx="275" ry="36" fill="white" stroke="#334155" stroke-width="1.7"/>
+<text x="695" y="261" text-anchor="middle">Tập trung cá nhân</text>
+<ellipse cx="695" cy="355" rx="275" ry="36" fill="white" stroke="#334155" stroke-width="1.7"/>
+<text x="695" y="361" text-anchor="middle">Tham gia phiên nhóm</text>
+<ellipse cx="695" cy="455" rx="275" ry="36" fill="white" stroke="#334155" stroke-width="1.7"/>
+<text x="695" y="461" text-anchor="middle">Điều phối phiên nhóm</text>
+<ellipse cx="695" cy="555" rx="275" ry="36" fill="white" stroke="#334155" stroke-width="1.7"/>
+<text x="695" y="561" text-anchor="middle">Chia hóa đơn</text>
+<ellipse cx="695" cy="655" rx="275" ry="36" fill="white" stroke="#334155" stroke-width="1.7"/>
+<text x="695" y="661" text-anchor="middle">Xem phần tiền và VietQR</text>
+<ellipse cx="695" cy="755" rx="275" ry="36" fill="white" stroke="#334155" stroke-width="1.7"/>
+<text x="695" y="761" text-anchor="middle">Xem lịch sử</text>
+<ellipse cx="695" cy="855" rx="275" ry="36" fill="white" stroke="#334155" stroke-width="1.7"/>
+<text x="695" y="861" text-anchor="middle">Mua Premium</text>
+</svg>

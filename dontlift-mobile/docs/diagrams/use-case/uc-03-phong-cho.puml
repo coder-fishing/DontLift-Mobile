@@ -1,0 +1,23 @@
+@startuml
+left to right direction
+skinparam shadowing false
+title UC-03 — Quản lý phòng chờ
+actor "Host" as H
+actor "Member" as M
+rectangle "DontLift" {
+  usecase "Tạo phòng và mã mời" as ROOM01
+  usecase "Tham gia bằng PIN hoặc QR" as ROOM02
+  usecase "Xem phòng chờ" as ROOM03
+  usecase "Rời phòng chờ" as ROOM04
+  usecase "Loại thành viên khỏi phòng chờ" as ROOM05
+  usecase "Bắt đầu phiên nhóm" as ROOM06
+}
+H -- ROOM01
+H -- ROOM03
+H -- ROOM04
+H -- ROOM05
+H -- ROOM06
+M -- ROOM02
+M -- ROOM03
+M -- ROOM04
+@enduml
