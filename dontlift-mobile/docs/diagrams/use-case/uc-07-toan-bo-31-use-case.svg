@@ -1,0 +1,215 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 3697" role="img" aria-labelledby="title desc">
+<title id="title">DontLift — Toàn bộ 31 use case</title>
+<desc id="desc">31 use case đánh số UC01 đến UC31, chia sáu nhóm trong một ranh giới hệ thống. Tác nhân được lặp lại theo nhóm để giảm giao cắt.</desc>
+<defs><marker id="extend" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M1 1 L10 6 L1 11" fill="none" stroke="#222" stroke-width="1.5"/></marker></defs>
+<style>text{font-family:Arial,sans-serif;fill:#111}.edge{stroke:#555;stroke-width:1.4;fill:none}.actor{stroke:#222;stroke-width:2;fill:none}</style>
+<rect width="1600" height="3697" fill="white"/>
+<text x="800" y="45" text-anchor="middle" font-size="28" font-weight="bold">Sơ đồ use case tổng hợp DontLift</text>
+<text x="800" y="80" text-anchor="middle" font-size="18">UC01–UC31 · người dùng, chủ phòng và thành viên</text>
+<rect x="300" y="110" width="1000" height="3462" fill="none" stroke="#222" stroke-width="2"/>
+<text x="800" y="144" text-anchor="middle" font-size="23">Hệ thống DontLift</text>
+<rect x="320" y="170" width="960" height="442" rx="7" fill="#fafafa" stroke="#bbb"/>
+<text x="800" y="200" text-anchor="middle" font-size="21" font-weight="bold">Quản lý tài khoản</text>
+<path class="edge" d="M175,391.0 L430,253"/>
+<path class="edge" d="M175,391.0 L430,343"/>
+<path class="edge" d="M175,391.0 L430,433"/>
+<path class="edge" d="M175,391.0 L430,523"/>
+<circle class="actor" cx="150" cy="346.0" r="17"/>
+<path class="actor" d="M150,363.0 v62 m-33,-34 h66 m-33,34 l-27,40 m27,-40 l27,40"/>
+<text x="150" y="498.0" text-anchor="middle" font-size="21">Người dùng</text>
+<ellipse data-uc="UC01" cx="800" cy="253" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="259" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC01: Đăng ký tài khoản</tspan>
+</text>
+<ellipse data-uc="UC02" cx="800" cy="343" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="349" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC02: Đăng nhập</tspan>
+</text>
+<ellipse data-uc="UC03" cx="800" cy="433" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="439" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC03: Đăng xuất</tspan>
+</text>
+<ellipse data-uc="UC04" cx="800" cy="523" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="529" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC04: Cập nhật hồ sơ cá nhân</tspan>
+</text>
+<rect x="320" y="632" width="960" height="352" rx="7" fill="#fafafa" stroke="#bbb"/>
+<text x="800" y="662" text-anchor="middle" font-size="21" font-weight="bold">Tập trung cá nhân</text>
+<path class="edge" d="M175,808.0 L430,715"/>
+<path class="edge" d="M175,808.0 L430,805"/>
+<path class="edge" d="M175,808.0 L430,895"/>
+<circle class="actor" cx="150" cy="763.0" r="17"/>
+<path class="actor" d="M150,780.0 v62 m-33,-34 h66 m-33,34 l-27,40 m27,-40 l27,40"/>
+<text x="150" y="915.0" text-anchor="middle" font-size="21">Người dùng</text>
+<ellipse data-uc="UC05" cx="800" cy="715" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="721" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC05: Thiết lập và bắt đầu phiên tập trung</tspan>
+</text>
+<ellipse data-uc="UC06" cx="800" cy="805" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="811" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC06: Kết thúc phiên và xem tổng kết</tspan>
+</text>
+<ellipse data-uc="UC07" cx="800" cy="895" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="901" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC07: Xem lịch sử tập trung cá nhân</tspan>
+</text>
+<rect x="320" y="1004" width="960" height="622" rx="7" fill="#fafafa" stroke="#bbb"/>
+<text x="800" y="1034" text-anchor="middle" font-size="21" font-weight="bold">Quản lý phòng</text>
+<path class="edge" d="M175,1315.0 L430,1087"/>
+<path class="edge" d="M175,1315.0 L430,1267"/>
+<path class="edge" d="M175,1315.0 L430,1357"/>
+<path class="edge" d="M175,1315.0 L430,1447"/>
+<path class="edge" d="M175,1315.0 L430,1537"/>
+<circle class="actor" cx="150" cy="1270.0" r="17"/>
+<path class="actor" d="M150,1287.0 v62 m-33,-34 h66 m-33,34 l-27,40 m27,-40 l27,40"/>
+<text x="150" y="1422.0" text-anchor="middle" font-size="21">Chủ phòng</text>
+<path class="edge" d="M1425,1315.0 L1170,1177"/>
+<path class="edge" d="M1425,1315.0 L1170,1267"/>
+<path class="edge" d="M1425,1315.0 L1170,1357"/>
+<circle class="actor" cx="1450" cy="1270.0" r="17"/>
+<path class="actor" d="M1450,1287.0 v62 m-33,-34 h66 m-33,34 l-27,40 m27,-40 l27,40"/>
+<text x="1450" y="1422.0" text-anchor="middle" font-size="21">Thành viên</text>
+<ellipse data-uc="UC08" cx="800" cy="1087" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="1093" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC08: Tạo phòng</tspan>
+</text>
+<ellipse data-uc="UC09" cx="800" cy="1177" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="1183" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC09: Tham gia phòng bằng mã pin hoặc mã qr</tspan>
+</text>
+<ellipse data-uc="UC10" cx="800" cy="1267" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="1273" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC10: Xem danh sách thành viên</tspan>
+</text>
+<ellipse data-uc="UC11" cx="800" cy="1357" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="1363" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC11: Rời phòng chờ</tspan>
+</text>
+<ellipse data-uc="UC12" cx="800" cy="1447" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="1453" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC12: Loại thành viên khỏi phòng chờ</tspan>
+</text>
+<ellipse data-uc="UC13" cx="800" cy="1537" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="1543" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC13: Bắt đầu phiên tập trung nhóm</tspan>
+</text>
+<rect x="320" y="1646" width="960" height="712" rx="7" fill="#fafafa" stroke="#bbb"/>
+<text x="800" y="1676" text-anchor="middle" font-size="21" font-weight="bold">Hoạt động trong phiên</text>
+<path class="edge" d="M175,2002.0 L430,1729"/>
+<path class="edge" d="M175,2002.0 L430,1909"/>
+<path class="edge" d="M175,2002.0 L430,1999"/>
+<path class="edge" d="M175,2002.0 L430,2089"/>
+<path class="edge" d="M175,2002.0 L430,2179"/>
+<path class="edge" d="M175,2002.0 L430,2269"/>
+<circle class="actor" cx="150" cy="1957.0" r="17"/>
+<path class="actor" d="M150,1974.0 v62 m-33,-34 h66 m-33,34 l-27,40 m27,-40 l27,40"/>
+<text x="150" y="2109.0" text-anchor="middle" font-size="21">Chủ phòng</text>
+<path class="edge" d="M1425,2002.0 L1170,1729"/>
+<path class="edge" d="M1425,2002.0 L1170,1819"/>
+<path class="edge" d="M1425,2002.0 L1170,1999"/>
+<path class="edge" d="M1425,2002.0 L1170,2269"/>
+<circle class="actor" cx="1450" cy="1957.0" r="17"/>
+<path class="actor" d="M1450,1974.0 v62 m-33,-34 h66 m-33,34 l-27,40 m27,-40 l27,40"/>
+<text x="1450" y="2109.0" text-anchor="middle" font-size="21">Thành viên</text>
+<ellipse data-uc="UC14" cx="800" cy="1729" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="1735" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC14: Theo dõi bảng điểm vi phạm</tspan>
+</text>
+<ellipse data-uc="UC15" cx="800" cy="1819" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="1825" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC15: Yêu cầu rời phiên sớm</tspan>
+</text>
+<ellipse data-uc="UC16" cx="800" cy="1909" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="1915" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC16: Duyệt hoặc từ chối yêu cầu rời sớm</tspan>
+</text>
+<ellipse data-uc="UC17" cx="800" cy="1999" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="2005" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC17: Đề xuất và biểu quyết kết thúc phiên</tspan>
+</text>
+<ellipse data-uc="UC18" cx="800" cy="2089" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="2095" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC18: Kết thúc phiên nhóm</tspan>
+</text>
+<ellipse data-uc="UC19" cx="800" cy="2179" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="2185" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC19: Chốt điểm khi còn thành viên chưa đồng bộ</tspan>
+</text>
+<ellipse data-uc="UC20" cx="800" cy="2269" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="2275" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC20: Xem tổng kết và lịch sử nhóm</tspan>
+</text>
+<rect x="320" y="2378" width="960" height="712" rx="7" fill="#fafafa" stroke="#bbb"/>
+<text x="800" y="2408" text-anchor="middle" font-size="21" font-weight="bold">Hóa đơn và thanh toán</text>
+<path class="edge" d="M175,2734.0 L430,2461"/>
+<path class="edge" d="M175,2734.0 L430,2551"/>
+<path class="edge" d="M175,2734.0 L430,2641"/>
+<path class="edge" d="M175,2734.0 L430,2731"/>
+<path class="edge" d="M175,2734.0 L430,2821"/>
+<path class="edge" d="M175,2734.0 L430,3001"/>
+<circle class="actor" cx="150" cy="2689.0" r="17"/>
+<path class="actor" d="M150,2706.0 v62 m-33,-34 h66 m-33,34 l-27,40 m27,-40 l27,40"/>
+<text x="150" y="2841.0" text-anchor="middle" font-size="21">Chủ phòng</text>
+<path class="edge" d="M1425,2734.0 L1170,2821"/>
+<path class="edge" d="M1425,2734.0 L1170,2911"/>
+<circle class="actor" cx="1450" cy="2689.0" r="17"/>
+<path class="actor" d="M1450,2706.0 v62 m-33,-34 h66 m-33,34 l-27,40 m27,-40 l27,40"/>
+<text x="1450" y="2841.0" text-anchor="middle" font-size="21">Thành viên</text>
+<ellipse data-uc="UC21" cx="800" cy="2461" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="2467" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC21: Nhập tổng tiền hóa đơn</tspan>
+</text>
+<ellipse data-uc="UC22" cx="800" cy="2551" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="2557" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC22: Nhận diện hóa đơn bằng AI và xác nhận số tiền</tspan>
+</text>
+<ellipse data-uc="UC23" cx="800" cy="2641" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="2647" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC23: Tính và công bố phần chia hóa đơn</tspan>
+</text>
+<ellipse data-uc="UC24" cx="800" cy="2731" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="2737" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC24: Điều chỉnh phần chia</tspan>
+</text>
+<ellipse data-uc="UC25" cx="800" cy="2821" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="2827" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC25: Xem phần tiền và ảnh hóa đơn</tspan>
+</text>
+<ellipse data-uc="UC26" cx="800" cy="2911" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="2917" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC26: Mở mã qr hoặc ứng dụng ngân hàng để chuyển khoản</tspan>
+</text>
+<ellipse data-uc="UC27" cx="800" cy="3001" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="3007" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC27: Xác nhận thành viên đã thanh toán</tspan>
+</text>
+<rect x="320" y="3110" width="960" height="442" rx="7" fill="#fafafa" stroke="#bbb"/>
+<text x="800" y="3140" text-anchor="middle" font-size="21" font-weight="bold">Quản lý gói premium</text>
+<path class="edge" d="M175,3331.0 L430,3193"/>
+<path class="edge" d="M175,3331.0 L430,3283"/>
+<path class="edge" d="M175,3331.0 L430,3373"/>
+<path class="edge" d="M175,3331.0 L430,3463"/>
+<circle class="actor" cx="150" cy="3286.0" r="17"/>
+<path class="actor" d="M150,3303.0 v62 m-33,-34 h66 m-33,34 l-27,40 m27,-40 l27,40"/>
+<text x="150" y="3438.0" text-anchor="middle" font-size="21">Người dùng</text>
+<ellipse data-uc="UC28" cx="800" cy="3193" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="3199" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC28: Xem các gói premium</tspan>
+</text>
+<ellipse data-uc="UC29" cx="800" cy="3283" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="3289" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC29: Tạo yêu cầu và thanh toán mua premium</tspan>
+</text>
+<ellipse data-uc="UC30" cx="800" cy="3373" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="3379" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC30: Kiểm tra trạng thái đơn thanh toán</tspan>
+</text>
+<ellipse data-uc="UC31" cx="800" cy="3463" rx="370" ry="33" fill="white" stroke="#333" stroke-width="1.7"/>
+<text x="800" y="3469" text-anchor="middle" font-size="19">
+<tspan x="800" dy="0">UC31: Khôi phục hoặc hủy đơn đang chờ</tspan>
+</text>
+<path d="M1170,2551 C1260,2551 1260,2461 1170,2461" fill="none" stroke="#222" stroke-width="1.6" stroke-dasharray="7 5" marker-end="url(#extend)"/>
+<text x="1200" y="2511.0" text-anchor="middle" font-size="16">«extend»</text>
+<text x="800" y="3614" text-anchor="middle" font-size="18">Tác nhân được lặp lại theo nhóm để dễ đọc, không phải các tài khoản khác nhau.</text>
+<text x="800" y="3647" text-anchor="middle" font-size="18">UC22 mở rộng UC21 khi chủ phòng có premium còn hạn và chọn nhận diện hóa đơn.</text>
+</svg>

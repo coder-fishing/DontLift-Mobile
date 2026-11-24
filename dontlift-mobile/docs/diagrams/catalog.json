@@ -1,0 +1,599 @@
+[
+  {
+    "path": "use-case/uc-00-tong-quan.md",
+    "title": "UC-00 — Tổng quan hệ thống",
+    "kind": "use-case",
+    "sources": [
+      "product-requirements.md",
+      "feature-specification.md"
+    ]
+  },
+  {
+    "path": "use-case/uc-01-tai-khoan.md",
+    "title": "UC-01 — Tài khoản và hồ sơ",
+    "kind": "use-case",
+    "sources": [
+      "product-requirements.md",
+      "decisions/ADR-010-expo-go-firebase-js.md",
+      "api-contracts.md"
+    ]
+  },
+  {
+    "path": "use-case/uc-02-solo.md",
+    "title": "UC-02 — Tập trung cá nhân",
+    "kind": "use-case",
+    "sources": [
+      "product-requirements.md",
+      "feature-specification.md",
+      "decisions/ADR-030-solo-direct-summary-sync.md"
+    ]
+  },
+  {
+    "path": "use-case/uc-03-phong-cho.md",
+    "title": "UC-03 — Quản lý phòng chờ",
+    "kind": "use-case",
+    "sources": [
+      "product-requirements.md",
+      "decisions/ADR-026-spark-lobby-leave-host-transfer.md",
+      "decisions/ADR-027-spark-lobby-member-removal.md"
+    ]
+  },
+  {
+    "path": "use-case/uc-04-phien-nhom.md",
+    "title": "UC-04 — Điều phối phiên nhóm",
+    "kind": "use-case",
+    "sources": [
+      "product-requirements.md",
+      "decisions/ADR-015-spark-early-exit.md",
+      "decisions/ADR-016-spark-termination-vote.md",
+      "decisions/ADR-018-spark-host-finalization-override.md"
+    ]
+  },
+  {
+    "path": "use-case/uc-05-hoa-don.md",
+    "title": "UC-05 — Hóa đơn và chuyển khoản",
+    "kind": "use-case",
+    "sources": [
+      "api-contracts.md",
+      "decisions/ADR-021-spark-default-bill.md",
+      "decisions/ADR-022-spark-bill-overrides.md",
+      "decisions/ADR-023-spark-manual-payment-status.md"
+    ]
+  },
+  {
+    "path": "use-case/uc-06-premium.md",
+    "title": "UC-06 — Mua Premium",
+    "kind": "use-case",
+    "sources": [
+      "decisions/ADR-025-payos-expiring-premium.md",
+      "api-contracts.md"
+    ]
+  },
+  {
+    "path": "activity/act-01-dang-ky.md",
+    "title": "ACT-01 — Đăng ký và khởi tạo hồ sơ",
+    "kind": "activity",
+    "sources": [
+      "decisions/ADR-010-expo-go-firebase-js.md"
+    ]
+  },
+  {
+    "path": "activity/act-02-dang-nhap.md",
+    "title": "ACT-02 — Đăng nhập",
+    "kind": "activity",
+    "sources": [
+      "decisions/ADR-010-expo-go-firebase-js.md",
+      "architecture.md"
+    ]
+  },
+  {
+    "path": "activity/act-03-solo.md",
+    "title": "ACT-03 — Phiên tập trung cá nhân",
+    "kind": "activity",
+    "sources": [
+      "product-requirements.md",
+      "decisions/ADR-030-solo-direct-summary-sync.md"
+    ]
+  },
+  {
+    "path": "activity/act-04-phat-hien-vi-pham.md",
+    "title": "ACT-04 — Xác nhận vi phạm 3 giây",
+    "kind": "activity",
+    "sources": [
+      "feature-specification.md",
+      "decisions/ADR-008-platform-session-lifecycle.md"
+    ]
+  },
+  {
+    "path": "activity/act-05-phuc-hoi-chay-nen.md",
+    "title": "ACT-05 — Phục hồi lifecycle",
+    "kind": "activity",
+    "sources": [
+      "decisions/ADR-008-platform-session-lifecycle.md",
+      "decisions/ADR-010-expo-go-firebase-js.md"
+    ]
+  },
+  {
+    "path": "activity/act-06-tao-tham-gia-phong.md",
+    "title": "ACT-06 — Tạo và tham gia phòng",
+    "kind": "activity",
+    "sources": [
+      "api-contracts.md",
+      "decisions/ADR-011-spark-room-creation.md",
+      "decisions/ADR-012-spark-room-join.md"
+    ]
+  },
+  {
+    "path": "activity/act-07-roi-loai-phong-cho.md",
+    "title": "ACT-07 — Rời hoặc loại thành viên phòng chờ",
+    "kind": "activity",
+    "sources": [
+      "decisions/ADR-026-spark-lobby-leave-host-transfer.md",
+      "decisions/ADR-027-spark-lobby-member-removal.md"
+    ]
+  },
+  {
+    "path": "activity/act-08-phien-nhom.md",
+    "title": "ACT-08 — Theo dõi phiên nhóm",
+    "kind": "activity",
+    "sources": [
+      "decisions/ADR-013-spark-room-start.md",
+      "decisions/ADR-014-spark-group-violations.md",
+      "decisions/ADR-015-spark-early-exit.md"
+    ]
+  },
+  {
+    "path": "activity/act-09-roi-som.md",
+    "title": "ACT-09 — Xin rời sớm",
+    "kind": "activity",
+    "sources": [
+      "decisions/ADR-015-spark-early-exit.md",
+      "decisions/ADR-016-spark-termination-vote.md"
+    ]
+  },
+  {
+    "path": "activity/act-10-bieu-quyet.md",
+    "title": "ACT-10 — Biểu quyết hủy phiên",
+    "kind": "activity",
+    "sources": [
+      "decisions/ADR-016-spark-termination-vote.md"
+    ]
+  },
+  {
+    "path": "activity/act-11-ket-thuc-chot-diem.md",
+    "title": "ACT-11 — Hoàn tất và chốt điểm",
+    "kind": "activity",
+    "sources": [
+      "decisions/ADR-017-spark-room-completion.md",
+      "decisions/ADR-018-spark-host-finalization-override.md"
+    ]
+  },
+  {
+    "path": "activity/act-12-ocr.md",
+    "title": "ACT-12 — Quét hóa đơn và xác nhận",
+    "kind": "activity",
+    "sources": [
+      "api-contracts.md"
+    ]
+  },
+  {
+    "path": "activity/act-13-chia-hoa-don.md",
+    "title": "ACT-13 — Tính, điều chỉnh và công bố hóa đơn",
+    "kind": "activity",
+    "sources": [
+      "decisions/ADR-021-spark-default-bill.md",
+      "decisions/ADR-022-spark-bill-overrides.md"
+    ]
+  },
+  {
+    "path": "activity/act-14-vietqr-thanh-toan.md",
+    "title": "ACT-14 — VietQR và xác nhận đã trả",
+    "kind": "activity",
+    "sources": [
+      "decisions/ADR-023-spark-manual-payment-status.md",
+      "api-contracts.md"
+    ]
+  },
+  {
+    "path": "activity/act-15-premium.md",
+    "title": "ACT-15 — Mua và cấp quyền Premium",
+    "kind": "activity",
+    "sources": [
+      "decisions/ADR-025-payos-expiring-premium.md",
+      "api-contracts.md"
+    ]
+  },
+  {
+    "path": "activity/act-16-lich-su.md",
+    "title": "ACT-16 — Tra cứu lịch sử",
+    "kind": "activity",
+    "sources": [
+      "decisions/ADR-030-solo-direct-summary-sync.md",
+      "decisions/ADR-024-spark-group-history.md",
+      "decisions/ADR-028-shared-group-history-index.md"
+    ]
+  },
+  {
+    "path": "sequence/seq-01-dang-ky.md",
+    "title": "SEQ-01 — Đăng ký và phục hồi hồ sơ",
+    "kind": "sequence",
+    "sources": [
+      "decisions/ADR-010-expo-go-firebase-js.md"
+    ]
+  },
+  {
+    "path": "sequence/seq-02-solo.md",
+    "title": "SEQ-02 — Hoàn tất và đồng bộ Solo",
+    "kind": "sequence",
+    "sources": [
+      "decisions/ADR-030-solo-direct-summary-sync.md"
+    ]
+  },
+  {
+    "path": "sequence/seq-03-cam-bien.md",
+    "title": "SEQ-03 — Cảm biến và vi phạm",
+    "kind": "sequence",
+    "sources": [
+      "feature-specification.md",
+      "decisions/ADR-008-platform-session-lifecycle.md"
+    ]
+  },
+  {
+    "path": "sequence/seq-04-lifecycle.md",
+    "title": "SEQ-04 — Background và phục hồi",
+    "kind": "sequence",
+    "sources": [
+      "decisions/ADR-008-platform-session-lifecycle.md",
+      "decisions/ADR-010-expo-go-firebase-js.md"
+    ]
+  },
+  {
+    "path": "sequence/seq-05-tao-phong.md",
+    "title": "SEQ-05 — Tạo phòng trên Spark",
+    "kind": "sequence",
+    "sources": [
+      "decisions/ADR-011-spark-room-creation.md",
+      "api-contracts.md"
+    ]
+  },
+  {
+    "path": "sequence/seq-06-join-start.md",
+    "title": "SEQ-06 — Tham gia và bắt đầu nhóm",
+    "kind": "sequence",
+    "sources": [
+      "decisions/ADR-012-spark-room-join.md",
+      "decisions/ADR-013-spark-room-start.md"
+    ]
+  },
+  {
+    "path": "sequence/seq-07-dong-bo-vi-pham.md",
+    "title": "SEQ-07 — Đồng bộ vi phạm nhóm",
+    "kind": "sequence",
+    "sources": [
+      "decisions/ADR-014-spark-group-violations.md",
+      "decisions/ADR-015-spark-early-exit.md",
+      "decisions/ADR-018-spark-host-finalization-override.md"
+    ]
+  },
+  {
+    "path": "sequence/seq-08-roi-som.md",
+    "title": "SEQ-08 — Yêu cầu và duyệt rời sớm",
+    "kind": "sequence",
+    "sources": [
+      "decisions/ADR-015-spark-early-exit.md"
+    ]
+  },
+  {
+    "path": "sequence/seq-09-bieu-quyet.md",
+    "title": "SEQ-09 — Biểu quyết kết thúc",
+    "kind": "sequence",
+    "sources": [
+      "decisions/ADR-016-spark-termination-vote.md"
+    ]
+  },
+  {
+    "path": "sequence/seq-10-chot-diem.md",
+    "title": "SEQ-10 — Hoàn tất, ACK và Host override",
+    "kind": "sequence",
+    "sources": [
+      "decisions/ADR-017-spark-room-completion.md",
+      "decisions/ADR-018-spark-host-finalization-override.md"
+    ]
+  },
+  {
+    "path": "sequence/seq-11-ocr-production.md",
+    "title": "SEQ-11 — PaddleOCR qua Express trong production",
+    "kind": "sequence",
+    "sources": [
+      "api-contracts.md"
+    ]
+  },
+  {
+    "path": "sequence/seq-12-anh-minh-chung.md",
+    "title": "SEQ-12 — Ảnh hóa đơn riêng tư",
+    "kind": "sequence",
+    "sources": [
+      "api-contracts.md"
+    ]
+  },
+  {
+    "path": "sequence/seq-13-cong-bo-bill.md",
+    "title": "SEQ-13 — Công bố phần chia theo từng đợt",
+    "kind": "sequence",
+    "sources": [
+      "decisions/ADR-021-spark-default-bill.md",
+      "api-contracts.md"
+    ]
+  },
+  {
+    "path": "sequence/seq-14-override-bill.md",
+    "title": "SEQ-14 — Điều chỉnh phiên bản phần chia",
+    "kind": "sequence",
+    "sources": [
+      "decisions/ADR-022-spark-bill-overrides.md",
+      "api-contracts.md"
+    ]
+  },
+  {
+    "path": "sequence/seq-15-xac-nhan-tra.md",
+    "title": "SEQ-15 — Xác nhận trả tiền thủ công",
+    "kind": "sequence",
+    "sources": [
+      "decisions/ADR-023-spark-manual-payment-status.md",
+      "api-contracts.md"
+    ]
+  },
+  {
+    "path": "sequence/seq-16-premium.md",
+    "title": "SEQ-16 — payOS và cấp quyền có thời hạn",
+    "kind": "sequence",
+    "sources": [
+      "decisions/ADR-025-payos-expiring-premium.md",
+      "api-contracts.md"
+    ]
+  },
+  {
+    "path": "sequence/seq-17-lich-su.md",
+    "title": "SEQ-17 — Khôi phục lịch sử trên thiết bị",
+    "kind": "sequence",
+    "sources": [
+      "decisions/ADR-030-solo-direct-summary-sync.md",
+      "decisions/ADR-024-spark-group-history.md",
+      "decisions/ADR-028-shared-group-history-index.md"
+    ]
+  },
+  {
+    "path": "sequence/seq-18-roi-phong-cho.md",
+    "title": "SEQ-18 — Chuyển Host khi rời phòng chờ",
+    "kind": "sequence",
+    "sources": [
+      "decisions/ADR-026-spark-lobby-leave-host-transfer.md"
+    ]
+  },
+  {
+    "path": "state-machine/stm-01-huong-dien-thoai.md",
+    "title": "STM-01 — Phân loại hướng điện thoại",
+    "kind": "state-machine",
+    "sources": [
+      "feature-specification.md"
+    ]
+  },
+  {
+    "path": "state-machine/stm-02-grace.md",
+    "title": "STM-02 — Vòng đời xác nhận vi phạm",
+    "kind": "state-machine",
+    "sources": [
+      "feature-specification.md",
+      "decisions/ADR-008-platform-session-lifecycle.md"
+    ]
+  },
+  {
+    "path": "state-machine/stm-03-lifecycle-candidate.md",
+    "title": "STM-03 — Candidate lifecycle bền vững",
+    "kind": "state-machine",
+    "sources": [
+      "decisions/ADR-008-platform-session-lifecycle.md"
+    ]
+  },
+  {
+    "path": "state-machine/stm-04-solo.md",
+    "title": "STM-04 — Phiên Solo",
+    "kind": "state-machine",
+    "sources": [
+      "product-requirements.md",
+      "decisions/ADR-030-solo-direct-summary-sync.md"
+    ]
+  },
+  {
+    "path": "state-machine/stm-05-phong.md",
+    "title": "STM-05 — Vòng đời phòng",
+    "kind": "state-machine",
+    "sources": [
+      "api-contracts.md",
+      "decisions/ADR-019-spark-stale-room-abort.md",
+      "decisions/ADR-026-spark-lobby-leave-host-transfer.md"
+    ]
+  },
+  {
+    "path": "state-machine/stm-06-reconciliation.md",
+    "title": "STM-06 — Đối soát và chốt điểm",
+    "kind": "state-machine",
+    "sources": [
+      "decisions/ADR-017-spark-room-completion.md",
+      "decisions/ADR-018-spark-host-finalization-override.md"
+    ]
+  },
+  {
+    "path": "state-machine/stm-07-outbox.md",
+    "title": "STM-07 — Trạng thái hàng đợi đồng bộ",
+    "kind": "state-machine",
+    "sources": [
+      "architecture.md",
+      "decisions/ADR-030-solo-direct-summary-sync.md"
+    ]
+  },
+  {
+    "path": "state-machine/stm-08-bill-payment.md",
+    "title": "STM-08 — Công bố bill và trạng thái khoản trả",
+    "kind": "state-machine",
+    "sources": [
+      "decisions/ADR-021-spark-default-bill.md",
+      "decisions/ADR-022-spark-bill-overrides.md",
+      "decisions/ADR-023-spark-manual-payment-status.md"
+    ]
+  },
+  {
+    "path": "state-machine/stm-09-premium.md",
+    "title": "STM-09 — Quyền Premium theo thời gian",
+    "kind": "state-machine",
+    "sources": [
+      "decisions/ADR-025-payos-expiring-premium.md",
+      "api-contracts.md"
+    ]
+  },
+  {
+    "path": "class/cls-01-domain.md",
+    "title": "CLS-01 — Mô hình miền tổng quan",
+    "kind": "class",
+    "sources": [
+      "feature-specification.md",
+      "api-contracts.md"
+    ]
+  },
+  {
+    "path": "class/cls-02-solo-sensor.md",
+    "title": "CLS-02 — Hợp đồng Solo và cảm biến",
+    "kind": "class",
+    "sources": [
+      "feature-specification.md",
+      "decisions/ADR-008-platform-session-lifecycle.md"
+    ]
+  },
+  {
+    "path": "class/cls-03-sync.md",
+    "title": "CLS-03 — Cấu trúc đồng bộ dữ liệu",
+    "kind": "class",
+    "sources": [
+      "architecture.md",
+      "decisions/ADR-030-solo-direct-summary-sync.md",
+      "decisions/ADR-014-spark-group-violations.md"
+    ]
+  },
+  {
+    "path": "class/cls-04-bill.md",
+    "title": "CLS-04 — Kiểu dữ liệu tính hóa đơn",
+    "kind": "class",
+    "sources": [
+      "decisions/ADR-021-spark-default-bill.md",
+      "decisions/ADR-022-spark-bill-overrides.md"
+    ]
+  },
+  {
+    "path": "class/cls-05-integrations.md",
+    "title": "CLS-05 — Ranh giới tích hợp dịch vụ",
+    "kind": "class",
+    "sources": [
+      "architecture.md",
+      "api-contracts.md",
+      "decisions/ADR-025-payos-expiring-premium.md"
+    ]
+  },
+  {
+    "path": "erd/erd-01-nghiep-vu.md",
+    "title": "ERD-01 — Thực thể nghiệp vụ",
+    "kind": "erd",
+    "sources": [
+      "feature-specification.md",
+      "api-contracts.md"
+    ]
+  },
+  {
+    "path": "erd/erd-02-sqlite-core.md",
+    "title": "ERD-02 — SQLite: phiên và đồng bộ",
+    "kind": "erd",
+    "sources": [
+      "architecture.md",
+      "decisions/ADR-030-solo-direct-summary-sync.md"
+    ]
+  },
+  {
+    "path": "erd/erd-03-sqlite-history.md",
+    "title": "ERD-03 — SQLite: phòng và lịch sử",
+    "kind": "erd",
+    "sources": [
+      "architecture.md",
+      "decisions/ADR-024-spark-group-history.md",
+      "decisions/ADR-028-shared-group-history-index.md"
+    ]
+  },
+  {
+    "path": "erd/erd-04-firestore-room.md",
+    "title": "ERD-04 — Firestore: phòng và thành viên",
+    "kind": "erd",
+    "sources": [
+      "api-contracts.md",
+      "architecture.md"
+    ]
+  },
+  {
+    "path": "erd/erd-05-firestore-bill-premium.md",
+    "title": "ERD-05 — Firestore: hóa đơn, lịch sử và Premium",
+    "kind": "erd",
+    "sources": [
+      "api-contracts.md",
+      "decisions/ADR-025-payos-expiring-premium.md",
+      "decisions/ADR-030-solo-direct-summary-sync.md"
+    ]
+  },
+  {
+    "path": "architecture/arc-01-context.md",
+    "title": "ARC-01 — Ngữ cảnh hệ thống",
+    "kind": "architecture",
+    "sources": [
+      "architecture.md",
+      "api-contracts.md"
+    ]
+  },
+  {
+    "path": "architecture/arc-02-components.md",
+    "title": "ARC-02 — Thành phần và quyền sở hữu dữ liệu",
+    "kind": "architecture",
+    "sources": [
+      "architecture.md",
+      "decisions/ADR-010-expo-go-firebase-js.md",
+      "api-contracts.md"
+    ]
+  },
+  {
+    "path": "architecture/arc-03-deployment.md",
+    "title": "ARC-03 — Development và production",
+    "kind": "architecture",
+    "sources": [
+      "decisions/ADR-010-expo-go-firebase-js.md",
+      "api-contracts.md",
+      "decisions/ADR-025-payos-expiring-premium.md"
+    ]
+  },
+  {
+    "path": "class/cls-06-toan-bo-he-thong.md",
+    "title": "CLS-06 — Sơ đồ lớp tổng hợp toàn hệ thống",
+    "kind": "class",
+    "sources": [
+      "architecture.md",
+      "api-contracts.md",
+      "feature-specification.md",
+      "decisions/ADR-030-solo-direct-summary-sync.md",
+      "decisions/ADR-025-payos-expiring-premium.md"
+    ]
+  },
+  {
+    "path": "use-case/uc-07-toan-bo-31-use-case.md",
+    "title": "UC01–UC31 — Toàn bộ use case DontLift",
+    "kind": "use-case",
+    "sources": [
+      "product-requirements.md",
+      "feature-specification.md",
+      "api-contracts.md"
+    ]
+  }
+]

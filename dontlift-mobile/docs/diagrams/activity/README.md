@@ -1,0 +1,18 @@
+# Sơ đồ activity
+
+- [ACT-01 — Đăng ký và khởi tạo hồ sơ](act-01-dang-ky.md)
+- [ACT-02 — Đăng nhập](act-02-dang-nhap.md)
+- [ACT-03 — Phiên tập trung cá nhân](act-03-solo.md)
+- [ACT-04 — Xác nhận vi phạm 3 giây](act-04-phat-hien-vi-pham.md)
+- [ACT-05 — Phục hồi lifecycle](act-05-phuc-hoi-chay-nen.md)
+- [ACT-06 — Tạo và tham gia phòng](act-06-tao-tham-gia-phong.md)
+- [ACT-07 — Rời hoặc loại thành viên phòng chờ](act-07-roi-loai-phong-cho.md)
+- [ACT-08 — Theo dõi phiên nhóm](act-08-phien-nhom.md)
+- [ACT-09 — Xin rời sớm](act-09-roi-som.md)
+- [ACT-10 — Biểu quyết hủy phiên](act-10-bieu-quyet.md)
+- [ACT-11 — Hoàn tất và chốt điểm](act-11-ket-thuc-chot-diem.md)
+- [ACT-12 — Quét hóa đơn và xác nhận](act-12-ocr.md)
+- [ACT-13 — Tính, điều chỉnh và công bố hóa đơn](act-13-chia-hoa-don.md)
+- [ACT-14 — VietQR và xác nhận đã trả](act-14-vietqr-thanh-toan.md)
+- [ACT-15 — Mua và cấp quyền Premium](act-15-premium.md)
+- [ACT-16 — Tra cứu lịch sử](act-16-lich-su.md)

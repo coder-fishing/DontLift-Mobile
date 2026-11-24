@@ -1,0 +1,26 @@
+@startuml
+left to right direction
+skinparam shadowing false
+title UC-04 — Điều phối phiên nhóm
+actor "Host" as H
+actor "Member" as M
+rectangle "DontLift" {
+  usecase "Xem bảng điểm trực tiếp" as GROUP01
+  usecase "Xin rời phiên sớm" as GROUP02
+  usecase "Duyệt hoặc từ chối rời sớm" as GROUP03
+  usecase "Đề xuất và bỏ phiếu kết thúc" as GROUP04
+  usecase "Kết thúc phiên hoàn tất" as GROUP05
+  usecase "Chốt điểm khi còn thiếu đồng bộ" as GROUP06
+  usecase "Xem tổng kết và lịch sử nhóm" as GROUP07
+}
+H -- GROUP01
+H -- GROUP03
+H -- GROUP04
+H -- GROUP05
+H -- GROUP06
+H -- GROUP07
+M -- GROUP01
+M -- GROUP02
+M -- GROUP04
+M -- GROUP07
+@enduml

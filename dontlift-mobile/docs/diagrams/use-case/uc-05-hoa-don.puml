@@ -1,0 +1,29 @@
+@startuml
+left to right direction
+skinparam shadowing false
+title UC-05 — Hóa đơn và chuyển khoản
+actor "Host" as H
+actor "Member" as M
+actor "Dịch vụ OCR" as O
+actor "Ứng dụng ngân hàng" as B
+rectangle "DontLift" {
+  usecase "Nhập tổng tiền hóa đơn" as BILL01
+  usecase "Quét hóa đơn và xác nhận gợi ý" as BILL02
+  usecase "Tính và công bố phần chia" as BILL03
+  usecase "Điều chỉnh phần chia" as BILL04
+  usecase "Xem phần tiền và ảnh hóa đơn" as BILL05
+  usecase "Mở VietQR để chuyển khoản" as BILL06
+  usecase "Xác nhận thành viên đã trả" as BILL07
+}
+H -- BILL01
+H -- BILL02
+H -- BILL03
+H -- BILL04
+H -- BILL05
+H -- BILL07
+M -- BILL05
+M -- BILL06
+O -- BILL02
+B -- BILL06
+BILL02 ..> BILL01 : <<extend>>
+@enduml

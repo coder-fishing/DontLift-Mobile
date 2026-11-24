@@ -1,0 +1,22 @@
+@startuml
+left to right direction
+skinparam shadowing false
+title UC-01 — Tài khoản và hồ sơ
+actor "Người dùng" as U
+actor "Firebase Auth" as F
+rectangle "DontLift" {
+  usecase "Đăng ký" as AUTH01
+  usecase "Đăng nhập" as AUTH02
+  usecase "Đăng xuất" as AUTH03
+  usecase "Cập nhật tên hiển thị" as AUTH04
+  usecase "Cập nhật ảnh đại diện" as AUTH05
+}
+U -- AUTH01
+U -- AUTH02
+U -- AUTH03
+U -- AUTH04
+U -- AUTH05
+F -- AUTH01
+F -- AUTH02
+F -- AUTH03
+@enduml

@@ -1,0 +1,96 @@
+@startuml
+left to right direction
+skinparam shadowing false
+title DontLift — Toàn bộ 31 use case
+actor "Người dùng" as U
+actor "Chủ phòng" as H
+actor "Thành viên" as M
+rectangle "Hệ thống DontLift" {
+  package "Quản lý tài khoản" {
+    usecase "UC01: Đăng ký tài khoản" as UC01
+    usecase "UC02: Đăng nhập" as UC02
+    usecase "UC03: Đăng xuất" as UC03
+    usecase "UC04: Cập nhật hồ sơ cá nhân" as UC04
+  }
+  package "Tập trung cá nhân" {
+    usecase "UC05: Thiết lập và bắt đầu phiên tập trung" as UC05
+    usecase "UC06: Kết thúc phiên và xem tổng kết" as UC06
+    usecase "UC07: Xem lịch sử tập trung cá nhân" as UC07
+  }
+  package "Quản lý phòng" {
+    usecase "UC08: Tạo phòng" as UC08
+    usecase "UC09: Tham gia phòng bằng mã pin hoặc mã qr" as UC09
+    usecase "UC10: Xem danh sách thành viên" as UC10
+    usecase "UC11: Rời phòng chờ" as UC11
+    usecase "UC12: Loại thành viên khỏi phòng chờ" as UC12
+    usecase "UC13: Bắt đầu phiên tập trung nhóm" as UC13
+  }
+  package "Hoạt động trong phiên" {
+    usecase "UC14: Theo dõi bảng điểm vi phạm" as UC14
+    usecase "UC15: Yêu cầu rời phiên sớm" as UC15
+    usecase "UC16: Duyệt hoặc từ chối yêu cầu rời sớm" as UC16
+    usecase "UC17: Đề xuất và biểu quyết kết thúc phiên" as UC17
+    usecase "UC18: Kết thúc phiên nhóm" as UC18
+    usecase "UC19: Chốt điểm khi còn thành viên chưa đồng bộ" as UC19
+    usecase "UC20: Xem tổng kết và lịch sử nhóm" as UC20
+  }
+  package "Hóa đơn và thanh toán" {
+    usecase "UC21: Nhập tổng tiền hóa đơn" as UC21
+    usecase "UC22: Nhận diện hóa đơn bằng AI và xác nhận số tiền" as UC22
+    usecase "UC23: Tính và công bố phần chia hóa đơn" as UC23
+    usecase "UC24: Điều chỉnh phần chia" as UC24
+    usecase "UC25: Xem phần tiền và ảnh hóa đơn" as UC25
+    usecase "UC26: Mở mã qr hoặc ứng dụng ngân hàng để chuyển khoản" as UC26
+    usecase "UC27: Xác nhận thành viên đã thanh toán" as UC27
+  }
+  package "Quản lý gói premium" {
+    usecase "UC28: Xem các gói premium" as UC28
+    usecase "UC29: Tạo yêu cầu và thanh toán mua premium" as UC29
+    usecase "UC30: Kiểm tra trạng thái đơn thanh toán" as UC30
+    usecase "UC31: Khôi phục hoặc hủy đơn đang chờ" as UC31
+  }
+}
+U -- UC01
+U -- UC02
+U -- UC03
+U -- UC04
+U -- UC05
+U -- UC06
+U -- UC07
+H -- UC08
+M -- UC09
+H -- UC10
+M -- UC10
+H -- UC11
+M -- UC11
+H -- UC12
+H -- UC13
+H -- UC14
+M -- UC14
+M -- UC15
+H -- UC16
+H -- UC17
+M -- UC17
+H -- UC18
+H -- UC19
+H -- UC20
+M -- UC20
+H -- UC21
+H -- UC22
+H -- UC23
+H -- UC24
+H -- UC25
+M -- UC25
+M -- UC26
+H -- UC27
+U -- UC28
+U -- UC29
+U -- UC30
+U -- UC31
+UC22 ..> UC21 : <<extend>>
+note right of UC22 : Tùy chọn, chủ phòng premium còn hạn
+legend bottom
+Chủ phòng và thành viên là vai trò theo phòng của người dùng.
+Đăng nhập là điều kiện trước, không tự động là include.
+endlegend
+@enduml
