@@ -2,6 +2,12 @@
 
 ## Bổ sung ngày 24/11/2026
 
+- Bổ sung tiếp sơ đồ lớp tổng hợp `cls-06-toan-bo-he-thong`, gồm 31 kiểu dữ liệu, lớp và module chính; tổng bộ tài liệu hiện có 65 sơ đồ (6 sơ đồ lớp, 8 sơ đồ use case).
+- Đã parse/render lại 57/57 Mermaid thành công. Xuất SVG và PNG gốc 5594 × 2022 cho sơ đồ lớp; đã mở ảnh kiểm tra bố cục và các quan hệ tổng thể.
+- Đối chiếu các thuộc tính và phương thức với auth controller, Solo controller, grace engine, room listener, voting, bill repository/allocation, OCR, sync worker, history model và Premium API client.
+
+Lần bổ sung use case trước đó trong cùng ngày:
+
 - Thêm một sơ đồ tổng hợp đủ UC01–UC31, nâng tổng số sơ đồ lên 64 (8 sơ đồ use case).
 - Kiểm tra đủ 31 định danh duy nhất trong SVG và PlantUML; có bảng đối chiếu mã nhóm cũ.
 - Đã dựng lại 56/56 Mermaid thành công và cả 8 SVG use case bằng Chrome headless.

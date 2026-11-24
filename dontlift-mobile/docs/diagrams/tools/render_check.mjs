@@ -57,6 +57,16 @@ try {
     if (svg) {
       const stem=item.path.replace(/\.md$/,'').replaceAll('/','--');
       await fs.writeFile(path.join(output,stem+'.svg'),svg);
+      if (item.path === 'class/cls-06-toan-bo-he-thong.md') {
+        await page.evaluate(() => {
+          const svg=document.querySelector('#preview svg');
+          svg.style.width=svg.viewBox.baseVal.width+'px';
+          svg.style.maxWidth='none';
+          document.getElementById('preview').style.width='max-content';
+        });
+        await page.locator('#preview svg').screenshot({path:path.join(output,stem+'.png')});
+        await page.evaluate(()=>{document.getElementById('preview').style.width='';});
+      }
       if (['activity/act-12-ocr.md','erd/erd-02-sqlite-core.md','sequence/seq-16-premium.md','class/cls-02-solo-sensor.md','state-machine/stm-05-phong.md'].includes(item.path)) {
         await page.locator('#preview').screenshot({path:path.join(output,stem+'.png')});
       }

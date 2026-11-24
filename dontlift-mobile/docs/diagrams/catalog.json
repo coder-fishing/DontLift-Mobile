@@ -575,6 +575,18 @@
     ]
   },
   {
+    "path": "class/cls-06-toan-bo-he-thong.md",
+    "title": "CLS-06 — Sơ đồ lớp tổng hợp toàn hệ thống",
+    "kind": "class",
+    "sources": [
+      "architecture.md",
+      "api-contracts.md",
+      "feature-specification.md",
+      "decisions/ADR-030-solo-direct-summary-sync.md",
+      "decisions/ADR-025-payos-expiring-premium.md"
+    ]
+  },
+  {
     "path": "use-case/uc-07-toan-bo-31-use-case.md",
     "title": "UC01–UC31 — Toàn bộ use case DontLift",
     "kind": "use-case",

@@ -69,6 +69,20 @@ for path in ROOT.rglob('*.md'):
         if not resolved.exists():
             errors.append(f'Broken link in {path.relative_to(ROOT)}: {target}')
 
+full_class = ROOT / 'class/cls-06-toan-bo-he-thong.md'
+if full_class.exists():
+    declarations = re.findall(r'^\s*class (\w+) \{', full_class.read_text(encoding='utf-8'), re.M)
+    if len(declarations) != 31 or len(set(declarations)) != 31:
+        errors.append('Combined class model must contain 31 unique declared elements')
+    try:
+        exported = ET.parse(full_class.with_suffix('.svg'))
+        labels = ''.join(exported.getroot().itertext())
+        for declaration in declarations:
+            if declaration not in labels:
+                errors.append(f'Combined class SVG missing element: {declaration}')
+    except (ET.ParseError, FileNotFoundError) as exc:
+        errors.append(f'Invalid combined class SVG export: {exc}')
+
 if errors:
     print('\n'.join(errors))
     sys.exit(1)
