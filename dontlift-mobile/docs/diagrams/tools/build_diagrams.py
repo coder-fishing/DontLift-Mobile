@@ -1428,11 +1428,14 @@ def index():
     for item in CATALOG:
         groups.setdefault(item['kind'], []).append(item)
     for folder, items in groups.items():
-        put(f'{folder}/README.md', f'# Sơ đồ {folder}\n\n' + '\n'.join(f'- [{i["title"]}]({Path(i["path"]).name})' for i in items))
+        featured = '[Sơ đồ tổng hợp đủ UC01–UC31](uc-07-toan-bo-31-use-case.md) — thống nhất với danh sách đặc tả báo cáo.\n\n' if folder == 'use-case' else ''
+        put(f'{folder}/README.md', f'# Sơ đồ {folder}\n\n' + featured + '\n'.join(f'- [{i["title"]}]({Path(i["path"]).name})' for i in items))
     rows = '\n'.join(f'| {kind} | {len(items)} | [Mở thư mục]({kind}/README.md) |' for kind, items in groups.items())
     put('README.md', f'''# Bộ sơ đồ phân tích và thiết kế DontLift
 
 Đối chiếu ngày 22/11/2026. Bộ sơ đồ phục vụ đồ án **Xây dựng ứng dụng đa nền tảng DontLift tích hợp AI nhận diện hóa đơn**. Tổng cộng **{len(CATALOG)} sơ đồ**, chia theo loại; mỗi sơ đồ nằm trong một file Markdown riêng.
+
+Bổ sung ngày 24/11/2026: [một sơ đồ tổng hợp đủ UC01–UC31](use-case/uc-07-toan-bo-31-use-case.md), có bảng đối chiếu mã cũ và thống nhất với danh sách đặc tả trong báo cáo.
 
 ## Xem trên GitHub
 
@@ -1476,7 +1479,7 @@ Mở file `.md` để GitHub dựng hình trong khối `mermaid`. File Use Case 
 
 Phân tích tác nhân và Use Case → sơ đồ lớp miền → Activity theo chức năng → State Machine → Sequence → ERD và kiến trúc. Chọn sơ đồ tổng quan cho thân báo cáo; đưa các nhánh phục hồi, đồng bộ và tích hợp chi tiết vào phụ lục khi cần.
 ''')
-    put('use-case/catalog.md', '# Danh sách Use Case\n\nG01–G08 là nhóm chức năng tổng quan; các mã còn lại là Use Case chi tiết.\n\n| Mã | Chức năng | Sơ đồ |\n|---|---|---|\n' + '\n'.join(f'| {key} | {label} | [Mở]({Path(path).name}) |' for key,label,path in UC))
+    put('use-case/catalog.md', '# Danh sách Use Case\n\n[Mã UC01–UC31 dùng trong báo cáo và sơ đồ tổng hợp](uc-07-toan-bo-31-use-case.md). Bảng bên dưới giữ mã phân rã cũ để đối chiếu; không phải danh sách 31 use case của báo cáo.\n\nG01–G08 là nhóm chức năng tổng quan; các mã còn lại là Use Case chi tiết.\n\n| Mã | Chức năng | Sơ đồ |\n|---|---|---|\n' + '\n'.join(f'| {key} | {label} | [Mở]({Path(path).name}) |' for key,label,path in UC))
     put('catalog.json',json.dumps(CATALOG,ensure_ascii=False,indent=2))
     put('SOURCES.md','''# Nguồn đối chiếu và giới hạn
 
@@ -1504,5 +1507,7 @@ Không đưa các chức năng của ảnh tham khảo như Web3, quyên góp, c
 
 
 if __name__ == '__main__':
+    from build_full_usecase import build as build_full_usecase
+    CATALOG.append(build_full_usecase(ROOT))
     index()
     print(f'Built {len(CATALOG)} diagrams in {ROOT}')

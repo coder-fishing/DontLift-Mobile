@@ -573,5 +573,15 @@
       "api-contracts.md",
       "decisions/ADR-025-payos-expiring-premium.md"
     ]
+  },
+  {
+    "path": "use-case/uc-07-toan-bo-31-use-case.md",
+    "title": "UC01–UC31 — Toàn bộ use case DontLift",
+    "kind": "use-case",
+    "sources": [
+      "product-requirements.md",
+      "feature-specification.md",
+      "api-contracts.md"
+    ]
   }
 ]

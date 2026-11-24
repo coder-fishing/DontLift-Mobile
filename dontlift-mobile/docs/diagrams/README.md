@@ -1,6 +1,8 @@
 # Bộ sơ đồ phân tích và thiết kế DontLift
 
-Đối chiếu ngày 22/11/2026. Bộ sơ đồ phục vụ đồ án **Xây dựng ứng dụng đa nền tảng DontLift tích hợp AI nhận diện hóa đơn**. Tổng cộng **63 sơ đồ**, chia theo loại; mỗi sơ đồ nằm trong một file Markdown riêng.
+Đối chiếu ngày 22/11/2026. Bộ sơ đồ phục vụ đồ án **Xây dựng ứng dụng đa nền tảng DontLift tích hợp AI nhận diện hóa đơn**. Tổng cộng **64 sơ đồ**, chia theo loại; mỗi sơ đồ nằm trong một file Markdown riêng.
+
+Bổ sung ngày 24/11/2026: [một sơ đồ tổng hợp đủ UC01–UC31](use-case/uc-07-toan-bo-31-use-case.md), có bảng đối chiếu mã cũ và thống nhất với danh sách đặc tả trong báo cáo.
 
 ## Xem trên GitHub
 
@@ -8,7 +10,7 @@ Mở file `.md` để GitHub dựng hình trong khối `mermaid`. File Use Case 
 
 | Loại | Số sơ đồ | Danh mục |
 |---|---:|---|
-| use-case | 7 | [Mở thư mục](use-case/README.md) |
+| use-case | 8 | [Mở thư mục](use-case/README.md) |
 | activity | 16 | [Mở thư mục](activity/README.md) |
 | sequence | 18 | [Mở thư mục](sequence/README.md) |
 | state-machine | 9 | [Mở thư mục](state-machine/README.md) |

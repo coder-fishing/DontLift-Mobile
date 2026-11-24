@@ -1,5 +1,7 @@
 # Sơ đồ use-case
 
+[Sơ đồ tổng hợp đủ UC01–UC31](uc-07-toan-bo-31-use-case.md) — thống nhất với danh sách đặc tả báo cáo.
+
 - [UC-00 — Tổng quan hệ thống](uc-00-tong-quan.md)
 - [UC-01 — Tài khoản và hồ sơ](uc-01-tai-khoan.md)
 - [UC-02 — Tập trung cá nhân](uc-02-solo.md)
@@ -7,3 +9,4 @@
 - [UC-04 — Điều phối phiên nhóm](uc-04-phien-nhom.md)
 - [UC-05 — Hóa đơn và chuyển khoản](uc-05-hoa-don.md)
 - [UC-06 — Mua Premium](uc-06-premium.md)
+- [UC01–UC31 — Toàn bộ use case DontLift](uc-07-toan-bo-31-use-case.md)

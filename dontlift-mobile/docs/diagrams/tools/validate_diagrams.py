@@ -40,6 +40,13 @@ for item in catalog:
             ellipses = xml.findall('.//{http://www.w3.org/2000/svg}ellipse')
             if len(ellipses) != len(re.findall(r'^\s*usecase ', source, re.M)):
                 errors.append(f'Use Case source/SVG count mismatch: {puml}')
+            if path.stem == 'uc-07-toan-bo-31-use-case':
+                expected = {f'UC{number:02d}' for number in range(1, 32)}
+                actual = [element.attrib.get('data-uc') for element in ellipses]
+                if len(actual) != 31 or set(actual) != expected:
+                    errors.append('Full diagram must contain each UC01–UC31 exactly once')
+                if set(re.findall(r'\bas (UC\d+)\s*$', source, re.M)) != expected:
+                    errors.append('Full diagram PlantUML IDs do not match UC01–UC31')
         except ET.ParseError as exc:
             errors.append(f'Invalid SVG {svg}: {exc}')
     else:

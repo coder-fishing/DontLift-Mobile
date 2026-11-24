@@ -1,5 +1,7 @@
 # Danh sách Use Case
 
+[Mã UC01–UC31 dùng trong báo cáo và sơ đồ tổng hợp](uc-07-toan-bo-31-use-case.md). Bảng bên dưới giữ mã phân rã cũ để đối chiếu; không phải danh sách 31 use case của báo cáo.
+
 G01–G08 là nhóm chức năng tổng quan; các mã còn lại là Use Case chi tiết.
 
 | Mã | Chức năng | Sơ đồ |

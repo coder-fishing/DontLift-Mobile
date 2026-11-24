@@ -1,5 +1,15 @@
 # Kết quả kiểm tra bộ sơ đồ
 
+## Bổ sung ngày 24/11/2026
+
+- Thêm một sơ đồ tổng hợp đủ UC01–UC31, nâng tổng số sơ đồ lên 64 (8 sơ đồ use case).
+- Kiểm tra đủ 31 định danh duy nhất trong SVG và PlantUML; có bảng đối chiếu mã nhóm cũ.
+- Đã dựng lại 56/56 Mermaid thành công và cả 8 SVG use case bằng Chrome headless.
+- Đã mở xem ảnh sơ đồ tổng hợp, kiểm tra nhãn, tác nhân, ranh giới và hướng mũi tên extend.
+- Nguồn PlantUML mới vẫn chưa được chạy qua parser PlantUML; SVG được xuất từ cùng mô hình bố trí cục bộ.
+
+## Lần kiểm tra ban đầu
+
 Ngày kiểm tra: 22/11/2026. Phạm vi: tài liệu và sơ đồ trên nhánh `codex/dontlift-report-diagrams`.
 
 ## Kết quả
