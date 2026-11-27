@@ -16,7 +16,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Network from "expo-network";
 import { Colors } from "../constants/theme";
 import { GlassCard } from "../components/GlassCard";
-import { RoomInvitationQr } from "../components/RoomInvitationQr";
 import {
   DISPLAY_PREMIUM_PACKAGES,
   getBestValuePackageId,
@@ -27,8 +26,8 @@ import {
 } from "../features/premium/premium-api";
 import { premiumIsActive } from "../features/premium/premium-entitlement";
 import { BankAppPicker } from "../features/bank-transfer/BankAppPicker";
-import { BankTransferButton } from "../features/bank-transfer/BankTransferButton";
 import { PremiumPackageSelector } from "../features/premium/components/PremiumPackageSelector";
+import { PremiumPendingOrderCard, type PendingPremiumOrder } from "../features/premium/components/PremiumPendingOrderCard";
 import { buildBankTransferDeeplink } from "../features/bank-transfer/deeplink";
 import type {
   BankAppOption,
@@ -53,7 +52,6 @@ function withTimeout<T>(
     if (timer) clearTimeout(timer);
   });
 }
-type Pending = { requestId: string; packageId: string; orderCode?: number };
 type Props = {
   uid: string;
   api: PremiumApi;
@@ -76,7 +74,7 @@ export function PremiumScreen({
   const [catalogReady, setCatalogReady] = useState(false);
   const [selected, setSelected] = useState("MONTH_12");
   const [order, setOrder] = useState<PremiumOrder | null>(null);
-  const [pending, setPending] = useState<Pending | null>(null);
+  const [pending, setPending] = useState<PendingPremiumOrder | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [checkingStatus, setCheckingStatus] = useState(false);
@@ -93,7 +91,7 @@ export function PremiumScreen({
   } | null>(null);
   const alive = useRef(true);
   const working = useRef(false);
-  const pendingRef = useRef<Pending | null>(null);
+  const pendingRef = useRef<PendingPremiumOrder | null>(null);
   const orderRef = useRef<PremiumOrder | null>(null);
   const selectionTouched = useRef(false);
   const switchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -828,165 +826,25 @@ export function PremiumScreen({
         </Text>
       ) : null}
       {pending ? (
-        <GlassCard className="" style={styles.status}>
-          <Text style={styles.duration}>
-            {selected !== pending.packageId
-              ? "Switching Premium package"
-              : order?.status === "CREATING"
-                ? "Payment being prepared"
-                : order
-                  ? "Payment awaiting confirmation"
-                  : "Payment setup needs retry"}
-          </Text>
-          {order && selected === pending.packageId ? (
-            <Text style={styles.price}>{money(order.amountVnd)}</Text>
-          ) : null}
-          {selected !== pending.packageId || switchPhase === "creating" ? (
-            <View style={styles.switchPanel}>
-              {switchPhase ? (
-                <View
-                  accessibilityRole="progressbar"
-                  accessibilityLabel="Preparing new payment QR"
-                  style={styles.qrSkeleton}
-                >
-                  <View style={styles.skeletonQr} />
-                  <View
-                    style={[styles.skeletonLine, styles.skeletonLineShort]}
-                  />
-                  <Text style={styles.caption}>
-                    {switchPhase === "debouncing"
-                      ? `Preparing ${selectedPlanDuration} plan…`
-                      : switchPhase === "cancelling"
-                        ? "Cancelling the current payment QR…"
-                        : "Creating your new payment QR…"}
-                  </Text>
-                  <Text style={styles.caption}>
-                    The new QR appears after the server confirms the previous
-                    payment is cancelled.
-                  </Text>
-                </View>
-              ) : (
-                <>
-                  {error ? (
-                    <Text accessibilityRole="alert" style={styles.error}>
-                      {error}
-                    </Text>
-                  ) : (
-                    <Text style={styles.caption}>
-                      Choose a plan to replace the current payment QR.
-                    </Text>
-                  )}
-                  {statusMessage ? (
-                    <Text style={styles.caption}>{statusMessage}</Text>
-                  ) : null}
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Retry package switch"
-                    disabled={busy || checkingStatus}
-                    style={styles.secondary}
-                    onPress={retryPackageSwitch}
-                  >
-                    <Text style={styles.link}>Retry package switch</Text>
-                  </Pressable>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Keep current Premium package"
-                    disabled={busy || checkingStatus}
-                    style={styles.secondary}
-                    onPress={() => selectPackage(pending.packageId)}
-                  >
-                    <Text style={styles.link}>Keep current package</Text>
-                  </Pressable>
-                </>
-              )}
-            </View>
-          ) : order?.qrCode ? (
-            <View style={styles.qrPanel}>
-              {Platform.OS !== "web" ? (
-                <>
-                  <BankTransferButton
-                    onPress={() => {
-                      void prepareBankTransfer();
-                    }}
-                    busy={bankTransferPreparing || busy || checkingStatus}
-                  />
-                  {!bankTransfer ? (
-                    <Text style={styles.caption}>
-                      Tap to refresh PayOS transfer details, or scan the QR code
-                      below.
-                    </Text>
-                  ) : !bankCode ? (
-                    <Text style={styles.caption}>
-                      Loading bank details for app transfer…
-                    </Text>
-                  ) : null}
-                </>
-              ) : null}
-              <RoomInvitationQr
-                value={order.qrCode}
-                size={232}
-                accessibilityLabel="Premium payment QR code"
-              />
-              <Text style={styles.qrHelp}>
-                Scan this code with your bank app. Payment confirmation will
-                appear here automatically.
-              </Text>
-            </View>
-          ) : order?.status === "CREATING" ? (
-            <Text style={styles.caption}>
-              Your payment QR is being prepared. Keep this screen open; it will
-              appear automatically.
-            </Text>
-          ) : order?.status === "PENDING" ? (
-            <Text style={styles.caption}>
-              The payment link is ready, but its QR could not be loaded yet.
-              Retry below or open payOS checkout.
-            </Text>
-          ) : null}
-          {selected === pending.packageId ? (
-            <Text style={styles.caption}>
-              Already transferred? Check payment status. Your access updates
-              after verification.
-            </Text>
-          ) : null}
-          {order?.checkoutUrl && selected === pending.packageId ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Open payOS checkout"
-              style={styles.secondary}
-              onPress={() => {
-                void WebBrowser.openBrowserAsync(order.checkoutUrl!);
-              }}
-            >
-              <Text style={styles.link}>Open payOS checkout</Text>
-            </Pressable>
-          ) : null}
-          {statusMessage && order?.requestId === pending.requestId ? (
-            <Text accessibilityRole="alert" style={styles.statusMessage}>
-              {statusMessage}
-            </Text>
-          ) : null}
-          {selected === pending.packageId ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ disabled: busy || checkingStatus }}
-              disabled={busy || checkingStatus}
-              style={styles.secondary}
-              onPress={() => {
-                void checkPaymentStatus();
-              }}
-            >
-              {checkingStatus ? (
-                <ActivityIndicator
-                  accessibilityLabel="Checking payment status"
-                  color={colors.primary}
-                />
-              ) : (
-                <Text style={styles.link}>Check payment status</Text>
-              )}
-            </Pressable>
-          ) : null}
-        </GlassCard>
+        <PremiumPendingOrderCard
+          pending={pending}
+          order={order}
+          selectedPackageId={selected}
+          selectedPlanDuration={selectedPlanDuration}
+          switchPhase={switchPhase}
+          error={error}
+          statusMessage={statusMessage}
+          busy={busy}
+          checkingStatus={checkingStatus}
+          bankTransferPreparing={bankTransferPreparing}
+          bankTransfer={bankTransfer}
+          bankCode={bankCode}
+          onRetryPackageSwitch={retryPackageSwitch}
+          onSelectPackage={selectPackage}
+          onPrepareBankTransfer={() => { void prepareBankTransfer(); }}
+          onOpenCheckout={url => { void WebBrowser.openBrowserAsync(url); }}
+          onCheckPaymentStatus={() => { void checkPaymentStatus(); }}
+        />
       ) : order?.status === "PAID" ? (
         <GlassCard className="" style={styles.status}>
           <Text accessibilityRole="header" style={styles.duration}>
@@ -1099,40 +957,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   secondary: { minHeight: 44, justifyContent: "center" },
-  switchPanel: {
-    gap: 12,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  qrSkeleton: { gap: 12, alignItems: "center", paddingVertical: 8 },
-  skeletonQr: {
-    width: 184,
-    height: 184,
-    borderRadius: 18,
-    backgroundColor: colors.backgroundElement,
-  },
-  skeletonLine: {
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: colors.backgroundElement,
-    width: "82%",
-  },
-  skeletonLineShort: { width: "48%" },
-  pressed: { opacity: 0.72 },
-  qrPanel: {
-    alignItems: "center",
-    gap: 12,
-    padding: 16,
-    borderRadius: 18,
-    backgroundColor: colors.inputSurface,
-  },
-  qrHelp: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    lineHeight: 21,
-    textAlign: "center",
-  },
   link: { color: colors.primary, fontWeight: "600", fontSize: 15 },
   error: { color: colors.error, fontSize: 14, lineHeight: 21 },
   button: {
