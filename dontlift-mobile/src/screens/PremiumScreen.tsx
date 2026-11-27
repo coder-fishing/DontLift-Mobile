@@ -28,6 +28,7 @@ import {
 import { premiumIsActive } from "../features/premium/premium-entitlement";
 import { BankAppPicker } from "../features/bank-transfer/BankAppPicker";
 import { BankTransferButton } from "../features/bank-transfer/BankTransferButton";
+import { PremiumPackageSelector } from "../features/premium/components/PremiumPackageSelector";
 import { buildBankTransferDeeplink } from "../features/bank-transfer/deeplink";
 import type {
   BankAppOption,
@@ -102,7 +103,6 @@ export function PremiumScreen({
   const expiry =
     Math.max(order?.premiumExpiresAtUtcMs ?? 0, expiresAtUtcMs ?? 0) || null;
   const active = premiumIsActive(expiry);
-  const bestValuePackageId = getBestValuePackageId(packages);
   const selectedPackage = packages.find((pack) => pack.id === selected);
   const selectedPlanDuration = selectedPackage
     ? getPremiumPlanLabels(selectedPackage).duration
@@ -813,76 +813,14 @@ export function PremiumScreen({
           color={colors.primary}
         />
       ) : null}
-      <View
-        accessibilityRole="radiogroup"
-        accessibilityLabel="Premium plans"
-        style={styles.packages}
-      >
-        {packages.map((pack) => {
-          const labels = getPremiumPlanLabels(pack);
-          const bonusMonths = labels.bonusMonths;
-          const isSelected = selected === pack.id;
-          const isBestValue =
-            bestValuePackageId === pack.id && packages.length > 1;
-          return (
-            <Pressable
-              key={pack.id}
-              accessibilityRole="radio"
-              accessibilityLabel={`${pack.paidMonths} ${pack.paidMonths === 1 ? "month" : "months"}, ${money(pack.amountVnd)}${bonusMonths > 0 ? `, plus ${bonusMonths} months free, use Premium for ${pack.grantedMonths} months` : ", basic access"}`}
-              accessibilityHint={
-                pending && pack.id !== pending.packageId
-                  ? "Selecting this plan will cancel the current payment QR after a short pause, then replace it when cancellation is confirmed."
-                  : "Select this Premium package"
-              }
-              accessibilityState={{
-                checked: isSelected,
-                disabled:
-                  busy ||
-                  loading ||
-                  checkingStatus ||
-                  switchPhase === "cancelling" ||
-                  switchPhase === "creating",
-              }}
-              disabled={
-                busy ||
-                loading ||
-                checkingStatus ||
-                switchPhase === "cancelling" ||
-                switchPhase === "creating"
-              }
-              onPress={() => selectPackage(pack.id)}
-              style={({ pressed }) => [
-                styles.package,
-                isSelected && styles.selected,
-                pressed && styles.packagePressed,
-              ]}
-            >
-              <View style={styles.packageRow}>
-                <View style={styles.packageCopy}>
-                  {isBestValue ? (
-                    <Text style={styles.bestValue}>BEST VALUE</Text>
-                  ) : null}
-                  <Text style={styles.duration}>{labels.duration}</Text>
-                  {labels.bonus ? (
-                    <Text style={styles.bonus}>{labels.bonus}</Text>
-                  ) : null}
-                  <Text style={styles.caption}>{labels.access}</Text>
-                </View>
-                <View style={styles.priceChoice}>
-                  <Text style={styles.price}>{money(pack.amountVnd)}</Text>
-                  <View
-                    accessibilityElementsHidden
-                    importantForAccessibility="no-hide-descendants"
-                    style={[styles.radio, isSelected && styles.radioSelected]}
-                  >
-                    {isSelected ? <View style={styles.radioDot} /> : null}
-                  </View>
-                </View>
-              </View>
-            </Pressable>
-          );
-        })}
-      </View>
+      <PremiumPackageSelector
+        packages={packages}
+        bestValuePackageId={getBestValuePackageId(packages)}
+        selectedPackageId={selected}
+        pendingPackageId={pending?.packageId}
+        disabled={busy || loading || checkingStatus || switchPhase === "cancelling" || switchPhase === "creating"}
+        onSelect={selectPackage}
+      />
       {order && ["CANCELLED", "EXPIRED"].includes(order.status) ? (
         <Text style={styles.caption}>
           This checkout is {order.status.toLowerCase()}. Choose a package to
@@ -1149,74 +1087,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     fontWeight: "600",
-  },
-  packages: { gap: 12 },
-  package: {
-    minHeight: 88,
-    padding: 15,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.background,
-    justifyContent: "center",
-  },
-  selected: {
-    borderColor: colors.primary,
-    borderWidth: 2,
-    padding: 14,
-    backgroundColor: colors.backgroundSelected,
-  },
-  packagePressed: { opacity: 0.82 },
-  packageRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-  },
-  packageCopy: { flex: 1, alignItems: "flex-start", gap: 4 },
-  priceChoice: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "flex-end",
-    gap: 10,
-    flexShrink: 0,
-  },
-  radio: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: colors.border,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  radioSelected: { borderColor: colors.primary },
-  radioDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: colors.primary,
-  },
-  bestValue: {
-    color: colors.primary,
-    backgroundColor: colors.backgroundSelected,
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 0.5,
-    overflow: "hidden",
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 7,
-  },
-  bonus: {
-    color: colors.success,
-    backgroundColor: colors.successSurface,
-    fontSize: 14,
-    fontWeight: "700",
-    overflow: "hidden",
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    borderRadius: 7,
   },
   duration: { color: colors.text, fontSize: 17, fontWeight: "700" },
   price: { color: colors.text, fontSize: 19, fontWeight: "700" },
