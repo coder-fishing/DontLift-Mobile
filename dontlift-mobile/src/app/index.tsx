@@ -60,15 +60,16 @@ import { useRoomEntry } from '../features/rooms/use-room-entry';
 import { useRoomStart } from '../features/rooms/use-room-start';
 import { useRoomLobbyMembership } from '../features/rooms/use-room-lobby-membership';
 import { useRoomCompletionActions } from '../features/rooms/use-room-completion-actions';
+import { useRoomVotingActions } from '../features/rooms/use-room-voting-actions';
 import { listenToRoomLobby, listenToOwnRoomRemoval, type RoomLobbyState, type RoomLobbySnapshot } from '../features/rooms/room-listener';
 import { createGroupViolationRepository, GroupViolationError } from '../features/rooms/group-violation-repository';
 import { createEarlyExitSyncRetry } from '../features/rooms/early-exit-sync-retry';
 import { createEarlyExitCleanupRetry } from '../features/rooms/early-exit-cleanup-retry';
 import { createCompletedGroupViolationSyncRetry } from '../features/rooms/completed-group-violation-sync-retry';
 import { createGroupCaptureWorkTracker } from '../features/rooms/group-capture-work';
-import { createEarlyExitRepository, EarlyExitError, type EarlyExitDecision, type EarlyExitRequest } from '../features/rooms/early-exit-repository';
+import { createEarlyExitRepository, type EarlyExitRequest } from '../features/rooms/early-exit-repository';
 import { listenToOpenEarlyExitRequests } from '../features/rooms/early-exit-listener';
-import { createTerminationVoteRepository, TerminationVoteError, type TerminationChoice } from '../features/rooms/termination-vote-repository';
+import { createTerminationVoteRepository } from '../features/rooms/termination-vote-repository';
 import { createRoomCompletionRepository } from '../features/rooms/room-completion-repository';
 import { shouldNavigateToGroupSummary } from '../features/rooms/group-terminal-navigation';
 import { createSettlementDetailsRepository, type SettlementDetailsState } from '../features/settlement/settlement-details-repository';
@@ -110,20 +111,6 @@ const INITIAL_DETECTION_STATE: ForegroundDetectionViewState = {
   violationsCount: 0,
   violationDurationSeconds: 0,
 };
-
-function earlyExitErrorMessage(error: unknown): string {
-  if (!(error instanceof EarlyExitError)) return 'Could not complete the early-exit action. Try again.';
-  switch (error.code) {
-    case 'unauthenticated': return 'Your sign-in expired. Sign in again and retry.';
-    case 'invalid-argument': return 'The early-exit request is invalid.';
-    case 'not-found': return 'This room or request no longer exists.';
-    case 'failed-precondition': return 'The room or request is no longer in a state that allows this action.';
-    case 'permission-denied': return 'Firebase rejected this action. Confirm the room role and deployed Firestore Rules.';
-    case 'unavailable': return 'Connect to Firebase and retry. No offline command was queued.';
-    case 'already-exists': return 'This request ID was already used for another request.';
-    default: return 'Could not complete the early-exit action. Try again.';
-  }
-}
 
 function billPublishErrorMessage(error: unknown): string {
   if (!(error instanceof BillRepositoryError)) return 'Could not publish the bill split. Reconnect and retry.';
@@ -318,16 +305,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const kickingLobby = useRef(false);
   const lobbyActionBusyRefs = useMemo(() => ({ leaving: leavingLobby, removing: kickingLobby }), []);
   const [openEarlyExitRequests, setOpenEarlyExitRequests] = useState<EarlyExitRequest[]>([]);
-  const [isRequestingEarlyExit, setIsRequestingEarlyExit] = useState(false);
-  const [decidingEarlyExit, setDecidingEarlyExit] = useState<{ requestId: string; decision: EarlyExitDecision } | null>(null);
-  const [earlyExitError, setEarlyExitError] = useState<string>();
   const [terminationVoteState, setTerminationVoteState] = useState<TerminationVoteState>({ vote: null, ownBallot: null, error: false });
-  const [isOpeningTerminationVote, setIsOpeningTerminationVote] = useState(false);
-  const [isCastingTerminationVote, setIsCastingTerminationVote] = useState(false);
-  const [terminationVoteError, setTerminationVoteError] = useState<string>();
-  const pendingTerminationVoteOpen = useRef<{ roomId: string; requestId: string } | null>(null);
-  const pendingTerminationBallot = useRef<{ roomId: string; voteId: string; requestId: string; choice: TerminationChoice } | null>(null);
-  const pendingEarlyExitRequest = useRef<{ roomId: string; requestId: string } | null>(null);
   const earlyExitCleanupInFlight = useRef(new Set<string>());
   const groupCaptureWork = useRef(new Map<string, ReturnType<typeof createGroupCaptureWorkTracker>>());
   const roomEntry = useRoomEntry({
@@ -340,6 +318,12 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     createRequestId: Crypto.randomUUID,
   });
   const lobbyRoom = joinedRoom ?? createdRoom;
+  const votingActions = useRoomVotingActions({
+    roomId: lobbyRoom?.roomId,
+    earlyExitRepository,
+    terminationVoteRepository,
+    terminationVoteState,
+  });
   const roomStart = useRoomStart(roomRepository, lobbyRoom?.roomId, () => leavingLobby.current || kickingLobby.current);
   const lobbyMembership = useRoomLobbyMembership({
     roomId: lobbyRoom?.roomId,
@@ -630,10 +614,10 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     return listenToOpenEarlyExitRequests(
       roomRuntime.firestore,
       lobbyRoom.roomId,
-      requests => { setOpenEarlyExitRequests(requests); setEarlyExitError(undefined); },
-      () => setEarlyExitError('Could not load early-exit requests. Reopen the room while connected to retry.'),
+      requests => { setOpenEarlyExitRequests(requests); votingActions.clearEarlyExitError(); },
+      votingActions.setEarlyExitLoadError,
     );
-  }, [lobbyRoom?.roomId, roomRuntime.firestore]);
+  }, [lobbyRoom?.roomId, roomRuntime.firestore, votingActions.clearEarlyExitError, votingActions.setEarlyExitLoadError]);
 
   useEffect(() => {
     if (!lobbyRoom) {
@@ -642,9 +626,9 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     }
     return listenToTerminationVote(roomRuntime.firestore, lobbyRoom.roomId, profile.uid, state => {
       setTerminationVoteState(state);
-      if (!state.error) setTerminationVoteError(undefined);
+      if (!state.error) votingActions.clearTerminationVoteError();
     });
-  }, [lobbyRoom?.roomId, roomRuntime.firestore, profile.uid]);
+  }, [lobbyRoom?.roomId, roomRuntime.firestore, profile.uid, votingActions.clearTerminationVoteError]);
 
   useEffect(() => {
     const snapshot = roomLobbyState?.snapshot;
@@ -821,80 +805,6 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     runEarlyExitCutoffCleanup,
     onCompleted: () => setCurrentScreen('13-group-summary'),
   });
-
-  const handleRequestEarlyExit = async () => {
-    if (!lobbyRoom || isRequestingEarlyExit) return;
-    setIsRequestingEarlyExit(true);
-    setEarlyExitError(undefined);
-    const pending = pendingEarlyExitRequest.current?.roomId === lobbyRoom.roomId
-      ? pendingEarlyExitRequest.current
-      : { roomId: lobbyRoom.roomId, requestId: Crypto.randomUUID() };
-    pendingEarlyExitRequest.current = pending;
-    try {
-      await earlyExitRepository.requestEarlyExit({ roomId: lobbyRoom.roomId, requestId: pending.requestId });
-      pendingEarlyExitRequest.current = null;
-    } catch (error) {
-      if (!(error instanceof EarlyExitError) || error.code !== 'unavailable') pendingEarlyExitRequest.current = null;
-      setEarlyExitError(earlyExitErrorMessage(error));
-    } finally {
-      setIsRequestingEarlyExit(false);
-    }
-  };
-
-  const handleDecideEarlyExit = async (request: EarlyExitRequest, decision: EarlyExitDecision) => {
-    if (!lobbyRoom || decidingEarlyExit) return;
-    setDecidingEarlyExit({ requestId: request.requestId, decision });
-    setEarlyExitError(undefined);
-    try {
-      await earlyExitRepository.decideEarlyExit({
-        roomId: lobbyRoom.roomId, memberUid: request.memberUid, requestId: request.requestId, decision,
-      });
-    } catch (error) {
-      setEarlyExitError(earlyExitErrorMessage(error));
-    } finally {
-      setDecidingEarlyExit(null);
-    }
-  };
-
-  const handleOpenTerminationVote = async () => {
-    if (!lobbyRoom || isOpeningTerminationVote) return;
-    setIsOpeningTerminationVote(true);
-    setTerminationVoteError(undefined);
-    const pending = pendingTerminationVoteOpen.current?.roomId === lobbyRoom.roomId
-      ? pendingTerminationVoteOpen.current : { roomId: lobbyRoom.roomId, requestId: Crypto.randomUUID() };
-    pendingTerminationVoteOpen.current = pending;
-    try {
-      await terminationVoteRepository.open(pending);
-      pendingTerminationVoteOpen.current = null;
-    } catch (error) {
-      if (!(error instanceof TerminationVoteError) || error.code !== 'unavailable') pendingTerminationVoteOpen.current = null;
-      setTerminationVoteError(error instanceof TerminationVoteError && error.code === 'permission-denied'
-        ? 'Could not start a new vote. The current vote may still be open; wait and try again.'
-        : 'Could not start the vote. Reconnect and try again.');
-    } finally { setIsOpeningTerminationVote(false); }
-  };
-
-  const handleCastTerminationVote = async (choice: TerminationChoice) => {
-    if (!lobbyRoom || !terminationVoteState.vote || isCastingTerminationVote) return;
-    setIsCastingTerminationVote(true);
-    setTerminationVoteError(undefined);
-    const currentVote = terminationVoteState.vote;
-    const pending = pendingTerminationBallot.current?.roomId === lobbyRoom.roomId
-      && pendingTerminationBallot.current.voteId === currentVote.voteId
-      && pendingTerminationBallot.current.choice === choice
-      ? pendingTerminationBallot.current
-      : { roomId: lobbyRoom.roomId, voteId: currentVote.voteId, requestId: Crypto.randomUUID(), choice };
-    pendingTerminationBallot.current = pending;
-    try {
-      await terminationVoteRepository.cast(pending);
-      pendingTerminationBallot.current = null;
-    } catch (error) {
-      if (!(error instanceof TerminationVoteError) || error.code !== 'unavailable') pendingTerminationBallot.current = null;
-      setTerminationVoteError(error instanceof TerminationVoteError && error.code === 'permission-denied'
-        ? 'Your vote was not accepted. The voting window may have ended; check the room and try again.'
-        : 'Could not submit your vote. Reconnect and try again.');
-    } finally { setIsCastingTerminationVote(false); }
-  };
 
   useEffect(() => {
     if (currentScreen !== '12-join-room') return undefined;
@@ -1698,13 +1608,13 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
                 detection={groupDetection} isOnline={groupIsOnline} syncMessage={groupSyncMessage}
                 pendingSyncCount={groupSyncPendingCount}
                 actorUid={profile.uid} currentUserPremiumExpiresAtUtcMs={profile.premiumExpiresAtUtcMs} openEarlyExitRequests={openEarlyExitRequests}
-                isRequestingEarlyExit={isRequestingEarlyExit} decidingEarlyExit={decidingEarlyExit}
-                earlyExitError={earlyExitError} onRequestEarlyExit={() => { void handleRequestEarlyExit(); }}
-                onDecideEarlyExit={(request, decision) => { void handleDecideEarlyExit(request, decision); }}
-                terminationVoteState={terminationVoteState} isOpeningTerminationVote={isOpeningTerminationVote}
-                isCastingTerminationVote={isCastingTerminationVote} terminationVoteError={terminationVoteError}
-                onOpenTerminationVote={() => { void handleOpenTerminationVote(); }}
-                onCastTerminationVote={choice => { void handleCastTerminationVote(choice); }}
+                isRequestingEarlyExit={votingActions.isRequestingEarlyExit} decidingEarlyExit={votingActions.decidingEarlyExit}
+                earlyExitError={votingActions.earlyExitError} onRequestEarlyExit={() => { void votingActions.handleRequestEarlyExit(); }}
+                onDecideEarlyExit={(request, decision) => { void votingActions.handleDecideEarlyExit(request, decision); }}
+                terminationVoteState={terminationVoteState} isOpeningTerminationVote={votingActions.isOpeningTerminationVote}
+                isCastingTerminationVote={votingActions.isCastingTerminationVote} terminationVoteError={votingActions.terminationVoteError}
+                onOpenTerminationVote={() => { void votingActions.handleOpenTerminationVote(); }}
+                onCastTerminationVote={choice => { void votingActions.handleCastTerminationVote(choice); }}
                 isCompletingRoom={roomCompletion.isCompletingRoom} completionError={roomCompletion.roomCompletionError}
                 onCompleteRoom={() => { void roomCompletion.handleCompleteRoom(); }} />
             : <Text accessibilityRole="alert">Waiting for the active room snapshot…</Text>
