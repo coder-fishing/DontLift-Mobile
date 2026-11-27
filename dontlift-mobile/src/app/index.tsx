@@ -54,7 +54,7 @@ import type { RegistrationProfile, RegistrationUser } from '../features/auth/aut
 import type { AuthSessionState } from '../features/auth/auth-session-controller';
 import { getConfiguredFirebaseRuntime } from '../features/auth/firebase-adapters';
 import { getLocalDatabase } from '../features/local/database';
-import { createRoomRepository, persistRoomLobbyProjection, restoreCachedActiveRoom, type CreatedRoom, type JoinedRoom } from '../features/rooms/room-repository';
+import { createRoomRepository, restoreCachedActiveRoom, type CreatedRoom, type JoinedRoom } from '../features/rooms/room-repository';
 import { useRoomEntry } from '../features/rooms/use-room-entry';
 import { useRoomStart } from '../features/rooms/use-room-start';
 import { useRoomLobbyMembership } from '../features/rooms/use-room-lobby-membership';
@@ -65,8 +65,9 @@ import { useRoomLiveness } from '../features/rooms/use-room-liveness';
 import { useGroupTerminalLifecycle } from '../features/rooms/use-group-terminal-lifecycle';
 import { useEarlyExitCutoffRetry } from '../features/rooms/use-early-exit-cutoff-retry';
 import { useGroupLifecycleCleanup } from '../features/rooms/use-group-lifecycle-cleanup';
+import { useRoomLobbySubscription } from '../features/rooms/use-room-lobby-subscription';
 import { useGroupBillActions } from '../features/settlement/use-group-bill-actions';
-import { listenToRoomLobby, listenToOwnRoomRemoval, type RoomLobbyState, type RoomLobbySnapshot } from '../features/rooms/room-listener';
+import { listenToOwnRoomRemoval, type RoomLobbyState, type RoomLobbySnapshot } from '../features/rooms/room-listener';
 import { createGroupViolationRepository } from '../features/rooms/group-violation-repository';
 import { createCompletedGroupViolationSyncRetry } from '../features/rooms/completed-group-violation-sync-retry';
 import { createGroupCaptureWorkTracker } from '../features/rooms/group-capture-work';
@@ -367,37 +368,16 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     };
   }, [groupViolationRepository]);
 
-  useEffect(() => {
-    if (!lobbyRoom) {
-      setRoomLobbyState(null);
-      setOpenEarlyExitRequests([]);
-      return undefined;
-    }
-    // Giữ listener sống khi đổi tab để Group Active vẫn nhận trạng thái phòng và tiếp tục capture.
-    return listenToRoomLobby(roomRuntime.firestore, lobbyRoom.roomId, state => {
-      const snapshot = state.snapshot;
-      if ((snapshot?.status === 'COMPLETED' || snapshot?.status === 'ABORTED') && snapshot.endedAtUtcMs != null) {
-        const ownMember = snapshot.members.find(member => member.uid === profile.uid);
-        const cutoffUtcMs = ownMember?.status === 'EARLY_EXIT' && ownMember.earlyExitAtUtcMs != null
-          ? Math.min(snapshot.endedAtUtcMs, ownMember.earlyExitAtUtcMs)
-          : snapshot.endedAtUtcMs;
-        groupLifecycleCutoffs.current.set(lobbyRoom.roomId, cutoffUtcMs);
-      } else if (snapshot?.status === 'ACTIVE') {
-        const ownMember = snapshot.members.find(member => member.uid === profile.uid);
-        if (ownMember?.status === 'EARLY_EXIT' && ownMember.earlyExitAtUtcMs != null) {
-          groupLifecycleCutoffs.current.set(lobbyRoom.roomId, ownMember.earlyExitAtUtcMs);
-        }
-      }
-      setRoomLobbyState(state);
-      if (snapshot && state.kind === 'live') {
-        setCreatedRoom(current => current?.roomId === snapshot.roomId && current.hostUid !== snapshot.hostUid
-          ? { ...current, hostUid: snapshot.hostUid } : current);
-        setJoinedRoom(current => current?.roomId === snapshot.roomId && current.hostUid !== snapshot.hostUid
-          ? { ...current, hostUid: snapshot.hostUid } : current);
-      }
-    },
-      snapshot => persistRoomLobbyProjection(getLocalDatabase(), snapshot, profile.uid));
-  }, [lobbyRoom?.roomId, roomRuntime.firestore, profile.uid]);
+  useRoomLobbySubscription({
+    firestore: roomRuntime.firestore,
+    roomId: lobbyRoom?.roomId,
+    uid: profile.uid,
+    lifecycleCutoffs: groupLifecycleCutoffs,
+    setRoomState: setRoomLobbyState,
+    setCreatedRoom,
+    setJoinedRoom,
+    setOpenEarlyExitRequests,
+  });
 
   useRoomLiveness({
     roomId: lobbyRoom?.roomId,
