@@ -73,7 +73,7 @@ import { createGroupViolationRepository } from '../features/rooms/group-violatio
 import { useCompletedGroupViolationSync } from '../features/rooms/use-completed-group-violation-sync';
 import { createGroupCaptureWorkTracker } from '../features/rooms/group-capture-work';
 import { createEarlyExitRepository, type EarlyExitRequest } from '../features/rooms/early-exit-repository';
-import { listenToOpenEarlyExitRequests } from '../features/rooms/early-exit-listener';
+import { useRoomRequestSubscriptions } from '../features/rooms/use-room-request-subscriptions';
 import { createTerminationVoteRepository } from '../features/rooms/termination-vote-repository';
 import { createRoomCompletionRepository } from '../features/rooms/room-completion-repository';
 import { createSettlementDetailsRepository, type SettlementDetailsState } from '../features/settlement/settlement-details-repository';
@@ -91,7 +91,7 @@ import { billPublicationKey, shouldOpenPublishedBillForMember } from '../feature
 import { selectPublishedBillState } from '../features/settlement/published-bill-state';
 import { shouldTrackGroupConnectivity } from '../features/settlement/group-connectivity';
 import { createRoomLivenessRepository } from '../features/rooms/room-liveness-repository';
-import { listenToTerminationVote, type TerminationVoteState } from '../features/rooms/termination-vote-listener';
+import type { TerminationVoteState } from '../features/rooms/termination-vote-listener';
 import { JoinRoomScreen } from '../screens/JoinRoomScreen';
 import { createBackgroundRecoveryRepository } from '../features/solo/background-recovery';
 import type { ForegroundDetectionViewState } from '../features/solo/foreground-detection-controller';
@@ -351,26 +351,16 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
 
 
 
-  useEffect(() => {
-    if (!lobbyRoom) return undefined;
-    return listenToOpenEarlyExitRequests(
-      roomRuntime.firestore,
-      lobbyRoom.roomId,
-      requests => { setOpenEarlyExitRequests(requests); votingActions.clearEarlyExitError(); },
-      votingActions.setEarlyExitLoadError,
-    );
-  }, [lobbyRoom?.roomId, roomRuntime.firestore, votingActions.clearEarlyExitError, votingActions.setEarlyExitLoadError]);
-
-  useEffect(() => {
-    if (!lobbyRoom) {
-      setTerminationVoteState({ vote: null, ownBallot: null, error: false });
-      return undefined;
-    }
-    return listenToTerminationVote(roomRuntime.firestore, lobbyRoom.roomId, profile.uid, state => {
-      setTerminationVoteState(state);
-      if (!state.error) votingActions.clearTerminationVoteError();
-    });
-  }, [lobbyRoom?.roomId, roomRuntime.firestore, profile.uid, votingActions.clearTerminationVoteError]);
+  useRoomRequestSubscriptions({
+    firestore: roomRuntime.firestore,
+    roomId: lobbyRoom?.roomId,
+    uid: profile.uid,
+    setOpenEarlyExitRequests,
+    setTerminationVoteState,
+    clearEarlyExitError: votingActions.clearEarlyExitError,
+    setEarlyExitLoadError: votingActions.setEarlyExitLoadError,
+    clearTerminationVoteError: votingActions.clearTerminationVoteError,
+  });
 
   useGroupTerminalLifecycle({
     roomState: roomLobbyState,
