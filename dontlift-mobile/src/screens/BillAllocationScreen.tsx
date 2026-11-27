@@ -1,15 +1,15 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, FlatList, Image, Keyboard, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, useColorScheme, View,
   type ImageSourcePropType,
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
 import { GlassCard } from '../components/GlassCard';
 import { PremiumAvatar } from '../components/PremiumAvatar';
 import { BottomTabInset, Colors } from '../constants/theme';
 import { formatVND } from '../constants';
 import { calculateBillSharesWithOverrides, calculateDefaultBillShares, type BillShareOverride } from '../features/settlement/bill-allocation';
 import { AiBillScanCard } from '../features/settlement/components/AiBillScanCard';
+import { useReceiptEvidence } from '../features/settlement/use-receipt-evidence';
 import type { ReceiptScanResult } from '../features/settlement/receipt-scan-api';
 import type { BillShare } from '../features/settlement/bill-repository';
 import type { PublishedBillState } from '../features/settlement/published-bill-listener';
@@ -135,17 +135,6 @@ export function BillAllocationScreen({
     (pendingShareOverrides ?? []).filter(item => item.type === 'PERCENT_BPS').map(item => [item.uid, (item.value / 100).toFixed(2).replace(/\.00$/, '')]),
   ));
   const [submitted, setSubmitted] = useState(false);
-  const [isScanningReceipt, setIsScanningReceipt] = useState(false);
-  const [receiptPreviewUri, setReceiptPreviewUri] = useState<string>();
-  const [receiptPreviewMimeType, setReceiptPreviewMimeType] = useState<string>();
-  const [receiptEvidencePath, setReceiptEvidencePath] = useState<string>();
-  const [isSavingReceiptEvidence, setIsSavingReceiptEvidence] = useState(false);
-  const [receiptEvidenceError, setReceiptEvidenceError] = useState<string>();
-  const [receiptEvidenceImageSource, setReceiptEvidenceImageSource] = useState<ImageSourcePropType>();
-  const [receiptEvidenceImageError, setReceiptEvidenceImageError] = useState(false);
-  const [receiptScanResult, setReceiptScanResult] = useState<ReceiptScanResult | null>(null);
-  const [receiptScanError, setReceiptScanError] = useState<string>();
-  const receiptScanBusy = useRef(false);
   const [overrideEditingRequested, setIsEditingOverrides] = useState(false);
   const [overrideDrafts, setOverrideDrafts] = useState<Record<string, { type: BillShareOverride['type']; value: string }>>({});
   const billListRef = useRef<FlatList<BillShare>>(null);
@@ -202,19 +191,16 @@ export function BillAllocationScreen({
     } else Keyboard.dismiss();
   };
   const confirmedBill = state.bill ?? null;
-  useEffect(() => {
-    let active = true;
-    const path = confirmedBill?.receiptEvidencePath;
-    setReceiptEvidenceImageSource(undefined);
-    setReceiptEvidenceImageError(false);
-    if (!path || !getReceiptEvidenceImageSource) return () => { active = false; };
-    void getReceiptEvidenceImageSource(roomId, path).then(source => {
-      if (active) setReceiptEvidenceImageSource(source);
-    }).catch(() => {
-      if (active) setReceiptEvidenceImageError(true);
-    });
-    return () => { active = false; };
-  }, [roomId, confirmedBill?.receiptEvidencePath, getReceiptEvidenceImageSource]);
+  const receipt = useReceiptEvidence({
+    roomId,
+    confirmedEvidencePath: confirmedBill?.receiptEvidencePath,
+    onScanReceipt,
+    onUploadReceiptEvidence,
+    onDeleteReceiptEvidence,
+    getReceiptEvidenceImageSource,
+    setBillInput,
+    setSubmitted,
+  });
   const paidLocked = (confirmedBill?.billPaidCount ?? 0) > 0;
   const canOverride = host && confirmedBill != null && !paidLocked && state.kind === 'published'
     && !pendingPaymentMemberUid && !isMarkingPayment;
@@ -267,98 +253,8 @@ export function BillAllocationScreen({
         onPress: () => onMarkPaid(share.uid, publication, revision) }]);
   };
 
-  const scanReceiptAsset = async (asset: ImagePicker.ImagePickerAsset | undefined) => {
-    if (!asset || receiptScanBusy.current) return;
-    const extension = asset.fileName?.split('.').pop()?.toLowerCase();
-    const mimeType = asset.mimeType ?? (extension === 'png' ? 'image/png' : extension === 'webp' ? 'image/webp'
-      : extension === 'jpg' || extension === 'jpeg' ? 'image/jpeg' : undefined);
-    if (!mimeType || !['image/jpeg', 'image/png', 'image/webp'].includes(mimeType)) {
-      setReceiptScanError('This photo format is not supported. Choose a JPEG, PNG, or WebP image.');
-      return;
-    }
-    if (asset.fileSize != null && asset.fileSize > 10 * 1024 * 1024) {
-      setReceiptScanError('Choose an image smaller than 10 MB.');
-      return;
-    }
-    if (receiptEvidencePath) void onDeleteReceiptEvidence?.(roomId, receiptEvidencePath).catch(() => undefined);
-    setReceiptEvidencePath(undefined);
-    setReceiptEvidenceError(undefined);
-    receiptScanBusy.current = true;
-    setReceiptPreviewUri(asset.uri);
-    setReceiptPreviewMimeType(mimeType);
-    setIsScanningReceipt(true);
-    setReceiptScanError(undefined);
-    setReceiptScanResult(null);
-    try {
-      if (!onScanReceipt) throw new Error('Receipt scanning is not available. Enter the amount manually.');
-      setReceiptScanResult(await onScanReceipt(roomId, asset.uri, mimeType));
-    } catch (error) {
-      setReceiptScanError(error instanceof Error ? error.message : 'Could not scan this receipt. Enter the amount manually.');
-    } finally {
-      receiptScanBusy.current = false;
-      setIsScanningReceipt(false);
-    }
-  };
-
-  const acceptReceiptAmount = async (amount: number) => {
-    if (!receiptPreviewUri || !receiptPreviewMimeType) {
-      setReceiptEvidenceError('The receipt image is no longer available. Select it again to save evidence.');
-      return;
-    }
-    setIsSavingReceiptEvidence(true);
-    setReceiptEvidenceError(undefined);
-    try {
-      if (!onUploadReceiptEvidence) throw new Error('Receipt evidence storage is not configured.');
-      const path = await onUploadReceiptEvidence(roomId, receiptPreviewUri, receiptPreviewMimeType);
-      setReceiptEvidencePath(path);
-      setBillInput(String(amount));
-      setSubmitted(false);
-      setReceiptScanResult(null);
-      setReceiptPreviewUri(undefined);
-      setReceiptPreviewMimeType(undefined);
-    } catch (error) {
-      setReceiptEvidenceError(error instanceof Error ? error.message : 'Could not save receipt evidence. Retry or continue without evidence.');
-    } finally {
-      setIsSavingReceiptEvidence(false);
-    }
-  };
-
-  const continueWithoutReceiptEvidence = () => {
-    setBillInput(String(receiptScanResult?.suggested_amount ?? receiptScanResult?.amount ?? ''));
-    setSubmitted(false);
-    setReceiptScanResult(null);
-    setReceiptPreviewUri(undefined);
-    setReceiptPreviewMimeType(undefined);
-    setReceiptEvidenceError(undefined);
-  };
-
-  const captureReceipt = async () => {
-    setReceiptScanError(undefined);
-    try {
-      const permission = await ImagePicker.requestCameraPermissionsAsync();
-      if (!permission.granted) {
-        setReceiptScanError('Allow camera access in Settings to take a receipt photo. You can also choose a photo.');
-        return;
-      }
-      const picked = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.9 });
-      if (!picked.canceled) await scanReceiptAsset(picked.assets?.[0]);
-    } catch {
-      setReceiptScanError('Could not open the camera. Check camera access or choose a photo instead.');
-    }
-  };
-
-  const selectReceipt = async () => {
-    setReceiptScanError(undefined);
-    try {
-      const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 });
-      if (!picked.canceled) await scanReceiptAsset(picked.assets?.[0]);
-    } catch {
-      setReceiptScanError('Could not open your photo library. Check photo access and retry.');
-    }
-  };
-
   const requestPublish = () => {
-    if (!preview || !isOnline || isPublishing || isSavingReceiptEvidence) return;
+    if (!preview || !isOnline || isPublishing || receipt.isSavingEvidence) return;
     Keyboard.dismiss();
     Alert.alert(
       'Publish this bill split?',
@@ -366,14 +262,14 @@ export function BillAllocationScreen({
       [
         { text: 'Review again', style: 'cancel' },
         { text: 'Publish once', onPress: () => onPublish(preview.totalBillVnd,
-          initialSplitMode === 'CUSTOM_PERCENT' ? initialPercentOverrides.entries : undefined, receiptEvidencePath) },
+          initialSplitMode === 'CUSTOM_PERCENT' ? initialPercentOverrides.entries : undefined, receipt.evidencePath) },
       ],
     );
   };
 
   const leaveAllocation = () => {
-    if (!confirmedBill && pendingTotalVnd == null && !isPublishing && receiptEvidencePath) {
-      void onDeleteReceiptEvidence?.(roomId, receiptEvidencePath).catch(() => undefined);
+    if (!confirmedBill && pendingTotalVnd == null && !isPublishing && receipt.evidencePath) {
+      receipt.deleteEvidence(receipt.evidencePath);
     }
     onBack();
   };
@@ -478,23 +374,19 @@ export function BillAllocationScreen({
               <AiBillScanCard
                 colors={colors}
                 isPremium={isPremium}
-                isScanning={isScanningReceipt}
-                isSavingEvidence={isSavingReceiptEvidence}
-                hasSavedEvidence={receiptEvidencePath != null}
-                previewUri={receiptPreviewUri}
-                scanError={receiptScanError}
-                evidenceError={receiptEvidenceError}
-                result={receiptScanResult}
-                onCapture={() => { void captureReceipt(); }}
-                onSelectPhoto={() => { void selectReceipt(); }}
+                isScanning={receipt.isScanning}
+                isSavingEvidence={receipt.isSavingEvidence}
+                hasSavedEvidence={receipt.evidencePath != null}
+                previewUri={receipt.previewUri}
+                scanError={receipt.scanError}
+                evidenceError={receipt.evidenceError}
+                result={receipt.scanResult}
+                onCapture={() => { void receipt.captureReceipt(); }}
+                onSelectPhoto={() => { void receipt.selectReceipt(); }}
                 onOpenPremium={onOpenPremium}
-                onConfirm={amount => { void acceptReceiptAmount(amount); }}
-                onReject={() => {
-                  if (receiptEvidencePath) void onDeleteReceiptEvidence?.(roomId, receiptEvidencePath).catch(() => undefined);
-                  setReceiptEvidencePath(undefined); setReceiptEvidenceError(undefined); setReceiptScanResult(null);
-                  setReceiptPreviewUri(undefined); setReceiptPreviewMimeType(undefined);
-                }}
-                onContinueWithoutEvidence={continueWithoutReceiptEvidence}
+                onConfirm={amount => { void receipt.acceptAmount(amount); }}
+                onReject={receipt.rejectReceipt}
+                onContinueWithoutEvidence={receipt.continueWithoutEvidence}
               />
               <View style={[styles.sectionDivider, { backgroundColor: colors.border }]} />
               <Text style={[styles.sectionTitle, { color: colors.text }]}>Bill total</Text>
@@ -716,9 +608,9 @@ export function BillAllocationScreen({
               {confirmedBill.receiptEvidencePath ? (
                 <View style={styles.receiptEvidence}>
                   <Text style={[styles.sectionTitle, { color: colors.text }]}>Receipt evidence</Text>
-                  {receiptEvidenceImageSource ? <Image accessibilityLabel="Receipt evidence for this bill"
-                    source={receiptEvidenceImageSource} resizeMode="contain" style={[styles.receiptEvidenceImage, { backgroundColor: colors.backgroundElement }]} />
-                    : receiptEvidenceImageError ? <Text style={[styles.helper, { color: colors.error }]}>Could not load the receipt image. Reconnect and reopen this bill.</Text>
+              {receipt.imageSource ? <Image accessibilityLabel="Receipt evidence for this bill"
+                    source={receipt.imageSource} resizeMode="contain" style={[styles.receiptEvidenceImage, { backgroundColor: colors.backgroundElement }]} />
+                    : receipt.imageError ? <Text style={[styles.helper, { color: colors.error }]}>Could not load the receipt image. Reconnect and reopen this bill.</Text>
                       : <ActivityIndicator accessibilityLabel="Loading receipt evidence" color={colors.primary} />}
                 </View>
               ) : null}
@@ -731,8 +623,8 @@ export function BillAllocationScreen({
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={pendingTotalVnd == null ? 'Publish bill shares once' : 'Retry publishing the same bill request'}
-                accessibilityState={{ disabled: !preview || !isOnline || isPublishing || isSavingReceiptEvidence }}
-                disabled={!preview || !isOnline || isPublishing || isSavingReceiptEvidence}
+                accessibilityState={{ disabled: !preview || !isOnline || isPublishing || receipt.isSavingEvidence }}
+                disabled={!preview || !isOnline || isPublishing || receipt.isSavingEvidence}
                 onPress={pendingTotalVnd == null ? requestPublish : onRetryPublish}
                 style={[styles.publishButton, {
                   backgroundColor: preview && isOnline ? '#2563EB' : '#DBEAFE',
