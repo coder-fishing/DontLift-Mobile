@@ -3,8 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   AppState,
-  Linking,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -26,9 +24,9 @@ import {
 } from "../features/premium/premium-api";
 import { premiumIsActive } from "../features/premium/premium-entitlement";
 import { BankAppPicker } from "../features/bank-transfer/BankAppPicker";
+import { usePremiumBankTransfer } from "../features/premium/use-premium-bank-transfer";
 import { PremiumPackageSelector } from "../features/premium/components/PremiumPackageSelector";
 import { PremiumPendingOrderCard, type PendingPremiumOrder } from "../features/premium/components/PremiumPendingOrderCard";
-import { buildBankTransferDeeplink } from "../features/bank-transfer/deeplink";
 import type {
   BankAppOption,
   BankAppPlatform,
@@ -36,22 +34,6 @@ import type {
 import type { BankOption } from "../features/settlement/bank-directory";
 
 const colors = Colors.light;
-const money = (value: number) => `${value.toLocaleString("vi-VN")}đ`;
-function withTimeout<T>(
-  promise: Promise<T>,
-  timeoutMs: number,
-  message: string,
-): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(message)), timeoutMs);
-    }),
-  ]).finally(() => {
-    if (timer) clearTimeout(timer);
-  });
-}
 type Props = {
   uid: string;
   api: PremiumApi;
@@ -83,12 +65,6 @@ export function PremiumScreen({
   >(null);
   const [error, setError] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
-  const [bankPickerVisible, setBankPickerVisible] = useState(false);
-  const [bankTransferPreparing, setBankTransferPreparing] = useState(false);
-  const [bankLookup, setBankLookup] = useState<{
-    bin: string;
-    code: string | null;
-  } | null>(null);
   const alive = useRef(true);
   const working = useRef(false);
   const pendingRef = useRef<PendingPremiumOrder | null>(null);
@@ -96,7 +72,6 @@ export function PremiumScreen({
   const selectionTouched = useRef(false);
   const switchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const switchSequence = useRef(0);
-  const bankTransferLinkLogged = useRef(false);
   const key = `premium-checkout:${uid}`;
   const expiry =
     Math.max(order?.premiumExpiresAtUtcMs ?? 0, expiresAtUtcMs ?? 0) || null;
@@ -105,67 +80,29 @@ export function PremiumScreen({
   const selectedPlanDuration = selectedPackage
     ? getPremiumPlanLabels(selectedPackage).duration
     : "selected";
-  const bankTransfer =
-    order?.status === "PENDING" ? (order.bankTransfer ?? null) : null;
-  const bankCode =
-    bankTransfer && bankLookup && bankLookup.bin === bankTransfer.bankBin
-      ? bankLookup.code
-      : null;
-
-  useEffect(() => {
-    if (!bankTransfer?.bankBin || !bankDirectory) {
-      setBankLookup(null);
-      return;
-    }
-    let active = true;
-    void bankDirectory
-      .list()
-      .then((banks) => {
-        if (active)
-          setBankLookup({
-            bin: bankTransfer.bankBin,
-            code:
-              banks.find((bank) => bank.bin === bankTransfer.bankBin)?.code ??
-              null,
-          });
-      })
-      .catch(() => {
-        if (active) setBankLookup({ bin: bankTransfer.bankBin, code: null });
-      });
-    return () => {
-      active = false;
-    };
-  }, [bankTransfer?.bankBin, bankDirectory]);
-
-  useEffect(() => {
-    if (!bankTransfer) setBankPickerVisible(false);
-  }, [order?.requestId, order?.status, bankTransfer?.bankBin]);
-
-  async function openBankApp(app: BankAppOption) {
-    const transfer = order?.status === "PENDING" ? order.bankTransfer : null;
-    const code =
-      transfer && bankLookup && bankLookup.bin === transfer.bankBin
-        ? bankLookup.code
-        : null;
-    if (!transfer || !code || !order)
-      throw new Error("bank-transfer-details-unavailable");
-    const url = buildBankTransferDeeplink({
-      appId: app.appId,
-      bankCode: code,
-      accountNumber: transfer.accountNumber,
-      accountName: transfer.accountName,
-      amountVnd: order.amountVnd,
-      memo: transfer.memo,
-      returnUrl: __DEV__
-        ? "https://www.vietqr.io/deeplink"
-        : "dontliftmobile://",
-    });
-    if (__DEV__ && !bankTransferLinkLogged.current) {
-      console.info("[Premium bank transfer deeplink]", url);
-      bankTransferLinkLogged.current = true;
-    }
-    await Linking.openURL(url);
-  }
+  const bankTransferFlow = usePremiumBankTransfer({
+    order,
+    api,
+    key,
+    working,
+    bankDirectory,
+    bankAppDirectory,
+    applyOrder,
+    setBusy,
+    setStatusMessage,
+    replaceLegacyOrder: (source) => {
+      void replaceLegacyOrderForBankTransfer(source);
+    },
+  });
+  const {
+    bankCode,
+    bankTransfer,
+    closePicker,
+    openBankApp,
+    pickerVisible: bankPickerVisible,
+    prepare: prepareBankTransfer,
+    preparing: bankTransferPreparing,
+  } = bankTransferFlow;
 
   async function replaceLegacyOrderForBankTransfer(source: PremiumOrder) {
     if (working.current) return;
@@ -249,142 +186,6 @@ export function PremiumScreen({
     } finally {
       working.current = false;
       setBusy(false);
-    }
-  }
-
-  async function prepareBankTransfer() {
-    if (
-      bankTransferPreparing ||
-      working.current ||
-      !order ||
-      order.status !== "PENDING"
-    )
-      return;
-    setBankTransferPreparing(true);
-    setStatusMessage("Refreshing PayOS transfer details…");
-    try {
-      let currentOrder = order;
-      if (!currentOrder.bankTransfer) {
-        currentOrder = await withTimeout(
-          api.get(order.orderCode, true),
-          18_000,
-          "PayOS transfer details took too long to load. Try again or scan the QR code.",
-        );
-        if (currentOrder.requestId !== order.requestId)
-          throw new Error(
-            "The Premium payment changed. Refresh this screen and try again.",
-          );
-        void applyOrder(currentOrder);
-      }
-      if (currentOrder.status !== "PENDING")
-        throw new Error(
-          "This Premium payment is no longer pending. Refresh its status.",
-        );
-      const transfer = currentOrder.bankTransfer;
-      if (!transfer) {
-        if (__DEV__)
-          console.info("[Premium bank transfer details unavailable]", {
-            currentOrder,
-            orderCode: currentOrder.orderCode,
-            status: currentOrder.status,
-          });
-        const replacementOrderCode = await AsyncStorage.getItem(
-          `${key}:bank-transfer-replacement-order`,
-        );
-        if (replacementOrderCode === String(currentOrder.orderCode)) {
-          setStatusMessage(
-            "The new QR still has no bank details from the Premium API. Keep this QR and scan it to pay; the API must return bank details before a bank app link can be created.",
-          );
-          Alert.alert(
-            "Bank transfer details unavailable",
-            "The Premium API did not include the receiving bank details for this new QR. Replacing it again would create another QR with the same issue. Keep this QR and scan it, or update the Premium API before trying bank transfer again.",
-            [{ text: "OK" }],
-          );
-          return;
-        }
-        setStatusMessage(
-          "The Premium API did not return bank app details for this QR. You can still scan the QR code below.",
-        );
-        Alert.alert(
-          "Bank transfer details unavailable",
-          "The Premium API did not return the receiving bank details needed for a prefilled bank app link. Replacing this QR will cancel it and create a new one; if the API still omits those details, the new QR will have the same limitation.",
-          [
-            { text: "Keep current QR", style: "cancel" },
-            {
-              text: "Replace QR once",
-              style: "destructive",
-              onPress: () => {
-                void replaceLegacyOrderForBankTransfer(currentOrder);
-              },
-            },
-          ],
-        );
-        return;
-      }
-      if (!bankDirectory || !bankAppDirectory)
-        throw new Error(
-          "Bank app transfer is unavailable. Use the QR code below.",
-        );
-      setStatusMessage("Looking up the receiving bank…");
-      const banks = await withTimeout(
-        bankDirectory.list(),
-        12_000,
-        "Bank lookup took too long. Try again or scan the QR code.",
-      );
-      const code = banks.find((bank) => bank.bin === transfer.bankBin)?.code;
-      if (!code)
-        throw new Error(
-          "Could not match the PayOS bank details to a supported bank. Use the QR code below.",
-        );
-      setBankLookup({ bin: transfer.bankBin, code });
-      const platform =
-        Platform.OS === "ios"
-          ? "ios"
-          : Platform.OS === "android"
-            ? "android"
-            : null;
-      if (!platform)
-        throw new Error(
-          "Bank app transfers are only available on iOS and Android.",
-        );
-      setStatusMessage("Preparing bank app links…");
-      const apps = await withTimeout(
-        bankAppDirectory.list(platform),
-        12_000,
-        "Supported bank apps took too long to load. Try again or scan the QR code.",
-      );
-      if (!apps.length)
-        throw new Error(
-          "No supported bank apps were returned. Use the QR code below.",
-        );
-      if (__DEV__ && !bankTransferLinkLogged.current) {
-        const returnUrl = "https://www.vietqr.io/deeplink";
-        const previews = apps.map((app) => ({
-          appId: app.appId,
-          appName: app.appName,
-          url: buildBankTransferDeeplink({
-            appId: app.appId,
-            bankCode: code,
-            accountNumber: transfer.accountNumber,
-            accountName: transfer.accountName,
-            amountVnd: currentOrder.amountVnd,
-            memo: transfer.memo,
-            returnUrl,
-          }),
-        }));
-        console.info("[Premium bank transfer deeplink previews]", previews);
-        bankTransferLinkLogged.current = true;
-      }
-      setStatusMessage("Choose your banking app to continue.");
-      setBankPickerVisible(true);
-    } catch (cause) {
-      setStatusMessage(
-        cause instanceof Error
-          ? cause.message
-          : "Could not prepare bank app transfer. Use the QR code below.",
-      );
-    } finally {
-      setBankTransferPreparing(false);
     }
   }
 
@@ -879,7 +680,7 @@ export function PremiumScreen({
       <BankAppPicker
         visible={bankPickerVisible && Boolean(bankTransfer)}
         directory={bankAppDirectory}
-        onClose={() => setBankPickerVisible(false)}
+        onClose={closePicker}
         onSelect={openBankApp}
       />
       {!(pending && order?.qrCode) &&
