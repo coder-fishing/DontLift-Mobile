@@ -62,11 +62,10 @@ import { useRoomVotingActions } from '../features/rooms/use-room-voting-actions'
 import { useGroupSessionRuntime } from '../features/rooms/use-group-session-runtime';
 import { useRoomLiveness } from '../features/rooms/use-room-liveness';
 import { useGroupTerminalLifecycle } from '../features/rooms/use-group-terminal-lifecycle';
+import { useEarlyExitCutoffRetry } from '../features/rooms/use-early-exit-cutoff-retry';
 import { useGroupBillActions } from '../features/settlement/use-group-bill-actions';
 import { listenToRoomLobby, listenToOwnRoomRemoval, type RoomLobbyState, type RoomLobbySnapshot } from '../features/rooms/room-listener';
 import { createGroupViolationRepository } from '../features/rooms/group-violation-repository';
-import { createEarlyExitSyncRetry } from '../features/rooms/early-exit-sync-retry';
-import { createEarlyExitCleanupRetry } from '../features/rooms/early-exit-cleanup-retry';
 import { createCompletedGroupViolationSyncRetry } from '../features/rooms/completed-group-violation-sync-retry';
 import { createGroupCaptureWorkTracker } from '../features/rooms/group-capture-work';
 import { createEarlyExitRepository, type EarlyExitRequest } from '../features/rooms/early-exit-repository';
@@ -280,6 +279,11 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const groupLifecycleCutoffs = useRef(new Map<string, number>());
   const [joinedRoom, setJoinedRoom] = useState<JoinedRoom | null>(null);
   const [roomLobbyState, setRoomLobbyState] = useState<RoomLobbyState | null>(null);
+  const [groupTimerSeconds, setGroupTimerSeconds] = useState(0);
+  const [groupDetection, setGroupDetection] = useState<ForegroundDetectionViewState>(INITIAL_DETECTION_STATE);
+  const [groupIsOnline, setGroupIsOnline] = useState(false);
+  const [groupSyncMessage, setGroupSyncMessage] = useState<string>();
+  const [groupSyncPendingCount, setGroupSyncPendingCount] = useState(0);
   const pendingGroupActionDestination = useRef<{ roomId: string; action: GroupActionableSession['action'] } | null>(null);
   const leavingLobby = useRef(false);
   const kickingLobby = useRef(false);
@@ -522,73 +526,18 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   });
 
   const earlyExitSnapshot = roomLobbyState?.snapshot;
-  const earlyExitMember = earlyExitSnapshot?.members.find(member => member.uid === profile.uid);
-  const earlyExitCutoffUtcMs = earlyExitMember?.earlyExitAtUtcMs;
-  useEffect(() => {
-    const snapshot = earlyExitSnapshot;
-    const ownMember = earlyExitMember;
-    const cutoffUtcMs = earlyExitCutoffUtcMs;
-    if (!snapshot || !['ACTIVE', 'COMPLETED', 'CANCELLED', 'ABORTED'].includes(snapshot.status)
-      || ownMember?.status !== 'EARLY_EXIT'
-      || cutoffUtcMs == null || snapshot.startedAtUtcMs == null
-      || earlyExitCleanupInFlight.current.has(snapshot.roomId)) return;
-
-    const roomId = snapshot.roomId;
-    const startedAtUtcMs = snapshot.startedAtUtcMs;
-    earlyExitCleanupInFlight.current.add(roomId);
-    let disposed = false;
-    let localCleanupComplete = false;
-    let online = false;
-    let networkSubscription: ReturnType<typeof Network.addNetworkStateListener> | undefined;
-    let cleanupRetryController: ReturnType<typeof createEarlyExitCleanupRetry> | undefined;
-    let retryController: ReturnType<typeof createEarlyExitSyncRetry> | undefined;
-    const updateConnection = (state: Awaited<ReturnType<typeof Network.getNetworkStateAsync>>) => {
-      if (disposed) return;
-      online = state.isConnected === true && state.isInternetReachable !== false;
-      setGroupIsOnline(online);
-      if (online) cleanupRetryController?.retryNow();
-      retryController?.setOnline(online);
-    };
-    cleanupRetryController = createEarlyExitCleanupRetry(
-      async () => {
-        // Dùng cùng cleanup với terminal path để hai snapshot không chốt sai thứ tự.
-        await runEarlyExitCutoffCleanup({ roomId, userId: profile.uid, cutoffUtcMs, startedAtUtcMs, historySnapshot: snapshot });
-        if (disposed) return;
-      },
-      {
-        onRetrying: () => setGroupSyncMessage('The room approved your exit, but local session cleanup failed. The app will retry automatically.'),
-        onComplete: () => {
-          localCleanupComplete = true;
-          retryController = createEarlyExitSyncRetry(roomId, groupViolationRepository, {
-            onPending: count => {
-              setGroupSyncPendingCount(count);
-              setGroupSyncMessage(`${count} eligible violation${count === 1 ? '' : 's'} waiting to sync. The app will retry while connected.`);
-            },
-            onDrained: failed => {
-              setGroupSyncPendingCount(0);
-              setGroupSyncMessage(failed > 0
-                ? `${failed} violation${failed === 1 ? '' : 's'} could not sync and remain saved on this device.`
-                : undefined);
-            },
-            onReconciliation: () => setGroupSyncMessage('A saved violation is waiting for room reconciliation.'),
-            onRetrying: () => setGroupSyncMessage('Eligible violations are saved on this device. Sync will retry while connected.'),
-          });
-          retryController.setOnline(online);
-        },
-      },
-    );
-    networkSubscription = Network.addNetworkStateListener(updateConnection);
-    void Network.getNetworkStateAsync().then(updateConnection).catch(() => undefined);
-    cleanupRetryController.start();
-    return () => {
-      disposed = true;
-      if (!localCleanupComplete) earlyExitCleanupInFlight.current.delete(roomId);
-      cleanupRetryController?.dispose();
-      retryController?.dispose();
-      networkSubscription?.remove();
-    };
-  }, [earlyExitSnapshot?.roomId, earlyExitSnapshot?.status, earlyExitSnapshot?.startedAtUtcMs,
-    earlyExitMember?.status, earlyExitCutoffUtcMs, profile.uid, groupViolationRepository, runEarlyExitCutoffCleanup]);
+  const earlyExitCutoffUtcMs = earlyExitSnapshot?.members.find(member => member.uid === profile.uid)?.earlyExitAtUtcMs;
+  useEarlyExitCutoffRetry({
+    snapshot: earlyExitSnapshot,
+    uid: profile.uid,
+    cutoffUtcMs: earlyExitCutoffUtcMs,
+    repository: groupViolationRepository,
+    cleanupInFlight: earlyExitCleanupInFlight,
+    runCleanup: runEarlyExitCutoffCleanup,
+    setOnline: setGroupIsOnline,
+    setSyncPendingCount: setGroupSyncPendingCount,
+    setSyncMessage: setGroupSyncMessage,
+  });
 
   useEffect(() => {
     if (!lobbyRoom) return undefined;
@@ -646,11 +595,6 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     handleStartSolo, continueActiveSoloSession, confirmCancelSoloSession, requestFinishSoloSession,
   } = solo;
   // Group State
-  const [groupTimerSeconds, setGroupTimerSeconds] = useState(0);
-  const [groupDetection, setGroupDetection] = useState<ForegroundDetectionViewState>(INITIAL_DETECTION_STATE);
-  const [groupIsOnline, setGroupIsOnline] = useState(false);
-  const [groupSyncMessage, setGroupSyncMessage] = useState<string>();
-  const [groupSyncPendingCount, setGroupSyncPendingCount] = useState(0);
   const candidateGroupRoom = roomLobbyState?.snapshot;
   const groupRoomSnapshot = candidateGroupRoom?.status === 'ACTIVE'
     && candidateGroupRoom.startedAtUtcMs !== null ? candidateGroupRoom : null;
