@@ -59,6 +59,7 @@ import { createRoomRepository, persistEarlyExitProjection, persistRoomLobbyProje
 import { useRoomEntry } from '../features/rooms/use-room-entry';
 import { useRoomStart } from '../features/rooms/use-room-start';
 import { useRoomLobbyMembership } from '../features/rooms/use-room-lobby-membership';
+import { useRoomCompletionActions } from '../features/rooms/use-room-completion-actions';
 import { listenToRoomLobby, listenToOwnRoomRemoval, type RoomLobbyState, type RoomLobbySnapshot } from '../features/rooms/room-listener';
 import { createGroupViolationRepository, GroupViolationError } from '../features/rooms/group-violation-repository';
 import { createEarlyExitSyncRetry } from '../features/rooms/early-exit-sync-retry';
@@ -68,7 +69,7 @@ import { createGroupCaptureWorkTracker } from '../features/rooms/group-capture-w
 import { createEarlyExitRepository, EarlyExitError, type EarlyExitDecision, type EarlyExitRequest } from '../features/rooms/early-exit-repository';
 import { listenToOpenEarlyExitRequests } from '../features/rooms/early-exit-listener';
 import { createTerminationVoteRepository, TerminationVoteError, type TerminationChoice } from '../features/rooms/termination-vote-repository';
-import { createRoomCompletionRepository, RoomCompletionError } from '../features/rooms/room-completion-repository';
+import { createRoomCompletionRepository } from '../features/rooms/room-completion-repository';
 import { shouldNavigateToGroupSummary } from '../features/rooms/group-terminal-navigation';
 import { createSettlementDetailsRepository, type SettlementDetailsState } from '../features/settlement/settlement-details-repository';
 import { createBankDirectoryRepository } from '../features/settlement/bank-directory';
@@ -324,18 +325,9 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const [isOpeningTerminationVote, setIsOpeningTerminationVote] = useState(false);
   const [isCastingTerminationVote, setIsCastingTerminationVote] = useState(false);
   const [terminationVoteError, setTerminationVoteError] = useState<string>();
-  const [isCompletingRoom, setIsCompletingRoom] = useState(false);
-  const [roomCompletionError, setRoomCompletionError] = useState<string>();
-  const [isFinalizingRoomOverride, setIsFinalizingRoomOverride] = useState(false);
-  const [roomOverrideError, setRoomOverrideError] = useState<string>();
-  const [isAcknowledgingRoom, setIsAcknowledgingRoom] = useState(false);
-  const [roomAcknowledgmentError, setRoomAcknowledgmentError] = useState<string>();
   const pendingTerminationVoteOpen = useRef<{ roomId: string; requestId: string } | null>(null);
   const pendingTerminationBallot = useRef<{ roomId: string; voteId: string; requestId: string; choice: TerminationChoice } | null>(null);
   const pendingEarlyExitRequest = useRef<{ roomId: string; requestId: string } | null>(null);
-  const pendingRoomCompletion = useRef<{ roomId: string; requestId: string } | null>(null);
-  const pendingRoomOverride = useRef<{ roomId: string; requestId: string } | null>(null);
-  const pendingRoomAcknowledgment = useRef<{ roomId: string; requestId: string } | null>(null);
   const earlyExitCleanupInFlight = useRef(new Set<string>());
   const groupCaptureWork = useRef(new Map<string, ReturnType<typeof createGroupCaptureWorkTracker>>());
   const roomEntry = useRoomEntry({
@@ -818,119 +810,17 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   }, [lobbyRoom?.roomId, roomRuntime.firestore, profile.uid, roomEntry.clearPendingRoomCommands,
     roomStart.clearPendingStart, lobbyMembership.clearRemoveError, lobbyMembership.isLeavingRef]);
 
-  const handleCompleteRoom = async () => {
-    if (!lobbyRoom || isCompletingRoom) return;
-    setIsCompletingRoom(true);
-    setRoomCompletionError(undefined);
-    const pending = pendingRoomCompletion.current?.roomId === lobbyRoom.roomId
-      ? pendingRoomCompletion.current
-      : { roomId: lobbyRoom.roomId, requestId: Crypto.randomUUID() };
-    pendingRoomCompletion.current = pending;
-    try {
-      await roomCompletionRepository.completeRoom(pending);
-      pendingRoomCompletion.current = null;
-      setCurrentScreen('13-group-summary');
-    } catch (error) {
-      if (!(error instanceof RoomCompletionError) || error.code !== 'unavailable') pendingRoomCompletion.current = null;
-      if (__DEV__ && error instanceof RoomCompletionError) {
-        console.warn('[room-complete] failed', JSON.stringify({ code: error.code }));
-      }
-      setRoomCompletionError(error instanceof RoomCompletionError && error.code === 'permission-denied'
-        ? 'Firebase rejected room completion. Check the deployed Firestore Rules and Host membership.'
-        : error instanceof RoomCompletionError && error.code === 'failed-precondition'
-          ? 'This room is no longer active. Refresh the room state and try again.'
-          : 'Could not end the room. Reconnect and retry; the request was not queued offline.');
-    } finally {
-      setIsCompletingRoom(false);
-    }
-  };
-
-  const handleFinalizeRoomOverride = async (unsyncedMemberUids: string[]) => {
-    const snapshot = roomLobbyState?.snapshot;
-    const ownMember = snapshot?.members.find(member => member.uid === profile.uid);
-    if (!lobbyRoom || !snapshot || snapshot.status !== 'COMPLETED' || ownMember?.role !== 'HOST'
-      || isFinalizingRoomOverride) return;
-    setIsFinalizingRoomOverride(true);
-    setRoomOverrideError(undefined);
-    const pending = pendingRoomOverride.current?.roomId === lobbyRoom.roomId
-      ? pendingRoomOverride.current
-      : { roomId: lobbyRoom.roomId, requestId: Crypto.randomUUID() };
-    pendingRoomOverride.current = pending;
-    try {
-      await roomCompletionRepository.finalizeRoomScores({
-        ...pending,
-        reason: 'HOST_OVERRIDE',
-        confirmedWarning: true,
-        unsyncedMemberUids,
-      });
-      pendingRoomOverride.current = null;
-      // Ghi history-only cho violation local còn pending sau khi server đã khóa điểm.
-      void groupViolationRepository.syncPending(lobbyRoom.roomId).catch(() => undefined);
-    } catch (error) {
-      if (!(error instanceof RoomCompletionError) || error.code !== 'unavailable') pendingRoomOverride.current = null;
-      if (__DEV__ && error instanceof RoomCompletionError) {
-        console.warn('[room-override] failed', JSON.stringify({ code: error.code }));
-      }
-      setRoomOverrideError(error instanceof RoomCompletionError && error.code === 'permission-denied'
-        ? 'Firebase rejected finalization. Check that the Spark Firestore Rules are deployed.'
-        : error instanceof RoomCompletionError && error.code === 'failed-precondition'
-          ? 'The room state changed. Wait for the latest room snapshot and retry if members are still pending.'
-          : error instanceof RoomCompletionError && error.code === 'unavailable'
-            ? 'Could not confirm the request with Firebase. Reconnect and retry; the same request will be reused.'
-            : 'Could not finalize the room. Your scores have not been changed by this attempt.');
-    } finally {
-      setIsFinalizingRoomOverride(false);
-    }
-  };
-
-  const handleAcknowledgeRoomSync = async () => {
-    const snapshot = roomLobbyState?.snapshot;
-    if (!lobbyRoom || !snapshot || snapshot.status !== 'COMPLETED' || isAcknowledgingRoom) return;
-    setIsAcknowledgingRoom(true);
-    setRoomAcknowledgmentError(undefined);
-    const pending = pendingRoomAcknowledgment.current?.roomId === lobbyRoom.roomId
-      ? pendingRoomAcknowledgment.current
-      : { roomId: lobbyRoom.roomId, requestId: Crypto.randomUUID() };
-    pendingRoomAcknowledgment.current = pending;
-    try {
-      // Chờ sensor/recovery đã ghi xong, sau đó chốt interval mở tại endedAt và gửi hết outbox đủ điều kiện.
-      await groupCaptureWork.current.get(lobbyRoom.roomId)?.waitForIdle();
-      if (snapshot.endedAtUtcMs == null) throw new RoomCompletionError('failed-precondition');
-      const ownMember = snapshot.members.find(member => member.uid === profile.uid);
-      const lifecycleCutoffUtcMs = ownMember?.status === 'EARLY_EXIT' && ownMember.earlyExitAtUtcMs != null
-        ? Math.min(snapshot.endedAtUtcMs, ownMember.earlyExitAtUtcMs)
-        : snapshot.endedAtUtcMs;
-      await reconcileGroupLifecycleAtCutoff(lobbyRoom.roomId, profile.uid, lifecycleCutoffUtcMs);
-      if (snapshot.startedAtUtcMs != null) {
-        if (ownMember?.status === 'EARLY_EXIT' && ownMember.earlyExitAtUtcMs != null) {
-          await runEarlyExitCutoffCleanup({
-            roomId: lobbyRoom.roomId, userId: profile.uid,
-            cutoffUtcMs: ownMember.earlyExitAtUtcMs, startedAtUtcMs: snapshot.startedAtUtcMs, historySnapshot: snapshot,
-          });
-        }
-      }
-      await groupViolationRepository.finalizeOpenAtRoomEnd({
-        roomId: lobbyRoom.roomId, userId: profile.uid, endedAtUtcMs: snapshot.endedAtUtcMs,
-      });
-      await groupViolationRepository.syncPending(lobbyRoom.roomId);
-      const pendingCount = await groupViolationRepository.getPendingCount(lobbyRoom.roomId);
-      if (pendingCount > 0) throw new RoomCompletionError('failed-precondition');
-      await roomCompletionRepository.acknowledgeMemberSync(pending);
-      pendingRoomAcknowledgment.current = null;
-    } catch (error) {
-      if (!(error instanceof RoomCompletionError) || error.code !== 'unavailable') pendingRoomAcknowledgment.current = null;
-      if (__DEV__ && error instanceof RoomCompletionError) {
-        console.warn('[room-ack] failed', JSON.stringify({ code: error.code }));
-      }
-      setRoomAcknowledgmentError(error instanceof RoomCompletionError && error.code === 'failed-precondition'
-        ? 'Some saved session data is still waiting to sync. Reconnect and retry.'
-        : error instanceof RoomCompletionError && error.code === 'permission-denied'
-          ? 'Firebase rejected the sync acknowledgment. Check the deployed Firestore Rules.'
-          : 'Could not confirm the final sync. Reconnect and retry.');
-    } finally {
-      setIsAcknowledgingRoom(false);
-    }
-  };
+  const roomCompletion = useRoomCompletionActions({
+    repository: roomCompletionRepository,
+    violationRepository: groupViolationRepository,
+    roomId: lobbyRoom?.roomId,
+    snapshot: roomLobbyState?.snapshot,
+    uid: profile.uid,
+    captureWork: groupCaptureWork,
+    reconcileLifecycleAtCutoff: reconcileGroupLifecycleAtCutoff,
+    runEarlyExitCutoffCleanup,
+    onCompleted: () => setCurrentScreen('13-group-summary'),
+  });
 
   const handleRequestEarlyExit = async () => {
     if (!lobbyRoom || isRequestingEarlyExit) return;
@@ -1815,8 +1705,8 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
                 isCastingTerminationVote={isCastingTerminationVote} terminationVoteError={terminationVoteError}
                 onOpenTerminationVote={() => { void handleOpenTerminationVote(); }}
                 onCastTerminationVote={choice => { void handleCastTerminationVote(choice); }}
-                isCompletingRoom={isCompletingRoom} completionError={roomCompletionError}
-                onCompleteRoom={() => { void handleCompleteRoom(); }} />
+                isCompletingRoom={roomCompletion.isCompletingRoom} completionError={roomCompletion.roomCompletionError}
+                onCompleteRoom={() => { void roomCompletion.handleCompleteRoom(); }} />
             : <Text accessibilityRole="alert">Waiting for the active room snapshot…</Text>
         )}
 
@@ -1824,12 +1714,12 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
           groupSummarySnapshot
             ? <GroupSummaryScreen snapshot={groupSummarySnapshot} actorUid={profile.uid}
                 currentUserPremiumExpiresAtUtcMs={profile.premiumExpiresAtUtcMs}
-                isOnline={groupIsOnline} isSyncing={isAcknowledgingRoom}
-                isFinalizingOverride={isFinalizingRoomOverride}
-                errorMessage={roomAcknowledgmentError}
-                overrideErrorMessage={roomOverrideError}
-                onSyncAndAcknowledge={() => { void handleAcknowledgeRoomSync(); }}
-                onFinalizeWithOverride={uids => { void handleFinalizeRoomOverride(uids); }}
+                isOnline={groupIsOnline} isSyncing={roomCompletion.isAcknowledgingRoom}
+                isFinalizingOverride={roomCompletion.isFinalizingRoomOverride}
+                errorMessage={roomCompletion.roomAcknowledgmentError}
+                overrideErrorMessage={roomCompletion.roomOverrideError}
+                onSyncAndAcknowledge={() => { void roomCompletion.handleAcknowledgeRoomSync(); }}
+                onFinalizeWithOverride={uids => { void roomCompletion.handleFinalizeRoomOverride(uids); }}
                 billState={billScreenState}
                 onOpenBillAllocation={() => setCurrentScreen('07-bill-allocation')}
                 onOpenSettlementDetails={() => {
