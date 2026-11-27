@@ -54,7 +54,7 @@ import type { RegistrationProfile, RegistrationUser } from '../features/auth/aut
 import type { AuthSessionState } from '../features/auth/auth-session-controller';
 import { getConfiguredFirebaseRuntime } from '../features/auth/firebase-adapters';
 import { getLocalDatabase } from '../features/local/database';
-import { createRoomRepository, restoreCachedActiveRoom, type CreatedRoom, type JoinedRoom } from '../features/rooms/room-repository';
+import { createRoomRepository, type CreatedRoom, type JoinedRoom } from '../features/rooms/room-repository';
 import { useRoomEntry } from '../features/rooms/use-room-entry';
 import { useRoomStart } from '../features/rooms/use-room-start';
 import { useRoomLobbyMembership } from '../features/rooms/use-room-lobby-membership';
@@ -66,6 +66,7 @@ import { useGroupTerminalLifecycle } from '../features/rooms/use-group-terminal-
 import { useEarlyExitCutoffRetry } from '../features/rooms/use-early-exit-cutoff-retry';
 import { useGroupLifecycleCleanup } from '../features/rooms/use-group-lifecycle-cleanup';
 import { useRoomLobbySubscription } from '../features/rooms/use-room-lobby-subscription';
+import { useCachedRoomRestore } from '../features/rooms/use-cached-room-restore';
 import { useGroupBillActions } from '../features/settlement/use-group-bill-actions';
 import { listenToOwnRoomRemoval, type RoomLobbyState, type RoomLobbySnapshot } from '../features/rooms/room-listener';
 import { createGroupViolationRepository } from '../features/rooms/group-violation-repository';
@@ -326,20 +327,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     captureWork: groupCaptureWork,
   });
 
-  useEffect(() => {
-    let active = true;
-    void restoreCachedActiveRoom(getLocalDatabase(), profile.uid).then(room => {
-      if (!active || !room) return;
-      setCreatedRoom(current => {
-        if (current) return current;
-        restoredGroupRoomId.current = room.roomId;
-        return room;
-      });
-    }).catch(() => {
-      // Local restore không chặn đăng nhập; listener cloud vẫn có thể được gắn khi người dùng mở lại room.
-    });
-    return () => { active = false; };
-  }, [profile.uid]);
+  useCachedRoomRestore({ uid: profile.uid, restoredRoomId: restoredGroupRoomId, setCreatedRoom });
 
   useEffect(() => {
     let active = true;
