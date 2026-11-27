@@ -37,6 +37,7 @@ import { createGroupHistoryRepository, type GroupActionableSession } from '../fe
 import { createSoloHistoryRepository } from '../features/history/solo-history-repository';
 import { GroupLobbyScreen } from '../screens/GroupLobbyScreen';
 import { useGroupLobbyDashboard } from '../features/history/use-group-lobby-dashboard';
+import { useGroupHistorySync } from '../features/history/use-group-history-sync';
 import { createLobbyLeaveRepository } from '../features/rooms/lobby-leave-repository';
 import { GroupActiveScreen } from '../screens/GroupActiveScreen';
 import { GroupSummaryScreen } from '../screens/GroupSummaryScreen';
@@ -185,24 +186,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const groupHistoryRepository = useMemo(() => createGroupHistoryRepository({
     firestore: roomRuntime.firestore, auth: roomRuntime.auth,
   }), [roomRuntime]);
-  useEffect(() => {
-    let disposed = false;
-    void groupHistoryRepository.recoverLocal(profile.uid).catch(() => undefined);
-    const retry = async () => {
-      try {
-        const network = await Network.getNetworkStateAsync();
-        if (!disposed && network.isConnected && network.isInternetReachable !== false) {
-          await groupHistoryRepository.syncPending(profile.uid);
-        }
-      } catch { /* Outbox còn bền vững; lần foreground/reconnect sau sẽ thử lại. */ }
-    };
-    void retry();
-    // Worker độc lập selected room/screen; rời history không làm mất trigger retry.
-    const network = Network.addNetworkStateListener(() => { void retry(); });
-    const lifecycle = AppState.addEventListener('change', state => { if (state === 'active') void retry(); });
-    const timer = setInterval(() => { void retry(); }, 30_000);
-    return () => { disposed = true; network.remove(); lifecycle.remove(); clearInterval(timer); };
-  }, [groupHistoryRepository, profile.uid]);
+  useGroupHistorySync(groupHistoryRepository, profile.uid);
   const roomRepository = useMemo(() => createRoomRepository({
       firestore: roomRuntime.firestore,
       auth: roomRuntime.auth,
