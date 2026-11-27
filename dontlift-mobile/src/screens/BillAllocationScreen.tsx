@@ -9,6 +9,7 @@ import { BottomTabInset, Colors } from '../constants/theme';
 import { formatVND } from '../constants';
 import { calculateBillSharesWithOverrides, calculateDefaultBillShares, type BillShareOverride } from '../features/settlement/bill-allocation';
 import { AiBillScanCard } from '../features/settlement/components/AiBillScanCard';
+import { OverrideMemberEditor, type OverrideDraft } from '../features/settlement/components/OverrideMemberEditor';
 import { useReceiptEvidence } from '../features/settlement/use-receipt-evidence';
 import type { ReceiptScanResult } from '../features/settlement/receipt-scan-api';
 import type { BillShare } from '../features/settlement/bill-repository';
@@ -59,65 +60,6 @@ type Props = {
 
 function shareLabel(member: BillAllocationMember | undefined): string {
   return member?.displayName.trim() || 'Participant';
-}
-
-type OverrideDraft = { type: BillShareOverride['type']; value: string };
-
-function OverrideMemberEditor({
-  member, currentShareVnd, draft, colors, disabled, onDraftChange,
-}: {
-  member: BillAllocationMember;
-  currentShareVnd: number;
-  draft?: OverrideDraft;
-  colors: typeof Colors.light | typeof Colors.dark;
-  disabled: boolean;
-  onDraftChange: (value: OverrideDraft | null) => void;
-}) {
-  const name = shareLabel(member);
-  return (
-    <View style={[styles.overrideRow, { borderTopColor: colors.border }]}>
-      <View style={styles.overrideRowHeading}>
-        <View style={styles.memberInfo}>
-          <Text style={[styles.memberName, { color: colors.text }]} numberOfLines={2}>{name}</Text>
-          <Text style={[styles.helper, { color: colors.textSecondary }]}>Current share · {formatVND(currentShareVnd)} VND</Text>
-        </View>
-        <Pressable accessibilityRole="button" accessibilityLabel={`${draft ? 'Remove custom amount for' : 'Set custom amount for'} ${name}`}
-          accessibilityState={{ checked: Boolean(draft), disabled }} disabled={disabled}
-          onPress={() => onDraftChange(draft ? null : { type: 'FIXED_VND', value: '' })}
-          style={({ pressed }) => [styles.rowToggle, { borderColor: colors.border }, pressed && styles.pressed, disabled && styles.disabled]}>
-          <Text style={[styles.rowToggleText, { color: colors.primary }]}>{draft ? 'Use default' : 'Customize'}</Text>
-        </Pressable>
-      </View>
-      {draft ? (
-        <View style={styles.overrideInputs}>
-          <View style={styles.overrideTypes}>
-            {(['FIXED_VND', 'PERCENT_BPS'] as const).map(type => (
-              <Pressable key={type} accessibilityRole="button" accessibilityState={{ selected: draft.type === type, disabled }}
-                accessibilityLabel={type === 'FIXED_VND' ? `Set fixed VND for ${name}` : `Set percentage for ${name}`}
-                disabled={disabled} onPress={() => onDraftChange({ ...draft, type })}
-                style={({ pressed }) => [styles.typeButton,
-                  { backgroundColor: draft.type === type ? colors.primary : colors.inputSurface,
-                    borderColor: draft.type === type ? colors.primary : colors.border }, pressed && styles.pressed, disabled && styles.disabled]}>
-                <Text style={[styles.typeButtonText, { color: draft.type === type ? colors.onPrimary : colors.textSecondary }]}>
-                  {type === 'FIXED_VND' ? 'Fixed VND' : 'Percent'}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-          <View style={[styles.inputWrap, { borderColor: colors.border, backgroundColor: colors.inputSurface }]}>
-            <Text accessibilityElementsHidden style={[styles.currency, { color: colors.textSecondary }]}>{draft.type === 'FIXED_VND' ? '₫' : '%'}</Text>
-            <TextInput accessibilityLabel={`${draft.type === 'FIXED_VND' ? 'Fixed VND amount' : 'Bill percentage'} for ${name}`}
-              accessibilityHint={draft.type === 'FIXED_VND' ? 'Whole Vietnamese dong.' : 'Zero to one hundred percent, up to two decimal places.'}
-              editable={!disabled} keyboardType={draft.type === 'FIXED_VND' ? 'number-pad' : 'decimal-pad'}
-              returnKeyType="done" value={draft.value}
-              onChangeText={value => onDraftChange({ ...draft, value: value.replace(draft.type === 'FIXED_VND' ? /[^\d]/g : /[^\d.]/g, '') })}
-              onSubmitEditing={Keyboard.dismiss} placeholder={draft.type === 'FIXED_VND' ? 'e.g. 150000' : 'e.g. 25.00'}
-              placeholderTextColor={colors.textSecondary} style={[styles.input, { color: colors.text }]} />
-          </View>
-        </View>
-      ) : null}
-    </View>
-  );
 }
 
 export function BillAllocationScreen({
@@ -673,14 +615,6 @@ const styles = StyleSheet.create({
   percentTotal: { fontSize: 13, fontWeight: '800', fontVariant: ['tabular-nums'] },
   lockCard: { gap: 6, padding: 16, borderRadius: 18, borderWidth: 1 },
   overrideCard: { gap: 12, padding: 18, borderRadius: 20 },
-  overrideRow: { gap: 10, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },
-  overrideRowHeading: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
-  rowToggle: { minHeight: 48, minWidth: 92, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, borderWidth: 1, borderRadius: 12 },
-  rowToggleText: { fontSize: 13, fontWeight: '700' },
-  overrideInputs: { gap: 8, paddingBottom: 8 },
-  overrideTypes: { flexDirection: 'row', gap: 8 },
-  typeButton: { minWidth: 64, minHeight: 48, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, borderWidth: 1, borderRadius: 12 },
-  typeButtonText: { fontSize: 13, fontWeight: '800' },
   overrideActions: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 },
   secondaryButton: { minHeight: 50, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, borderWidth: 1, borderRadius: 14 },
   secondaryButtonText: { fontSize: 15, fontWeight: '800' },
