@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import type { AccelerometerMeasurement } from 'expo-sensors';
 import {
   ActivityIndicator,
   AppState,
@@ -50,7 +49,6 @@ import { premiumIsActive } from '../features/premium/premium-entitlement';
 import { HardwareDiagnosticsScreen } from '../screens/HardwareDiagnosticsScreen';
 import { useAuthSession } from '../features/auth/auth-session';
 import { useSensorAvailability } from '../features/sensors/use-sensor-availability';
-import { accelerometerAdapter } from '../features/sensors/sensor-adapter';
 import type { RegistrationProfile, RegistrationUser } from '../features/auth/auth-controller';
 import type { AuthSessionState } from '../features/auth/auth-session-controller';
 import { getConfiguredFirebaseRuntime } from '../features/auth/firebase-adapters';
@@ -61,9 +59,10 @@ import { useRoomStart } from '../features/rooms/use-room-start';
 import { useRoomLobbyMembership } from '../features/rooms/use-room-lobby-membership';
 import { useRoomCompletionActions } from '../features/rooms/use-room-completion-actions';
 import { useRoomVotingActions } from '../features/rooms/use-room-voting-actions';
+import { useGroupSessionRuntime } from '../features/rooms/use-group-session-runtime';
 import { useGroupBillActions } from '../features/settlement/use-group-bill-actions';
 import { listenToRoomLobby, listenToOwnRoomRemoval, type RoomLobbyState, type RoomLobbySnapshot } from '../features/rooms/room-listener';
-import { createGroupViolationRepository, GroupViolationError } from '../features/rooms/group-violation-repository';
+import { createGroupViolationRepository } from '../features/rooms/group-violation-repository';
 import { createEarlyExitSyncRetry } from '../features/rooms/early-exit-sync-retry';
 import { createEarlyExitCleanupRetry } from '../features/rooms/early-exit-cleanup-retry';
 import { createCompletedGroupViolationSyncRetry } from '../features/rooms/completed-group-violation-sync-retry';
@@ -93,11 +92,7 @@ import {
 import { listenToTerminationVote, type TerminationVoteState } from '../features/rooms/termination-vote-listener';
 import { JoinRoomScreen } from '../screens/JoinRoomScreen';
 import { createBackgroundRecoveryRepository } from '../features/solo/background-recovery';
-import { createSessionLifecycleController } from '../features/solo/session-lifecycle-controller';
-import {
-  createForegroundDetectionController,
-  type ForegroundDetectionViewState,
-} from '../features/solo/foreground-detection-controller';
+import type { ForegroundDetectionViewState } from '../features/solo/foreground-detection-controller';
 import { useSoloSessionRuntime } from '../features/solo/hooks/use-solo-session-runtime';
 
 const backgroundRecovery = createBackgroundRecoveryRepository();
@@ -935,222 +930,19 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     return () => clearInterval(timer);
   }, [groupRoomSnapshot?.roomId, groupRoomSnapshot?.startedAtUtcMs]);
 
-  useEffect(() => {
-    if (!groupCaptureRoomSnapshot) {
-      setGroupDetection(INITIAL_DETECTION_STATE);
-      return undefined;
-    }
-    const roomId = groupCaptureRoomSnapshot.roomId;
-    const workTracker = createGroupCaptureWorkTracker();
-    groupCaptureWork.current.set(roomId, workTracker);
-    const controller = createForegroundDetectionController(
-      { id: roomId, userId: profile.uid }, groupViolationRepository,
-      () => feedbackService.notifyConfirmedViolation(profile.uid),
-    );
-    let disposed = false;
-    let initialized = false;
-    let processing = false;
-    let lifecyclePending = false;
-    let lifecycleReady = false;
-    const startupState = AppState.currentState;
-    let latestStartupState = startupState;
-    const startupTransitions: { state: typeof AppState.currentState; observedAt: ReturnType<typeof backgroundRecovery.captureTime> }[] = [];
-    if (startupState !== 'active') {
-      startupTransitions.push({ state: startupState, observedAt: backgroundRecovery.captureTime() });
-    }
-    let lifecycleController: ReturnType<typeof createSessionLifecycleController> | undefined;
-    let lastDetectionState = INITIAL_DETECTION_STATE;
-    let latestMeasurement: AccelerometerMeasurement | undefined;
-    let tickRequested = false;
-    let drainWork: Promise<void> = Promise.resolve();
-
-    const refreshPending = async () => {
-      try {
-        const [pending, failed] = await Promise.all([
-          groupViolationRepository.getPendingCount(roomId),
-          groupViolationRepository.getFailedCount(roomId),
-        ]);
-        if (!disposed) {
-          setGroupSyncPendingCount(pending);
-          setGroupSyncMessage(failed > 0
-            ? `${failed} violation${failed === 1 ? '' : 's'} could not sync and remain saved on this device.`
-            : pending > 0 ? `${pending} violation${pending === 1 ? '' : 's'} waiting to sync` : undefined);
-        }
-      } catch {
-        if (!disposed) setGroupSyncMessage('Could not check pending sync yet.');
-      }
-    };
-    const drain = () => {
-      if (disposed || !initialized || lifecyclePending || AppState.currentState !== 'active') return Promise.resolve();
-      if (processing) return drainWork;
-      processing = true;
-      drainWork = workTracker.track((async () => {
-        try {
-          while (!disposed && !lifecyclePending && AppState.currentState === 'active' && (latestMeasurement || tickRequested)) {
-            if (latestMeasurement) {
-              const sample = latestMeasurement;
-              latestMeasurement = undefined;
-              const next = await controller.observeSample(sample, Date.now());
-              if (!disposed) {
-                setGroupDetection(next);
-                if (lastDetectionState.isViolationActive && !next.isViolationActive) {
-                  void groupViolationRepository.syncPending(roomId).then(refreshPending).catch(() => refreshPending());
-                }
-                lastDetectionState = next;
-              }
-            } else {
-              tickRequested = false;
-              const next = await controller.tick(Date.now());
-              if (!disposed) {
-                setGroupDetection(next);
-                if (lastDetectionState.isViolationActive && !next.isViolationActive) {
-                  void groupViolationRepository.syncPending(roomId).then(refreshPending).catch(() => refreshPending());
-                }
-                lastDetectionState = next;
-              }
-            }
-          }
-        } catch {
-          if (!disposed) setGroupDetection(state => ({
-            ...state, persistenceError: 'Could not save the group violation on this device. It will retry automatically.',
-          }));
-        } finally {
-          processing = false;
-          if (!disposed && !lifecyclePending && (latestMeasurement || tickRequested)) void drain();
-        }
-      })());
-      return drainWork;
-    };
-
-    // Đệm AppState trong lúc mở SQLite/controller để không bỏ mất candidate nếu app chuyển nền sớm.
-    const appStateSubscription = AppState.addEventListener('change', state => {
-      const wasActive = latestStartupState === 'active';
-      latestStartupState = state;
-      const observedAt = backgroundRecovery.captureTime();
-      if (lifecycleController && lifecycleReady) {
-        void workTracker.track(lifecycleController.handleChangeAt(state, observedAt)).catch(() => undefined);
-        if (state === 'active') {
-          void drain();
-          void groupViolationRepository.syncPending(roomId).then(refreshPending).catch(() => refreshPending());
-        }
-      } else if ((wasActive && state !== 'active') || (!wasActive && state === 'active')) {
-        startupTransitions.push({ state, observedAt });
-      }
-    });
-
-    const initialization = (async () => {
-      try {
-        const db = await getLocalDatabase();
-        // Room ID là khóa chính cục bộ; khi đổi tài khoản, chuyển session đang hoạt động sang chủ tài khoản hiện tại.
-        await db.runAsync(
-          `INSERT INTO sessions (id, user_id, mode, status, duration_seconds, started_at, completed_at, synced_at)
-           VALUES (?, ?, 'GROUP', 'ACTIVE', 0, ?, NULL, NULL)
-           ON CONFLICT(id) DO UPDATE SET
-             user_id = excluded.user_id,
-             mode = 'GROUP',
-             status = 'ACTIVE',
-             started_at = excluded.started_at,
-             completed_at = NULL,
-             synced_at = NULL`,
-          roomId, profile.uid, new Date(groupCaptureRoomSnapshot.startedAtUtcMs!).toISOString(),
-        );
-        const state = await controller.initialize();
-        if (disposed) return;
-        setGroupDetection(state);
-        lastDetectionState = state;
-        initialized = true;
-        lifecycleController = createSessionLifecycleController({
-          session: { sessionId: roomId, userId: profile.uid },
-          // Mọi thay đổi kể từ lúc effect bắt đầu được replay từ trạng thái foreground này.
-          initialState: 'active',
-          repository: {
-            begin: input => backgroundRecovery.begin(input),
-            reconcile: input => {
-              const cutoffUtcMs = groupLifecycleCutoffs.current.get(input.sessionId);
-              return cutoffUtcMs == null
-                ? backgroundRecovery.reconcile(input)
-                : backgroundRecovery.reconcileAtCutoff(input, cutoffUtcMs);
-            },
-          },
-          captureTime: backgroundRecovery.captureTime,
-          getDetector: () => controller,
-          onPendingChange: pending => {
-            lifecyclePending = pending;
-            if (!pending) void drain();
-          },
-          onRecovered: (recovery, detection) => {
-            if (detection) { setGroupDetection(detection); lastDetectionState = detection; }
-            void groupViolationRepository.syncPending(roomId).then(refreshPending).catch(() => refreshPending());
-            if (recovery === 'needs-review') Alert.alert(
-              'Session recovery needs review',
-              'Background time could not be verified. No group violation was added for that interval.',
-            );
-          },
-          onError: stage => setGroupDetection(current => ({
-            ...current,
-            persistenceError: stage === 'begin'
-              ? 'Could not save this background transition; its interval may not count.'
-              : 'Could not recover the background interval. It remains saved locally for retry.',
-          })),
-        });
-        let replayedStartupTransition = false;
-        let reconciledCurrentState = false;
-        while (!disposed) {
-          while (startupTransitions.length > 0 && !disposed) {
-            const transition = startupTransitions.shift()!;
-            replayedStartupTransition = true;
-            await workTracker.track(lifecycleController.handleChangeAt(transition.state, transition.observedAt));
-          }
-          if (disposed) return;
-          if (!replayedStartupTransition && !reconciledCurrentState) {
-            reconciledCurrentState = true;
-            // Nếu AppState đổi trong lúc recovery đọc SQLite, vòng lặp xử lý mốc vừa được đệm.
-            await workTracker.track(lifecycleController.reconcileCurrent());
-            continue;
-          }
-          if (startupTransitions.length === 0) break;
-        }
-        lifecycleReady = true;
-        void drain();
-        void refreshPending();
-      } catch {
-        if (!disposed) setGroupDetection(current => ({ ...current, persistenceError: 'Could not load this room’s local violation history.' }));
-      }
-    })();
-    workTracker.track(initialization);
-
-    let sensorSubscription: ReturnType<typeof accelerometerAdapter.subscribe> | undefined;
-    let timer: ReturnType<typeof setInterval> | undefined;
-    try {
-      accelerometerAdapter.setUpdateInterval(20);
-      sensorSubscription = accelerometerAdapter.subscribe(sample => { latestMeasurement = sample; void drain(); });
-      timer = setInterval(() => { tickRequested = true; void drain(); }, 200);
-    } catch {
-      setGroupDetection(state => ({ ...state, persistenceError: 'Could not start the accelerometer. Check sensor availability.' }));
-    }
-    const networkSubscription = Network.addNetworkStateListener(state => {
-      const online = state.isConnected === true && state.isInternetReachable !== false;
-      setGroupIsOnline(online);
-      if (online) void groupViolationRepository.syncPending(roomId).then(refreshPending).catch((error: GroupViolationError) => {
-        if (error.code === 'failed-precondition') setGroupSyncMessage('A saved violation is waiting for room reconciliation.');
-        else void refreshPending();
-      });
-    });
-    void Network.getNetworkStateAsync().then(state => {
-      const online = state.isConnected === true && state.isInternetReachable !== false;
-      if (!disposed) setGroupIsOnline(online);
-      if (online) void groupViolationRepository.syncPending(roomId).then(refreshPending).catch(() => refreshPending());
-    }).catch(() => { if (!disposed) setGroupIsOnline(false); });
-
-    return () => {
-      disposed = true;
-      sensorSubscription?.remove();
-      if (timer) clearInterval(timer);
-      appStateSubscription.remove();
-      networkSubscription.remove();
-      lifecycleController?.dispose();
-    };
-  }, [groupCaptureRoomSnapshot?.roomId, profile.uid, groupViolationRepository]);
+  useGroupSessionRuntime({
+    snapshot: groupCaptureRoomSnapshot,
+    userId: profile.uid,
+    repository: groupViolationRepository,
+    backgroundRecovery,
+    feedbackService,
+    lifecycleCutoffs: groupLifecycleCutoffs,
+    captureWork: groupCaptureWork,
+    setDetection: setGroupDetection,
+    setOnline: setGroupIsOnline,
+    setSyncPendingCount: setGroupSyncPendingCount,
+    setSyncMessage: setGroupSyncMessage,
+  });
 
   const openSettings = () => {
     if (currentScreen !== '17-settings') settingsReturnScreen.current = currentScreen;
