@@ -92,14 +92,13 @@ export function BankAppPicker({ visible, directory, onClose, onSelect }: Props) 
     }
   }
 
-  // Fallback màu an toàn tránh trường hợp token trong theme bị undefined
-  const cardBg = colors.backgroundElement ?? (isDark ? '#1E222B' : '#F8FAFC');
-  const cardBorder = colors.border ?? (isDark ? '#2E3440' : '#E2E8F0');
-  const pillBg = colors.backgroundSelected ?? (isDark ? '#2A303C' : '#EEF2F6');
+  const cardBg = colors.backgroundElement;
+  const cardBorder = colors.border;
+  const pillBg = colors.backgroundSelected;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={[styles.backdrop, { backgroundColor: colors.roomModalOverlay || 'rgba(0,0,0,0.45)' }]}>
+      <View style={[styles.backdrop, { backgroundColor: colors.roomModalOverlay }]}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
 
         <View
