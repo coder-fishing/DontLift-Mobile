@@ -58,6 +58,7 @@ import { getLocalDatabase } from '../features/local/database';
 import { createRoomRepository, persistEarlyExitProjection, persistRoomLobbyProjection, persistTerminalRoomProjection, restoreCachedActiveRoom, type CreatedRoom, type JoinedRoom } from '../features/rooms/room-repository';
 import { useRoomEntry } from '../features/rooms/use-room-entry';
 import { useRoomStart } from '../features/rooms/use-room-start';
+import { useRoomLobbyMembership } from '../features/rooms/use-room-lobby-membership';
 import { listenToRoomLobby, listenToOwnRoomRemoval, type RoomLobbyState, type RoomLobbySnapshot } from '../features/rooms/room-listener';
 import { createGroupViolationRepository, GroupViolationError } from '../features/rooms/group-violation-repository';
 import { createEarlyExitSyncRetry } from '../features/rooms/early-exit-sync-retry';
@@ -312,12 +313,9 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const [joinedRoom, setJoinedRoom] = useState<JoinedRoom | null>(null);
   const [roomLobbyState, setRoomLobbyState] = useState<RoomLobbyState | null>(null);
   const pendingGroupActionDestination = useRef<{ roomId: string; action: GroupActionableSession['action'] } | null>(null);
-  const [isLeavingRoom, setIsLeavingRoom] = useState(false);
-  const [roomLeaveError, setRoomLeaveError] = useState<string>();
   const leavingLobby = useRef(false);
   const kickingLobby = useRef(false);
-  const [removingMemberUid, setRemovingMemberUid] = useState<string>();
-  const [roomRemoveError, setRoomRemoveError] = useState<string>();
+  const lobbyActionBusyRefs = useMemo(() => ({ leaving: leavingLobby, removing: kickingLobby }), []);
   const [openEarlyExitRequests, setOpenEarlyExitRequests] = useState<EarlyExitRequest[]>([]);
   const [isRequestingEarlyExit, setIsRequestingEarlyExit] = useState(false);
   const [decidingEarlyExit, setDecidingEarlyExit] = useState<{ requestId: string; decision: EarlyExitDecision } | null>(null);
@@ -351,6 +349,23 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   });
   const lobbyRoom = joinedRoom ?? createdRoom;
   const roomStart = useRoomStart(roomRepository, lobbyRoom?.roomId, () => leavingLobby.current || kickingLobby.current);
+  const lobbyMembership = useRoomLobbyMembership({
+    roomId: lobbyRoom?.roomId,
+    roomState: roomLobbyState,
+    uid: profile.uid,
+    isStartingRoom: roomStart.isStartingRoom,
+    repository: lobbyLeaveRepository,
+    busyRefs: lobbyActionBusyRefs,
+    onLeft: roomId => {
+      setCreatedRoom(current => current?.roomId === roomId ? null : current);
+      setJoinedRoom(current => current?.roomId === roomId ? null : current);
+      setRoomLobbyState(null);
+      lobbyMembership.clearRemoveError();
+      roomEntry.clearPendingRoomCommands();
+      roomStart.clearPendingStart();
+      setCurrentScreen('05-group-lobby');
+    },
+  });
   const lobbyDashboard = useGroupLobbyDashboard({
     repository: groupHistoryRepository,
     uid: profile.uid,
@@ -788,76 +803,20 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     if (!lobbyRoom) return undefined;
     const roomId = lobbyRoom.roomId;
     return listenToOwnRoomRemoval(roomRuntime.firestore, roomId, profile.uid, () => {
-      if (leavingLobby.current) return;
+      if (lobbyMembership.isLeavingRef.current) return;
       setCreatedRoom(current => current?.roomId === roomId ? null : current);
       setJoinedRoom(current => current?.roomId === roomId ? null : current);
       setRoomLobbyState(current => current?.snapshot?.roomId === roomId ? null : current);
       roomEntry.clearPendingRoomCommands();
       roomStart.clearPendingStart();
-      setRoomRemoveError(undefined);
+      lobbyMembership.clearRemoveError();
       setCurrentScreen(current => ['05-group-lobby', '12-join-room', '06-group-active'].includes(current) ? '05-group-lobby' : current);
       void getLocalDatabase().then(db => db.runAsync('DELETE FROM room_members WHERE room_id = ? AND uid = ?', roomId, profile.uid))
         .catch(error => { if (__DEV__) console.warn('[room-removal] local cleanup pending', error); });
       Alert.alert('No longer in room', 'You are no longer a member of this room.');
     });
-  }, [lobbyRoom?.roomId, roomRuntime.firestore, profile.uid, roomEntry.clearPendingRoomCommands, roomStart.clearPendingStart]);
-
-  const confirmLeaveLobby = () => {
-    if (!lobbyRoom || roomStart.isStartingRoom || leavingLobby.current || kickingLobby.current || roomLobbyState?.kind !== 'live'
-      || roomLobbyState.snapshot.status !== 'WAITING') return;
-    const roomId = lobbyRoom.roomId;
-    const snapshot = roomLobbyState.snapshot;
-    const description = snapshot.hostUid === profile.uid
-      ? snapshot.participantCount > 1
-        ? 'Host duties will pass to the earliest remaining member. The room will stay open.'
-        : 'You are the last member. This will close the room.'
-      : 'You will leave this lobby. You can join again with the room PIN while it is waiting.';
-    Alert.alert('Leave room?', description, [
-      { text: 'Stay', style: 'cancel' },
-      { text: 'Leave Room', style: 'destructive', onPress: () => {
-        if (leavingLobby.current || kickingLobby.current) return;
-        leavingLobby.current = true;
-        setIsLeavingRoom(true);
-        setRoomLeaveError(undefined);
-        void lobbyLeaveRepository.leave(roomId).then(() => {
-          setCreatedRoom(current => current?.roomId === roomId ? null : current);
-          setJoinedRoom(current => current?.roomId === roomId ? null : current);
-          setRoomLobbyState(null);
-          setRoomRemoveError(undefined);
-          roomEntry.clearPendingRoomCommands();
-          roomStart.clearPendingStart();
-          setCurrentScreen('05-group-lobby');
-        }).catch(error => {
-          const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
-          setRoomLeaveError(code.includes('permission-denied')
-            ? 'Leave was not allowed. The room may have changed, or the room rules need updating.'
-            : code ? 'Could not leave the room. Reconnect and try again.'
-              : error instanceof Error ? error.message : 'Could not leave the room. Please retry.');
-        }).finally(() => { leavingLobby.current = false; setIsLeavingRoom(false); });
-      } },
-    ]);
-  };
-
-  const confirmRemoveLobbyMember = (memberUid: string, displayName: string) => {
-    if (!lobbyRoom || memberUid === profile.uid || roomStart.isStartingRoom || leavingLobby.current || kickingLobby.current
-      || roomLobbyState?.kind !== 'live' || roomLobbyState.snapshot.status !== 'WAITING'
-      || roomLobbyState.snapshot.hostUid !== profile.uid) return;
-    const roomId = lobbyRoom.roomId;
-    Alert.alert('Remove member?', `Remove ${displayName} from this lobby? They can join again with the PIN.`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove Member', style: 'destructive', onPress: () => {
-        if (kickingLobby.current || leavingLobby.current) return;
-        kickingLobby.current = true;
-        setRemovingMemberUid(memberUid);
-        setRoomRemoveError(undefined);
-        void lobbyLeaveRepository.removeMember(roomId, memberUid).catch(error => {
-          const isSdkError = typeof error === 'object' && error !== null && 'code' in error;
-          setRoomRemoveError(isSdkError ? 'Could not remove this member. Check your connection and host permissions, then retry.'
-            : error instanceof Error ? error.message : 'Could not remove this member. Please retry.');
-        }).finally(() => { kickingLobby.current = false; setRemovingMemberUid(undefined); });
-      } },
-    ]);
-  };
+  }, [lobbyRoom?.roomId, roomRuntime.firestore, profile.uid, roomEntry.clearPendingRoomCommands,
+    roomStart.clearPendingStart, lobbyMembership.clearRemoveError, lobbyMembership.isLeavingRef]);
 
   const handleCompleteRoom = async () => {
     if (!lobbyRoom || isCompletingRoom) return;
@@ -1816,18 +1775,18 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
             lobbyState={roomLobbyState}
             isHost={lobbyRoom?.hostUid === profile.uid}
             isStarting={roomStart.isStartingRoom}
-            isLeaving={isLeavingRoom}
-            leaveError={roomLeaveError}
-            onLeaveRoom={confirmLeaveLobby}
-            onRemoveMember={confirmRemoveLobbyMember}
-            removingMemberUid={removingMemberUid}
-            removeError={roomRemoveError}
+            isLeaving={lobbyMembership.isLeaving}
+            leaveError={lobbyMembership.leaveError}
+            onLeaveRoom={lobbyMembership.confirmLeave}
+            onRemoveMember={lobbyMembership.confirmRemoveMember}
+            removingMemberUid={lobbyMembership.removingMemberUid}
+            removeError={lobbyMembership.removeError}
             startError={roomStart.roomStartError}
             onStartRoom={() => { void roomStart.startRoom(); }}
             onCreateRoom={() => { void roomEntry.handleCreateRoom(); }}
             onJoinRoom={() => roomEntry.openJoinRoom(() => {
-              setRoomLeaveError(undefined);
-              setRoomRemoveError(undefined);
+              lobbyMembership.clearLeaveError();
+              lobbyMembership.clearRemoveError();
             })}
           />
         )}
