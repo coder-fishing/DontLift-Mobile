@@ -53,7 +53,7 @@ import type { RegistrationProfile, RegistrationUser } from '../features/auth/aut
 import type { AuthSessionState } from '../features/auth/auth-session-controller';
 import { getConfiguredFirebaseRuntime } from '../features/auth/firebase-adapters';
 import { getLocalDatabase } from '../features/local/database';
-import { createRoomRepository, persistEarlyExitProjection, persistRoomLobbyProjection, restoreCachedActiveRoom, type CreatedRoom, type JoinedRoom } from '../features/rooms/room-repository';
+import { createRoomRepository, persistRoomLobbyProjection, restoreCachedActiveRoom, type CreatedRoom, type JoinedRoom } from '../features/rooms/room-repository';
 import { useRoomEntry } from '../features/rooms/use-room-entry';
 import { useRoomStart } from '../features/rooms/use-room-start';
 import { useRoomLobbyMembership } from '../features/rooms/use-room-lobby-membership';
@@ -63,6 +63,7 @@ import { useGroupSessionRuntime } from '../features/rooms/use-group-session-runt
 import { useRoomLiveness } from '../features/rooms/use-room-liveness';
 import { useGroupTerminalLifecycle } from '../features/rooms/use-group-terminal-lifecycle';
 import { useEarlyExitCutoffRetry } from '../features/rooms/use-early-exit-cutoff-retry';
+import { useGroupLifecycleCleanup } from '../features/rooms/use-group-lifecycle-cleanup';
 import { useGroupBillActions } from '../features/settlement/use-group-bill-actions';
 import { listenToRoomLobby, listenToOwnRoomRemoval, type RoomLobbyState, type RoomLobbySnapshot } from '../features/rooms/room-listener';
 import { createGroupViolationRepository } from '../features/rooms/group-violation-repository';
@@ -275,7 +276,6 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const [createdRoom, setCreatedRoom] = useState<CreatedRoom | null>(null);
   const restoredGroupRoomId = useRef<string | null>(null);
   const terminalRoomCleanupInFlight = useRef(new Set<string>());
-  const earlyExitCutoffCleanupTasks = useRef(new Map<string, Promise<void>>());
   const groupLifecycleCutoffs = useRef(new Map<string, number>());
   const [joinedRoom, setJoinedRoom] = useState<JoinedRoom | null>(null);
   const [roomLobbyState, setRoomLobbyState] = useState<RoomLobbyState | null>(null);
@@ -361,50 +361,11 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   }, [groupHistoryRepository, lobbyDashboard.loadActionableSessions, lobbyDashboard.setActionableErrorMessage, profile.uid, roomRepository]);
 
 
-  const reconcileGroupLifecycleAtCutoff = useCallback(async (roomId: string, userId: string, cutoffUtcMs: number) => {
-    const result = await backgroundRecovery.reconcileAtCutoff({ sessionId: roomId, userId }, cutoffUtcMs);
-    if (result === 'needs-review') {
-      Alert.alert(
-        'Session recovery needs review',
-        'Background time could not be verified. No group violation was added for that interval.',
-      );
-    }
-    return result;
-  }, []);
-
-  const runEarlyExitCutoffCleanup = useCallback((input: {
-    roomId: string;
-    userId: string;
-    cutoffUtcMs: number;
-    startedAtUtcMs: number;
-    historySnapshot?: RoomLobbySnapshot;
-  }) => {
-    // Abort có thể backdate trước earlyExitAt; mọi caller dùng cùng mốc sớm nhất.
-    const terminalEnd = input.historySnapshot?.endedAtUtcMs;
-    input = { ...input, cutoffUtcMs: terminalEnd == null ? input.cutoffUtcMs : Math.min(input.cutoffUtcMs, terminalEnd) };
-    const existingTask = earlyExitCutoffCleanupTasks.current.get(input.roomId);
-    if (existingTask) return existingTask;
-
-    const task = (async () => {
-      // Chờ capture/recovery đã xếp hàng ghi xong trước khi chốt cutoff.
-      await groupCaptureWork.current.get(input.roomId)?.waitForIdle();
-      // Đưa candidate nền vào violation/outbox trước khi đóng session cục bộ.
-      await reconcileGroupLifecycleAtCutoff(input.roomId, input.userId, input.cutoffUtcMs);
-      await groupViolationRepository.finalizeOpenAtRoomEnd({
-        roomId: input.roomId, userId: input.userId, endedAtUtcMs: input.cutoffUtcMs,
-      });
-      await persistEarlyExitProjection(getLocalDatabase(), input);
-      groupCaptureWork.current.delete(input.roomId);
-    })();
-    earlyExitCutoffCleanupTasks.current.set(input.roomId, task);
-    const clearTask = () => {
-      if (earlyExitCutoffCleanupTasks.current.get(input.roomId) === task) {
-        earlyExitCutoffCleanupTasks.current.delete(input.roomId);
-      }
-    };
-    void task.then(clearTask, clearTask);
-    return task;
-  }, [groupViolationRepository, reconcileGroupLifecycleAtCutoff]);
+  const { reconcileLifecycleAtCutoff: reconcileGroupLifecycleAtCutoff, runEarlyExitCutoffCleanup } = useGroupLifecycleCleanup({
+    backgroundRecovery,
+    violationRepository: groupViolationRepository,
+    captureWork: groupCaptureWork,
+  });
 
   useEffect(() => {
     let active = true;
