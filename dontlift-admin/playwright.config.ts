@@ -1,0 +1,41 @@
+import { defineConfig } from "@playwright/test";
+
+export default defineConfig({
+  testDir: "./tests/e2e",
+  globalSetup: "./tests/e2e/global-setup.ts",
+  globalTeardown: "./tests/e2e/global-teardown.ts",
+  fullyParallel: true,
+  forbidOnly: Boolean(process.env.CI),
+  retries: 0,
+  workers: process.env.CI ? 2 : undefined,
+  reporter: "list",
+  outputDir: "test-results",
+  use: {
+    baseURL: "http://127.0.0.1:3100",
+    browserName: "chromium",
+    trace: "off",
+    screenshot: "only-on-failure",
+    video: "off",
+  },
+  webServer: {
+    command: "next dev --hostname 127.0.0.1 --port 3100",
+    url: "http://127.0.0.1:3100",
+    reuseExistingServer: false,
+    timeout: 120_000,
+    env: {
+      FIREBASE_RUNTIME_MODE: "demo",
+      NEXT_PUBLIC_FIREBASE_RUNTIME_MODE: "demo",
+      FIREBASE_PROJECT_ID: "demo-dontlift-admin",
+      NEXT_PUBLIC_FIREBASE_PROJECT_ID: "demo-dontlift-admin",
+      NEXT_PUBLIC_FIREBASE_API_KEY: "demo-api-key",
+      NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: "127.0.0.1",
+      NEXT_PUBLIC_FIREBASE_APP_ID: "demo-app-id",
+      FIREBASE_AUTH_EMULATOR_HOST: "127.0.0.1:9099",
+      FIRESTORE_EMULATOR_HOST: "127.0.0.1:8080",
+      NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_URL: "http://127.0.0.1:9099",
+      ADMIN_OPERATOR_MODE: "emulator",
+      ADMIN_OPERATOR_PROJECT_ID: "demo-dontlift-admin",
+      ADMIN_OPERATOR_ID: "playwright-test",
+    },
+  },
+});

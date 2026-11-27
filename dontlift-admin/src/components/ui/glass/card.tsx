@@ -1,5 +1,7 @@
 "use client"
 
+/* Adapted from Crenspire Glass UI; see docs/third-party-notices.md. */
+
 import * as React from "react"
 import { Card as BaseCard, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"

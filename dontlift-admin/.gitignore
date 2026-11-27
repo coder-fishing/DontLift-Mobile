@@ -12,6 +12,11 @@
 
 # testing
 /coverage
+/test-results/
+/playwright-report/
+/playwright/.auth/
+/test-auth-state/
+/test-traces/
 
 # next.js
 /.next/
@@ -32,6 +37,14 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# Firebase emulator state and debug output
+.firebase/
+/emulator-data/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
 
 # vercel
 .vercel
@@ -39,3 +52,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.specify
+/specs
+/tests

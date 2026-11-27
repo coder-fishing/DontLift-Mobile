@@ -1,0 +1,19 @@
+{
+  "indexes": [
+    { "collectionGroup": "premiumOrders", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "premiumOrders", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "packageId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "premiumOrders", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "packageId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "premiumOrders", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "uid", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "premiumOrders", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "uid", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "premiumOrders", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "uid", "order": "ASCENDING" }, { "fieldPath": "packageId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "premiumOrders", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "uid", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "packageId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "premiumOrders", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "paidAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "premiumOrders", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "packageId", "order": "ASCENDING" }, { "fieldPath": "paidAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "premiumOrders", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "packageId", "order": "ASCENDING" }, { "fieldPath": "paidAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "premiumOrders", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "uid", "order": "ASCENDING" }, { "fieldPath": "paidAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "premiumOrders", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "uid", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "paidAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "premiumOrders", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "uid", "order": "ASCENDING" }, { "fieldPath": "packageId", "order": "ASCENDING" }, { "fieldPath": "paidAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "premiumOrders", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "uid", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "packageId", "order": "ASCENDING" }, { "fieldPath": "paidAt", "order": "DESCENDING" }] }
+  ],
+  "fieldOverrides": []
+}

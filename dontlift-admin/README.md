@@ -1,36 +1,74 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# DontLift Admin
 
-## Getting Started
+DontLift Admin is a private Next.js App Router application for trusted admin sign-in and read-only operations: an overview, Firebase user inspection, Premium order records, and payment revenue reports. It reads the same Firebase project as DontLift Mobile through protected server routes. It does not disable accounts, grant Premium, change payment state, or edit package prices.
 
-First, run the development server:
+## Local development
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+Requirements: Node.js 24 and pnpm 11. **The app does not require Firebase emulators or Java to run.**
+
+```powershell
+pnpm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Set `.env.local` from the public Firebase Web settings in `dontlift-mobile/.env.local`:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Admin setting | Copy from mobile |
+|---|---|
+| `NEXT_PUBLIC_FIREBASE_API_KEY` | `EXPO_PUBLIC_FIREBASE_API_KEY` |
+| `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | `EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN` |
+| `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | `EXPO_PUBLIC_FIREBASE_PROJECT_ID` |
+| `NEXT_PUBLIC_FIREBASE_APP_ID` | `EXPO_PUBLIC_FIREBASE_APP_ID` |
+| `FIREBASE_PROJECT_ID` | Same project ID as `NEXT_PUBLIC_FIREBASE_PROJECT_ID` |
+| `ADMIN_OPERATOR_PROJECT_ID` | Same project ID as mobile |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Copy `.env.example` to `.env.local` and fill the values from the mobile app's public Firebase Web configuration. These are Firebase Web app settings, not privileged credentials.
 
-## Learn More
+The server-side Firebase Admin SDK uses Application Default Credentials (ADC). Configure ADC through your approved Google Cloud identity with the needed Firebase Auth permissions before expecting server identity checks to succeed. Do not put service-account keys in the browser or repository.
 
-To learn more about Next.js, take a look at the following resources:
+```powershell
+pnpm dev
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Open `http://localhost:3000/login`. Next.js connects Auth from the configured shared cloud project; every admin data route verifies access on the server before reading Firebase Auth or Firestore. See [admin data queries](docs/admin-data-queries.md) for report rules, query limits, and index requirements.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Checks
 
-## Deploy on Vercel
+```powershell
+pnpm typecheck
+pnpm lint
+pnpm test:unit
+pnpm build
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Unit tests use isolated fakes and forcibly disable Firebase cloud/emulator runtime initialization. They do not read or write the shared Firestore project.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Optional emulator tests
+
+The Emulator Suite is only for isolated integration and browser tests; it is not part of `pnpm dev`. These optional checks require Firebase CLI and a supported Java runtime:
+
+```powershell
+pnpm dev:emulator
+```
+
+In a separate terminal:
+
+```powershell
+pnpm test:seed
+pnpm test:integration
+pnpm test:e2e
+```
+
+The test helpers force the dedicated `demo-dontlift-admin` project and loopback Auth/Firestore endpoints in their own processes, regardless of the cloud values in `.env.local`. The seeder creates only local emulator identities. Emulator tests load the existing mobile Firestore Rules without modifying them; no cloud accounts are used.
+
+## Trusted admin access CLI
+
+The CLI uses the exact shared cloud project configured in `.env.local` and ADC from the trusted operator environment. `--operator` is audit metadata, not authorization.
+
+```powershell
+pnpm admin:access -- inspect --project <project-id> --uid <exact-uid>
+pnpm admin:access -- status --project <project-id> --command-id <uuid>
+pnpm admin:access -- grant --project <project-id> --uid <exact-uid> --operator <operator-reference> --reason <reason> --command-id <uuid> --apply
+pnpm admin:access -- revoke --project <project-id> --uid <exact-uid> --operator <operator-reference> --reason <reason> --command-id <uuid> --apply
+```
+
+Revoke invalidates refresh tokens account-wide and can sign the same user out of mobile or other clients. Partial/unknown commands retain their target locks; inspect status and follow the explicit recovery procedure before `reconcile`. See [admin access operations](docs/admin-access-operations.md), [environment setup](docs/auth-environment.md), and the [operator contract](specs/001-admin-auth-access/contracts/operator-cli.md).
