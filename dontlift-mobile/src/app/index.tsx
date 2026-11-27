@@ -53,7 +53,7 @@ import type { RegistrationProfile, RegistrationUser } from '../features/auth/aut
 import type { AuthSessionState } from '../features/auth/auth-session-controller';
 import { getConfiguredFirebaseRuntime } from '../features/auth/firebase-adapters';
 import { getLocalDatabase } from '../features/local/database';
-import { createRoomRepository, persistEarlyExitProjection, persistRoomLobbyProjection, persistTerminalRoomProjection, restoreCachedActiveRoom, type CreatedRoom, type JoinedRoom } from '../features/rooms/room-repository';
+import { createRoomRepository, persistEarlyExitProjection, persistRoomLobbyProjection, restoreCachedActiveRoom, type CreatedRoom, type JoinedRoom } from '../features/rooms/room-repository';
 import { useRoomEntry } from '../features/rooms/use-room-entry';
 import { useRoomStart } from '../features/rooms/use-room-start';
 import { useRoomLobbyMembership } from '../features/rooms/use-room-lobby-membership';
@@ -61,6 +61,7 @@ import { useRoomCompletionActions } from '../features/rooms/use-room-completion-
 import { useRoomVotingActions } from '../features/rooms/use-room-voting-actions';
 import { useGroupSessionRuntime } from '../features/rooms/use-group-session-runtime';
 import { useRoomLiveness } from '../features/rooms/use-room-liveness';
+import { useGroupTerminalLifecycle } from '../features/rooms/use-group-terminal-lifecycle';
 import { useGroupBillActions } from '../features/settlement/use-group-bill-actions';
 import { listenToRoomLobby, listenToOwnRoomRemoval, type RoomLobbyState, type RoomLobbySnapshot } from '../features/rooms/room-listener';
 import { createGroupViolationRepository } from '../features/rooms/group-violation-repository';
@@ -72,7 +73,6 @@ import { createEarlyExitRepository, type EarlyExitRequest } from '../features/ro
 import { listenToOpenEarlyExitRequests } from '../features/rooms/early-exit-listener';
 import { createTerminationVoteRepository } from '../features/rooms/termination-vote-repository';
 import { createRoomCompletionRepository } from '../features/rooms/room-completion-repository';
-import { shouldNavigateToGroupSummary } from '../features/rooms/group-terminal-navigation';
 import { createSettlementDetailsRepository, type SettlementDetailsState } from '../features/settlement/settlement-details-repository';
 import { createBankDirectoryRepository } from '../features/settlement/bank-directory';
 import { createBankAppDirectoryRepository } from '../features/bank-transfer/bank-app-directory';
@@ -506,81 +506,20 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     });
   }, [lobbyRoom?.roomId, roomRuntime.firestore, profile.uid, votingActions.clearTerminationVoteError]);
 
-  useEffect(() => {
-    const snapshot = roomLobbyState?.snapshot;
-    const isTerminalRoom = snapshot?.status === 'COMPLETED' || snapshot?.status === 'ABORTED' || snapshot?.status === 'CANCELLED';
-    if (roomLobbyState && snapshot && isTerminalRoom && snapshot.endedAtUtcMs !== null && snapshot.endedAtUtcMs !== undefined
-      && !(snapshot.status === 'CANCELLED' && snapshot.startedAtUtcMs === null)
-      && ['live', 'cached'].includes(roomLobbyState.kind)
-      && !terminalRoomCleanupInFlight.current.has(snapshot.roomId)) {
-      const roomId = snapshot.roomId;
-      const endedAtUtcMs = snapshot.endedAtUtcMs;
-      const shouldShowSummary = shouldNavigateToGroupSummary({
-        roomId: snapshot.roomId, roomStatus: snapshot.status,
-        restoredRoomId: restoredGroupRoomId.current,
-        isRoomMember: snapshot.members.some(member => member.uid === profile.uid),
-      });
-      const ownMember = snapshot.members.find(member => member.uid === profile.uid);
-      const earlyExitCutoffUtcMs = ownMember?.status === 'EARLY_EXIT' ? ownMember.earlyExitAtUtcMs : null;
-      const startedAtUtcMs = snapshot.startedAtUtcMs;
-      terminalRoomCleanupInFlight.current.add(roomId);
-      // The live Firestore snapshot is sufficient for Summary. Local SQLite
-      // projection is best-effort and must never hold navigation on Group Active.
-      if (shouldShowSummary) setCurrentScreen('13-group-summary');
-      void (async () => {
-        try {
-          // Không chốt local interval cho tới khi lần ghi capture cuối cùng đã hoàn tất.
-          await groupCaptureWork.current.get(roomId)?.waitForIdle();
-          if (snapshot.status === 'COMPLETED' || snapshot.status === 'ABORTED' || snapshot.status === 'CANCELLED') {
-            // Reconcile candidate nền theo cutoff server trước khi terminal cleanup đóng session.
-            const cutoffUtcMs = earlyExitCutoffUtcMs == null
-              ? endedAtUtcMs : Math.min(endedAtUtcMs, earlyExitCutoffUtcMs);
-            await reconcileGroupLifecycleAtCutoff(roomId, profile.uid, cutoffUtcMs);
-          }
-          if (earlyExitCutoffUtcMs != null && startedAtUtcMs != null) {
-            // Nếu đây là snapshot đầu tiên sau khi Host duyệt, áp cutoff trước giờ kết thúc phòng.
-            await runEarlyExitCutoffCleanup({
-              roomId, userId: profile.uid, cutoffUtcMs: Math.min(earlyExitCutoffUtcMs, snapshot.endedAtUtcMs!), startedAtUtcMs, historySnapshot: snapshot,
-            });
-          }
-          // Chốt violation đã xác nhận theo mốc kết thúc server, giữ outbox pending cho SL-020 reconciliation.
-          await groupViolationRepository.finalizeOpenAtRoomEnd({ roomId, userId: profile.uid, endedAtUtcMs });
-          if (snapshot.reconciliationStatus === 'FINALIZED' && snapshot.finalizationReason === 'HOST_OVERRIDE') {
-            // Member quay lại sau override vẫn gửi event đủ điều kiện vào history, không mở lại điểm.
-            await groupViolationRepository.syncPending(roomId).catch(() => undefined);
-          }
-          await persistTerminalRoomProjection(getLocalDatabase(), {
-            roomId, userId: profile.uid, status: snapshot.status as 'COMPLETED' | 'ABORTED' | 'CANCELLED', endedAtUtcMs,
-            reconciliationStatus: snapshot.reconciliationStatus,
-            pendingMemberCount: snapshot.pendingMemberCount,
-            finalizationReason: snapshot.finalizationReason,
-            historySnapshot: snapshot,
-          });
-          if (restoredGroupRoomId.current === roomId) restoredGroupRoomId.current = null;
-          if (snapshot.status !== 'COMPLETED') {
-            setCreatedRoom(current => current?.roomId === roomId ? null : current);
-            setJoinedRoom(current => current?.roomId === roomId ? null : current);
-          }
-          if (snapshot.status !== 'COMPLETED') {
-            setCurrentScreen(current => current === '06-group-active' ? '05-group-lobby' : current);
-          }
-        } catch (error) {
-          terminalRoomCleanupInFlight.current.delete(roomId);
-          if (__DEV__) console.warn('[group-terminal] local projection cleanup failed', error);
-        }
-      })();
-    }
-    const ownMembershipCanView = snapshot?.members.some(member => member.uid === profile.uid
-      && ['ACTIVE', 'EARLY_EXIT'].includes(member.status)) === true;
-    const isRestoredRoom = snapshot?.roomId === restoredGroupRoomId.current && currentScreen === '02-solo-select';
-    if (roomLobbyState && snapshot?.status === 'ACTIVE' && snapshot.startedAtUtcMs !== null && ownMembershipCanView
-      && ['live', 'cached'].includes(roomLobbyState.kind)
-      && (currentScreen === '05-group-lobby' || isRestoredRoom)) {
-      setCurrentScreen('06-group-active');
-      restoredGroupRoomId.current = null;
-    }
-  }, [roomLobbyState, currentScreen, profile.uid, groupViolationRepository,
-    runEarlyExitCutoffCleanup, reconcileGroupLifecycleAtCutoff]);
+  useGroupTerminalLifecycle({
+    roomState: roomLobbyState,
+    currentScreen,
+    uid: profile.uid,
+    violationRepository: groupViolationRepository,
+    cleanupInFlight: terminalRoomCleanupInFlight,
+    restoredRoomId: restoredGroupRoomId,
+    captureWork: groupCaptureWork,
+    setCurrentScreen,
+    setCreatedRoom,
+    setJoinedRoom,
+    reconcileLifecycleAtCutoff: reconcileGroupLifecycleAtCutoff,
+    runEarlyExitCutoffCleanup,
+  });
 
   const earlyExitSnapshot = roomLobbyState?.snapshot;
   const earlyExitMember = earlyExitSnapshot?.members.find(member => member.uid === profile.uid);
