@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import type { AccelerometerMeasurement } from 'expo-sensors';
 import {
   ActivityIndicator,
   AppState,
@@ -34,11 +33,11 @@ import { SettingsScreen } from '../screens/SettingsScreen';
 import { createSettingsRepository } from '../features/settings/settings-repository';
 import { createFeedbackService } from '../features/settings/feedback-service';
 import { nativeFeedbackAdapters } from '../features/settings/native-feedback';
-import { createGroupHistoryRepository, type GroupActionableCursor, type GroupActionableSession, type GroupRoomRosterPreview } from '../features/history/group-history-repository';
-import type { GroupHistoryEntry } from '../features/history/group-history-model';
+import { createGroupHistoryRepository, type GroupActionableSession } from '../features/history/group-history-repository';
 import { createSoloHistoryRepository } from '../features/history/solo-history-repository';
 import { GroupLobbyScreen } from '../screens/GroupLobbyScreen';
-import type { ActionableSessionsState, RecentSessionsState } from '../components/GroupHomeDashboard';
+import { useGroupLobbyDashboard } from '../features/history/use-group-lobby-dashboard';
+import { useGroupHistorySync } from '../features/history/use-group-history-sync';
 import { createLobbyLeaveRepository } from '../features/rooms/lobby-leave-repository';
 import { GroupActiveScreen } from '../screens/GroupActiveScreen';
 import { GroupSummaryScreen } from '../screens/GroupSummaryScreen';
@@ -51,50 +50,51 @@ import { premiumIsActive } from '../features/premium/premium-entitlement';
 import { HardwareDiagnosticsScreen } from '../screens/HardwareDiagnosticsScreen';
 import { useAuthSession } from '../features/auth/auth-session';
 import { useSensorAvailability } from '../features/sensors/use-sensor-availability';
-import { accelerometerAdapter } from '../features/sensors/sensor-adapter';
 import type { RegistrationProfile, RegistrationUser } from '../features/auth/auth-controller';
 import type { AuthSessionState } from '../features/auth/auth-session-controller';
 import { getConfiguredFirebaseRuntime } from '../features/auth/firebase-adapters';
 import { getLocalDatabase } from '../features/local/database';
-import { createRoomRepository, persistEarlyExitProjection, persistRoomLobbyProjection, persistTerminalRoomProjection, restoreCachedActiveRoom, RoomCreateError, type CreatedRoom, type RoomCreateCommand, type JoinedRoom, RoomJoinError, roomJoinErrorMessage, RoomStartError, roomStartErrorMessage, type RoomStartCommand } from '../features/rooms/room-repository';
-import { listenToRoomLobby, listenToOwnRoomRemoval, type RoomLobbyState, type RoomLobbySnapshot } from '../features/rooms/room-listener';
-import { createGroupViolationRepository, GroupViolationError } from '../features/rooms/group-violation-repository';
-import { createEarlyExitSyncRetry } from '../features/rooms/early-exit-sync-retry';
-import { createEarlyExitCleanupRetry } from '../features/rooms/early-exit-cleanup-retry';
-import { createCompletedGroupViolationSyncRetry } from '../features/rooms/completed-group-violation-sync-retry';
+import { createRoomRepository, type CreatedRoom, type JoinedRoom } from '../features/rooms/room-repository';
+import { useRoomEntry } from '../features/rooms/use-room-entry';
+import { useRoomStart } from '../features/rooms/use-room-start';
+import { useRoomLobbyMembership } from '../features/rooms/use-room-lobby-membership';
+import { useRoomCompletionActions } from '../features/rooms/use-room-completion-actions';
+import { useRoomVotingActions } from '../features/rooms/use-room-voting-actions';
+import { useGroupSessionRuntime } from '../features/rooms/use-group-session-runtime';
+import { useRoomLiveness } from '../features/rooms/use-room-liveness';
+import { useGroupTerminalLifecycle } from '../features/rooms/use-group-terminal-lifecycle';
+import { useEarlyExitCutoffRetry } from '../features/rooms/use-early-exit-cutoff-retry';
+import { useGroupLifecycleCleanup } from '../features/rooms/use-group-lifecycle-cleanup';
+import { useRoomLobbySubscription } from '../features/rooms/use-room-lobby-subscription';
+import { useCachedRoomRestore } from '../features/rooms/use-cached-room-restore';
+import { useGroupBillActions } from '../features/settlement/use-group-bill-actions';
+import { listenToOwnRoomRemoval, type RoomLobbyState, type RoomLobbySnapshot } from '../features/rooms/room-listener';
+import { createGroupViolationRepository } from '../features/rooms/group-violation-repository';
+import { useCompletedGroupViolationSync } from '../features/rooms/use-completed-group-violation-sync';
 import { createGroupCaptureWorkTracker } from '../features/rooms/group-capture-work';
-import { createEarlyExitRepository, EarlyExitError, type EarlyExitDecision, type EarlyExitRequest } from '../features/rooms/early-exit-repository';
-import { listenToOpenEarlyExitRequests } from '../features/rooms/early-exit-listener';
-import { createTerminationVoteRepository, TerminationVoteError, type TerminationChoice } from '../features/rooms/termination-vote-repository';
-import { createRoomCompletionRepository, RoomCompletionError } from '../features/rooms/room-completion-repository';
-import { shouldNavigateToGroupSummary } from '../features/rooms/group-terminal-navigation';
+import { createEarlyExitRepository, type EarlyExitRequest } from '../features/rooms/early-exit-repository';
+import { useRoomRequestSubscriptions } from '../features/rooms/use-room-request-subscriptions';
+import { createTerminationVoteRepository } from '../features/rooms/termination-vote-repository';
+import { createRoomCompletionRepository } from '../features/rooms/room-completion-repository';
 import { createSettlementDetailsRepository, type SettlementDetailsState } from '../features/settlement/settlement-details-repository';
 import { createBankDirectoryRepository } from '../features/settlement/bank-directory';
 import { createBankAppDirectoryRepository } from '../features/bank-transfer/bank-app-directory';
 import { createReceiptScanApi } from '../features/settlement/receipt-scan-api';
 import { createReceiptEvidenceApi } from '../features/settlement/receipt-evidence-api';
 import { createProfileRepository } from '../features/profile/profile-repository';
-import { createBillRepository, BillRepositoryError, type ApplyBillOverridesCommand, type CalculateBillCommand, type PublishedBill } from '../features/settlement/bill-repository';
-import type { BillShareOverride } from '../features/settlement/bill-allocation';
-import { createPaymentStatusRepository, PaymentStatusError, type MarkPaymentCommand } from '../features/settlement/payment-status-repository';
+import { useCanonicalProfile } from '../features/profile/use-canonical-profile';
+import { createBillRepository } from '../features/settlement/bill-repository';
+import { createPaymentStatusRepository } from '../features/settlement/payment-status-repository';
 import { acceptsBillProgress } from '../features/settlement/payment-status-domain';
 import { listenToPublishedBill, type PublishedBillState } from '../features/settlement/published-bill-listener';
 import { billPublicationKey, shouldOpenPublishedBillForMember } from '../features/settlement/published-bill-navigation';
 import { selectPublishedBillState } from '../features/settlement/published-bill-state';
 import { shouldTrackGroupConnectivity } from '../features/settlement/group-connectivity';
-import {
-  createRoomLivenessRepository, HOST_HEARTBEAT_INTERVAL_MS, HOST_STALE_AFTER_MS, STALE_ROOM_RETRY_MS,
-  RoomLivenessError,
-} from '../features/rooms/room-liveness-repository';
-import { listenToTerminationVote, type TerminationVoteState } from '../features/rooms/termination-vote-listener';
-import { roomCreateErrorMessage } from '../features/rooms/room-create-error';
+import { createRoomLivenessRepository } from '../features/rooms/room-liveness-repository';
+import type { TerminationVoteState } from '../features/rooms/termination-vote-listener';
 import { JoinRoomScreen } from '../screens/JoinRoomScreen';
 import { createBackgroundRecoveryRepository } from '../features/solo/background-recovery';
-import { createSessionLifecycleController } from '../features/solo/session-lifecycle-controller';
-import {
-  createForegroundDetectionController,
-  type ForegroundDetectionViewState,
-} from '../features/solo/foreground-detection-controller';
+import type { ForegroundDetectionViewState } from '../features/solo/foreground-detection-controller';
 import { useSoloSessionRuntime } from '../features/solo/hooks/use-solo-session-runtime';
 
 const backgroundRecovery = createBackgroundRecoveryRepository();
@@ -108,33 +108,6 @@ const INITIAL_DETECTION_STATE: ForegroundDetectionViewState = {
   violationsCount: 0,
   violationDurationSeconds: 0,
 };
-
-function earlyExitErrorMessage(error: unknown): string {
-  if (!(error instanceof EarlyExitError)) return 'Could not complete the early-exit action. Try again.';
-  switch (error.code) {
-    case 'unauthenticated': return 'Your sign-in expired. Sign in again and retry.';
-    case 'invalid-argument': return 'The early-exit request is invalid.';
-    case 'not-found': return 'This room or request no longer exists.';
-    case 'failed-precondition': return 'The room or request is no longer in a state that allows this action.';
-    case 'permission-denied': return 'Firebase rejected this action. Confirm the room role and deployed Firestore Rules.';
-    case 'unavailable': return 'Connect to Firebase and retry. No offline command was queued.';
-    case 'already-exists': return 'This request ID was already used for another request.';
-    default: return 'Could not complete the early-exit action. Try again.';
-  }
-}
-
-function billPublishErrorMessage(error: unknown): string {
-  if (!(error instanceof BillRepositoryError)) return 'Could not publish the bill split. Reconnect and retry.';
-  switch (error.code) {
-    case 'unauthenticated': return 'Your sign-in expired. Sign in again and retry.';
-    case 'invalid-argument': return 'Enter a whole bill amount of at least 1,000 VND.';
-    case 'not-found': return 'This room could not be found.';
-    case 'permission-denied': return 'Firebase denied publishing. Confirm the Host role, saved payment details, and deployed Firestore Rules.';
-    case 'failed-precondition': return 'Finalize room scores and save payment details before publishing. A room can be published only once.';
-    case 'already-exists': return 'This request ID was already used for a different bill.';
-    case 'unavailable': return 'Could not confirm the transaction. Reconnect and retry the same request; it is not queued offline.';
-  }
-}
 
 export default function HomeScreen() {
   return (
@@ -208,58 +181,14 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const premiumApi = useMemo(() => createPremiumApi(roomRuntime.auth), [roomRuntime.auth]);
   const receiptScanApi = useMemo(() => createReceiptScanApi(roomRuntime.auth), [roomRuntime.auth]);
   const receiptEvidenceApi = useMemo(() => createReceiptEvidenceApi(roomRuntime.auth), [roomRuntime.auth]);
-  const profileProjectionSync = useRef<{ uid: string; uri?: string; premiumExpiresAtUtcMs?: number | null; initialized: boolean }>(
-    { uid: profile.uid, uri: profile.avatarUri ?? undefined, premiumExpiresAtUtcMs: profile.premiumExpiresAtUtcMs, initialized: false },
-  );
-  useEffect(() => profileRepository.listen(profile.uid, (canonical, fromCache) => {
-    if (!fromCache) {
-      acceptCanonicalProfile(canonical);
-      const avatarUri = canonical.avatarUri ?? undefined;
-      const premiumExpiresAtUtcMs = canonical.premiumExpiresAtUtcMs;
-      const previous = profileProjectionSync.current;
-      if (previous.uid !== profile.uid || !previous.initialized || previous.uri !== avatarUri
-        || previous.premiumExpiresAtUtcMs !== premiumExpiresAtUtcMs) {
-        profileProjectionSync.current = { uid: profile.uid, uri: avatarUri, premiumExpiresAtUtcMs, initialized: true };
-        void profileRepository.syncProfileToRooms(profile.uid, avatarUri, premiumExpiresAtUtcMs);
-      }
-    }
-  }, () => undefined), [profileRepository, profile.uid, acceptCanonicalProfile]);
-  useEffect(() => {
-    if (!profile.premiumExpiresAtUtcMs) return;
-    let timer: ReturnType<typeof setTimeout>;
-    const check = () => {
-      const remaining = profile.premiumExpiresAtUtcMs! - Date.now();
-      if (remaining <= 0) {
-        if (profile.isPremium) acceptCanonicalProfile({ ...profile, isPremium: false });
-      } else timer = setTimeout(check, Math.min(remaining, 86400000));
-    };
-    check();
-    return () => clearTimeout(timer);
-  }, [profile, acceptCanonicalProfile]);
+  useCanonicalProfile({ profile, repository: profileRepository, acceptCanonicalProfile });
   const handleProfileUpdated = useCallback((canonical: RegistrationProfile) => {
     acceptCanonicalProfile(canonical);
   }, [acceptCanonicalProfile]);
   const groupHistoryRepository = useMemo(() => createGroupHistoryRepository({
     firestore: roomRuntime.firestore, auth: roomRuntime.auth,
   }), [roomRuntime]);
-  useEffect(() => {
-    let disposed = false;
-    void groupHistoryRepository.recoverLocal(profile.uid).catch(() => undefined);
-    const retry = async () => {
-      try {
-        const network = await Network.getNetworkStateAsync();
-        if (!disposed && network.isConnected && network.isInternetReachable !== false) {
-          await groupHistoryRepository.syncPending(profile.uid);
-        }
-      } catch { /* Outbox còn bền vững; lần foreground/reconnect sau sẽ thử lại. */ }
-    };
-    void retry();
-    // Worker độc lập selected room/screen; rời history không làm mất trigger retry.
-    const network = Network.addNetworkStateListener(() => { void retry(); });
-    const lifecycle = AppState.addEventListener('change', state => { if (state === 'active') void retry(); });
-    const timer = setInterval(() => { void retry(); }, 30_000);
-    return () => { disposed = true; network.remove(); lifecycle.remove(); clearInterval(timer); };
-  }, [groupHistoryRepository, profile.uid]);
+  useGroupHistorySync(groupHistoryRepository, profile.uid);
   const roomRepository = useMemo(() => createRoomRepository({
       firestore: roomRuntime.firestore,
       auth: roomRuntime.auth,
@@ -307,158 +236,65 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const [createdRoom, setCreatedRoom] = useState<CreatedRoom | null>(null);
   const restoredGroupRoomId = useRef<string | null>(null);
   const terminalRoomCleanupInFlight = useRef(new Set<string>());
-  const earlyExitCutoffCleanupTasks = useRef(new Map<string, Promise<void>>());
   const groupLifecycleCutoffs = useRef(new Map<string, number>());
-  const [isCreatingRoom, setIsCreatingRoom] = useState(false);
-  const [roomCreateError, setRoomCreateError] = useState<string | undefined>();
-  const pendingRoomCommand = useRef<RoomCreateCommand | null>(null);
-  const roomCreateAttempt = useRef(0);
-  const [isJoiningRoom, setIsJoiningRoom] = useState(false);
   const [joinedRoom, setJoinedRoom] = useState<JoinedRoom | null>(null);
-  const [roomJoinError, setRoomJoinError] = useState<string | undefined>();
-  const pendingRoomJoinCommand = useRef<{ requestId: string; pin: string } | null>(null);
   const [roomLobbyState, setRoomLobbyState] = useState<RoomLobbyState | null>(null);
-  const [recentGroupSessions, setRecentGroupSessions] = useState<GroupHistoryEntry[]>([]);
-  const [recentGroupMemberPreviews, setRecentGroupMemberPreviews] = useState<Record<string, GroupRoomRosterPreview | null>>({});
-  const [recentSessionsState, setRecentSessionsState] = useState<RecentSessionsState>('loading');
-  const recentSessionsRequest = useRef(0);
-  const [actionableGroupSessions, setActionableGroupSessions] = useState<GroupActionableSession[]>([]);
-  const [actionableSessionsState, setActionableSessionsState] = useState<ActionableSessionsState>('loading');
-  const [actionableCursor, setActionableCursor] = useState<GroupActionableCursor | null>(null);
-  const [actionableHasMore, setActionableHasMore] = useState(false);
-  const [isLoadingMoreActionable, setIsLoadingMoreActionable] = useState(false);
-  const [actionableErrorMessage, setActionableErrorMessage] = useState<string>();
-  const actionableRequest = useRef(0);
+  const [groupTimerSeconds, setGroupTimerSeconds] = useState(0);
+  const [groupDetection, setGroupDetection] = useState<ForegroundDetectionViewState>(INITIAL_DETECTION_STATE);
+  const [groupIsOnline, setGroupIsOnline] = useState(false);
+  const [groupSyncMessage, setGroupSyncMessage] = useState<string>();
+  const [groupSyncPendingCount, setGroupSyncPendingCount] = useState(0);
   const pendingGroupActionDestination = useRef<{ roomId: string; action: GroupActionableSession['action'] } | null>(null);
-  const [isStartingRoom, setIsStartingRoom] = useState(false);
-  const [roomStartError, setRoomStartError] = useState<string | undefined>();
-  const [isLeavingRoom, setIsLeavingRoom] = useState(false);
-  const [roomLeaveError, setRoomLeaveError] = useState<string>();
   const leavingLobby = useRef(false);
   const kickingLobby = useRef(false);
-  const [removingMemberUid, setRemovingMemberUid] = useState<string>();
-  const [roomRemoveError, setRoomRemoveError] = useState<string>();
-  const pendingRoomStartCommand = useRef<RoomStartCommand | null>(null);
+  const lobbyActionBusyRefs = useMemo(() => ({ leaving: leavingLobby, removing: kickingLobby }), []);
   const [openEarlyExitRequests, setOpenEarlyExitRequests] = useState<EarlyExitRequest[]>([]);
-  const [isRequestingEarlyExit, setIsRequestingEarlyExit] = useState(false);
-  const [decidingEarlyExit, setDecidingEarlyExit] = useState<{ requestId: string; decision: EarlyExitDecision } | null>(null);
-  const [earlyExitError, setEarlyExitError] = useState<string>();
   const [terminationVoteState, setTerminationVoteState] = useState<TerminationVoteState>({ vote: null, ownBallot: null, error: false });
-  const [isOpeningTerminationVote, setIsOpeningTerminationVote] = useState(false);
-  const [isCastingTerminationVote, setIsCastingTerminationVote] = useState(false);
-  const [terminationVoteError, setTerminationVoteError] = useState<string>();
-  const [isCompletingRoom, setIsCompletingRoom] = useState(false);
-  const [roomCompletionError, setRoomCompletionError] = useState<string>();
-  const [isFinalizingRoomOverride, setIsFinalizingRoomOverride] = useState(false);
-  const [roomOverrideError, setRoomOverrideError] = useState<string>();
-  const [isAcknowledgingRoom, setIsAcknowledgingRoom] = useState(false);
-  const [roomAcknowledgmentError, setRoomAcknowledgmentError] = useState<string>();
-  const pendingTerminationVoteOpen = useRef<{ roomId: string; requestId: string } | null>(null);
-  const pendingTerminationBallot = useRef<{ roomId: string; voteId: string; requestId: string; choice: TerminationChoice } | null>(null);
-  const pendingEarlyExitRequest = useRef<{ roomId: string; requestId: string } | null>(null);
-  const pendingRoomCompletion = useRef<{ roomId: string; requestId: string } | null>(null);
-  const pendingRoomOverride = useRef<{ roomId: string; requestId: string } | null>(null);
-  const pendingRoomAcknowledgment = useRef<{ roomId: string; requestId: string } | null>(null);
   const earlyExitCleanupInFlight = useRef(new Set<string>());
   const groupCaptureWork = useRef(new Map<string, ReturnType<typeof createGroupCaptureWorkTracker>>());
+  const roomEntry = useRoomEntry({
+    repository: roomRepository,
+    displayName: profile.displayName,
+    setCurrentScreen,
+    setCreatedRoom,
+    setJoinedRoom,
+    restoredRoomId: restoredGroupRoomId,
+    createRequestId: Crypto.randomUUID,
+  });
   const lobbyRoom = joinedRoom ?? createdRoom;
-
-  const loadRecentGroupSessions = useCallback(async () => {
-    const requestId = ++recentSessionsRequest.current;
-    const isCurrent = () => recentSessionsRequest.current === requestId;
-    const options = { cursor: null, localPremium: profile.isPremium, serverPremium: profile.isPremium, nowUtcMs: Date.now() } as const;
-    setRecentSessionsState('loading');
-    try {
-      const localPage = await groupHistoryRepository.readPage(profile.uid, { ...options, online: false });
-      if (!isCurrent()) return;
-      setRecentGroupSessions(localPage.items);
-      const localPreviews = await Promise.all(localPage.items.slice(0, 5).map(async entry => [
-        entry.summary.roomId,
-        await groupHistoryRepository.readRoomRosterPreview(profile.uid, entry.summary.roomId, false),
-      ] as const));
-      if (!isCurrent()) return;
-      setRecentGroupMemberPreviews(previous => ({ ...Object.fromEntries(localPreviews), ...previous }));
-      const network = await Network.getNetworkStateAsync();
-      if (!isCurrent()) return;
-      const online = network.isConnected === true && network.isInternetReachable !== false;
-      if (!online) {
-        setRecentSessionsState('offline');
-        return;
-      }
-      const page = await groupHistoryRepository.readPage(profile.uid, { ...options, online: true });
-      if (!isCurrent()) return;
-      setRecentGroupSessions(page.items);
-      const remotePreviews = await Promise.all(page.items.slice(0, 5).map(async entry => [
-        entry.summary.roomId,
-        await groupHistoryRepository.readRoomRosterPreview(profile.uid, entry.summary.roomId, true),
-      ] as const));
-      if (!isCurrent()) return;
-      setRecentGroupMemberPreviews(previous => ({
-        ...previous,
-        ...Object.fromEntries(remotePreviews.map(([roomId, preview]) => [
-          roomId,
-          preview ?? previous[roomId] ?? null,
-        ])),
-      }));
-      setRecentSessionsState(page.cloudError ? 'cloud-error' : 'ready');
-    } catch {
-      if (isCurrent()) setRecentSessionsState('error');
-    }
-  }, [groupHistoryRepository, profile.isPremium, profile.uid]);
-
-  const loadActionableGroupSessions = useCallback(async () => {
-    const requestId = ++actionableRequest.current;
-    const isCurrent = () => actionableRequest.current === requestId;
-    setActionableErrorMessage(undefined);
-    setActionableSessionsState('loading');
-    try {
-      const savedPage = await groupHistoryRepository.readActionablePage(profile.uid, { online: false, cursor: null });
-      if (!isCurrent()) return;
-      setActionableGroupSessions(savedPage.items);
-      setActionableCursor(savedPage.cursor);
-      setActionableHasMore(savedPage.hasMore);
-      const network = await Network.getNetworkStateAsync();
-      if (!isCurrent()) return;
-      if (network.isConnected !== true || network.isInternetReachable === false) {
-        setActionableSessionsState('offline');
-        return;
-      }
-      const page = await groupHistoryRepository.readActionablePage(profile.uid, { online: true, cursor: null });
-      if (!isCurrent()) return;
-      setActionableGroupSessions(page.items);
-      setActionableCursor(page.cursor);
-      setActionableHasMore(page.hasMore);
-      setActionableSessionsState(page.cloudError ? 'cloud-error' : 'ready');
-    } catch {
-      if (isCurrent()) setActionableSessionsState('error');
-    }
-  }, [groupHistoryRepository, profile.uid]);
-
-  const loadMoreActionableGroupSessions = useCallback(async () => {
-    if (!actionableHasMore || isLoadingMoreActionable || actionableCursor === null) return;
-    const requestId = ++actionableRequest.current;
-    const isCurrent = () => actionableRequest.current === requestId;
-    setIsLoadingMoreActionable(true);
-    setActionableErrorMessage(undefined);
-    try {
-      const network = await Network.getNetworkStateAsync();
-      if (!isCurrent()) return;
-      if (network.isConnected !== true || network.isInternetReachable === false) {
-        setActionableSessionsState('offline');
-        return;
-      }
-      const page = await groupHistoryRepository.readActionablePage(profile.uid, { online: true, cursor: actionableCursor });
-      if (!isCurrent()) return;
-      setActionableGroupSessions(page.items);
-      setActionableCursor(page.cursor);
-      setActionableHasMore(page.hasMore);
-      setActionableSessionsState(page.cloudError ? 'cloud-error' : 'ready');
-    } catch { if (isCurrent()) setActionableSessionsState('cloud-error'); }
-    finally { if (isCurrent()) setIsLoadingMoreActionable(false); }
-  }, [actionableCursor, actionableHasMore, groupHistoryRepository, isLoadingMoreActionable, profile.uid]);
+  const votingActions = useRoomVotingActions({
+    roomId: lobbyRoom?.roomId,
+    earlyExitRepository,
+    terminationVoteRepository,
+    terminationVoteState,
+  });
+  const roomStart = useRoomStart(roomRepository, lobbyRoom?.roomId, () => leavingLobby.current || kickingLobby.current);
+  const lobbyMembership = useRoomLobbyMembership({
+    roomId: lobbyRoom?.roomId,
+    roomState: roomLobbyState,
+    uid: profile.uid,
+    isStartingRoom: roomStart.isStartingRoom,
+    repository: lobbyLeaveRepository,
+    busyRefs: lobbyActionBusyRefs,
+    onLeft: roomId => {
+      setCreatedRoom(current => current?.roomId === roomId ? null : current);
+      setJoinedRoom(current => current?.roomId === roomId ? null : current);
+      setRoomLobbyState(null);
+      lobbyMembership.clearRemoveError();
+      roomEntry.clearPendingRoomCommands();
+      roomStart.clearPendingStart();
+      setCurrentScreen('05-group-lobby');
+    },
+  });
+  const lobbyDashboard = useGroupLobbyDashboard({
+    repository: groupHistoryRepository,
+    uid: profile.uid,
+    isPremium: profile.isPremium,
+    shouldLoad: currentScreen === '05-group-lobby' && !lobbyRoom,
+  });
 
   const openActionableGroupSession = useCallback(async (selected: GroupActionableSession) => {
-    setActionableErrorMessage(undefined);
+    lobbyDashboard.setActionableErrorMessage(undefined);
     pendingGroupActionDestination.current = null;
     try {
       const current = await groupHistoryRepository.readActionableSession(profile.uid, selected.roomId);
@@ -479,796 +315,121 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     } catch (error) {
       const message = error instanceof Error && error.message.startsWith('This session')
         ? error.message : 'Could not open this session. It may have changed or your membership may no longer be active.';
-      setActionableErrorMessage(message);
-      void loadActionableGroupSessions();
+      lobbyDashboard.setActionableErrorMessage(message);
+      void lobbyDashboard.loadActionableSessions();
     }
-  }, [groupHistoryRepository, loadActionableGroupSessions, profile.uid, roomRepository]);
-
-  useEffect(() => {
-    if (currentScreen !== '05-group-lobby' || lobbyRoom) return undefined;
-    let active = true;
-    void (async () => {
-      // Keep the history and actionable queue SQLite passes serialized; both repositories cache server reads locally.
-      await loadRecentGroupSessions();
-      if (active) await loadActionableGroupSessions();
-    })();
-    return () => { active = false; recentSessionsRequest.current++; actionableRequest.current++; };
-  }, [currentScreen, lobbyRoom?.roomId, loadActionableGroupSessions, loadRecentGroupSessions]);
-
-  useEffect(() => {
-    actionableRequest.current++;
-    setActionableGroupSessions([]);
-    setActionableCursor(null);
-    setActionableHasMore(false);
-    setActionableSessionsState('loading');
-    setActionableErrorMessage(undefined);
-  }, [profile.uid]);
+  }, [groupHistoryRepository, lobbyDashboard.loadActionableSessions, lobbyDashboard.setActionableErrorMessage, profile.uid, roomRepository]);
 
 
-  const reconcileGroupLifecycleAtCutoff = useCallback(async (roomId: string, userId: string, cutoffUtcMs: number) => {
-    const result = await backgroundRecovery.reconcileAtCutoff({ sessionId: roomId, userId }, cutoffUtcMs);
-    if (result === 'needs-review') {
-      Alert.alert(
-        'Session recovery needs review',
-        'Background time could not be verified. No group violation was added for that interval.',
-      );
-    }
-    return result;
-  }, []);
+  const { reconcileLifecycleAtCutoff: reconcileGroupLifecycleAtCutoff, runEarlyExitCutoffCleanup } = useGroupLifecycleCleanup({
+    backgroundRecovery,
+    violationRepository: groupViolationRepository,
+    captureWork: groupCaptureWork,
+  });
 
-  const runEarlyExitCutoffCleanup = useCallback((input: {
-    roomId: string;
-    userId: string;
-    cutoffUtcMs: number;
-    startedAtUtcMs: number;
-    historySnapshot?: RoomLobbySnapshot;
-  }) => {
-    // Abort có thể backdate trước earlyExitAt; mọi caller dùng cùng mốc sớm nhất.
-    const terminalEnd = input.historySnapshot?.endedAtUtcMs;
-    input = { ...input, cutoffUtcMs: terminalEnd == null ? input.cutoffUtcMs : Math.min(input.cutoffUtcMs, terminalEnd) };
-    const existingTask = earlyExitCutoffCleanupTasks.current.get(input.roomId);
-    if (existingTask) return existingTask;
+  useCachedRoomRestore({ uid: profile.uid, restoredRoomId: restoredGroupRoomId, setCreatedRoom });
 
-    const task = (async () => {
-      // Chờ capture/recovery đã xếp hàng ghi xong trước khi chốt cutoff.
-      await groupCaptureWork.current.get(input.roomId)?.waitForIdle();
-      // Đưa candidate nền vào violation/outbox trước khi đóng session cục bộ.
-      await reconcileGroupLifecycleAtCutoff(input.roomId, input.userId, input.cutoffUtcMs);
-      await groupViolationRepository.finalizeOpenAtRoomEnd({
-        roomId: input.roomId, userId: input.userId, endedAtUtcMs: input.cutoffUtcMs,
-      });
-      await persistEarlyExitProjection(getLocalDatabase(), input);
-      groupCaptureWork.current.delete(input.roomId);
-    })();
-    earlyExitCutoffCleanupTasks.current.set(input.roomId, task);
-    const clearTask = () => {
-      if (earlyExitCutoffCleanupTasks.current.get(input.roomId) === task) {
-        earlyExitCutoffCleanupTasks.current.delete(input.roomId);
-      }
-    };
-    void task.then(clearTask, clearTask);
-    return task;
-  }, [groupViolationRepository, reconcileGroupLifecycleAtCutoff]);
+  useCompletedGroupViolationSync(groupViolationRepository);
 
-  useEffect(() => {
-    let active = true;
-    void restoreCachedActiveRoom(getLocalDatabase(), profile.uid).then(room => {
-      if (!active || !room) return;
-      setCreatedRoom(current => {
-        if (current) return current;
-        restoredGroupRoomId.current = room.roomId;
-        return room;
-      });
-    }).catch(() => {
-      // Local restore không chặn đăng nhập; listener cloud vẫn có thể được gắn khi người dùng mở lại room.
-    });
-    return () => { active = false; };
-  }, [profile.uid]);
+  useRoomLobbySubscription({
+    firestore: roomRuntime.firestore,
+    roomId: lobbyRoom?.roomId,
+    uid: profile.uid,
+    lifecycleCutoffs: groupLifecycleCutoffs,
+    setRoomState: setRoomLobbyState,
+    setCreatedRoom,
+    setJoinedRoom,
+    setOpenEarlyExitRequests,
+  });
 
-  useEffect(() => {
-    let active = true;
-    const retry = createCompletedGroupViolationSyncRetry(groupViolationRepository);
-    const updateConnectivity = (state: Network.NetworkState) => {
-      retry.setOnline(state.isConnected === true && state.isInternetReachable !== false);
-    };
-    const networkSubscription = Network.addNetworkStateListener(updateConnectivity);
-    const appStateSubscription = AppState.addEventListener('change', state => {
-      if (state !== 'active') {
-        retry.setOnline(false);
-        return;
-      }
-      void Network.getNetworkStateAsync().then(state => {
-        if (active) updateConnectivity(state);
-      }).catch(() => retry.setOnline(false));
-    });
-    void Network.getNetworkStateAsync().then(state => {
-      if (active) updateConnectivity(state);
-    }).catch(() => retry.setOnline(false));
-    return () => {
-      active = false;
-      networkSubscription.remove();
-      appStateSubscription.remove();
-      retry.dispose();
-    };
-  }, [groupViolationRepository]);
+  useRoomLiveness({
+    roomId: lobbyRoom?.roomId,
+    uid: profile.uid,
+    roomState: roomLobbyState,
+    repository: roomLivenessRepository,
+  });
 
-  useEffect(() => {
-    if (!lobbyRoom) {
-      setRoomLobbyState(null);
-      setOpenEarlyExitRequests([]);
-      return undefined;
-    }
-    // Giữ listener sống khi đổi tab để Group Active vẫn nhận trạng thái phòng và tiếp tục capture.
-    return listenToRoomLobby(roomRuntime.firestore, lobbyRoom.roomId, state => {
-      const snapshot = state.snapshot;
-      if ((snapshot?.status === 'COMPLETED' || snapshot?.status === 'ABORTED') && snapshot.endedAtUtcMs != null) {
-        const ownMember = snapshot.members.find(member => member.uid === profile.uid);
-        const cutoffUtcMs = ownMember?.status === 'EARLY_EXIT' && ownMember.earlyExitAtUtcMs != null
-          ? Math.min(snapshot.endedAtUtcMs, ownMember.earlyExitAtUtcMs)
-          : snapshot.endedAtUtcMs;
-        groupLifecycleCutoffs.current.set(lobbyRoom.roomId, cutoffUtcMs);
-      } else if (snapshot?.status === 'ACTIVE') {
-        const ownMember = snapshot.members.find(member => member.uid === profile.uid);
-        if (ownMember?.status === 'EARLY_EXIT' && ownMember.earlyExitAtUtcMs != null) {
-          groupLifecycleCutoffs.current.set(lobbyRoom.roomId, ownMember.earlyExitAtUtcMs);
-        }
-      }
-      setRoomLobbyState(state);
-      if (snapshot && state.kind === 'live') {
-        setCreatedRoom(current => current?.roomId === snapshot.roomId && current.hostUid !== snapshot.hostUid
-          ? { ...current, hostUid: snapshot.hostUid } : current);
-        setJoinedRoom(current => current?.roomId === snapshot.roomId && current.hostUid !== snapshot.hostUid
-          ? { ...current, hostUid: snapshot.hostUid } : current);
-      }
-    },
-      snapshot => persistRoomLobbyProjection(getLocalDatabase(), snapshot, profile.uid));
-  }, [lobbyRoom?.roomId, roomRuntime.firestore, profile.uid]);
 
-  useEffect(() => {
-    const snapshot = roomLobbyState?.snapshot;
-    const ownMember = snapshot?.members.find(member => member.uid === profile.uid);
-    if (!lobbyRoom || roomLobbyState?.kind !== 'live' || snapshot?.status !== 'ACTIVE'
-      || ownMember?.role !== 'HOST' || ownMember.status !== 'ACTIVE') return undefined;
 
-    let active = true;
-    let heartbeatInFlight = false;
-    let resumeCheckInFlight = false;
-    // Không gửi heartbeat nền; chỉ lần commit thành công mới làm mới liveness server.
-    const sendHeartbeat = async () => {
-      if (!active || heartbeatInFlight || AppState.currentState !== 'active') return;
-      heartbeatInFlight = true;
-      try {
-        await roomLivenessRepository.sendHostHeartbeat(lobbyRoom.roomId);
-      } catch (error) {
-        if (__DEV__ && active) {
-          const code = error instanceof RoomLivenessError ? error.code : 'unknown';
-          console.warn('[room-liveness] heartbeat failed', { code });
-        }
-      } finally {
-        heartbeatInFlight = false;
-      }
-    };
-    const refreshOnResume = async () => {
-      if (!active || resumeCheckInFlight || AppState.currentState !== 'active') return;
-      resumeCheckInFlight = true;
-      try {
-        const result = await roomLivenessRepository.abortStaleRoom(lobbyRoom.roomId);
-        // Khi Host quay lại sau thời gian stale, không hồi sinh phòng đã được abort.
-        if (result === 'aborted' || result === 'terminal') return;
-      } catch (error) {
-        // Rules từ chối một lần thử sớm; heartbeat kế tiếp dùng server time làm mốc mới.
-        if (!(error instanceof RoomLivenessError) || error.code !== 'rejected') {
-          if (__DEV__ && active) {
-            const code = error instanceof RoomLivenessError ? error.code : 'unknown';
-            console.warn('[room-liveness] resume check failed', { code });
-          }
-          return;
-        }
-      } finally {
-        resumeCheckInFlight = false;
-      }
-      await sendHeartbeat();
-    };
-    void refreshOnResume();
-    const timer = setInterval(() => { void sendHeartbeat(); }, HOST_HEARTBEAT_INTERVAL_MS);
-    const appStateSubscription = AppState.addEventListener('change', state => {
-      if (state === 'active') void refreshOnResume();
-    });
-    const networkSubscription = Network.addNetworkStateListener(state => {
-      if (state.isConnected === true && state.isInternetReachable !== false) void refreshOnResume();
-    });
-    return () => {
-      active = false;
-      clearInterval(timer);
-      appStateSubscription.remove();
-      networkSubscription.remove();
-    };
-  }, [lobbyRoom?.roomId, profile.uid, roomLivenessRepository, roomLobbyState?.kind, roomLobbyState?.snapshot?.status]);
+  useRoomRequestSubscriptions({
+    firestore: roomRuntime.firestore,
+    roomId: lobbyRoom?.roomId,
+    uid: profile.uid,
+    setOpenEarlyExitRequests,
+    setTerminationVoteState,
+    clearEarlyExitError: votingActions.clearEarlyExitError,
+    setEarlyExitLoadError: votingActions.setEarlyExitLoadError,
+    clearTerminationVoteError: votingActions.clearTerminationVoteError,
+  });
 
-  useEffect(() => {
-    const snapshot = roomLobbyState?.snapshot;
-    const ownMember = snapshot?.members.find(member => member.uid === profile.uid);
-    if (!lobbyRoom || roomLobbyState?.kind !== 'live' || snapshot?.status !== 'ACTIVE'
-      || snapshot.startedAtUtcMs == null || ownMember == null || ownMember.role === 'HOST'
-      || !['ACTIVE', 'EARLY_EXIT'].includes(ownMember.status)) return undefined;
-    const heartbeatAt = snapshot.hostHeartbeatAtUtcMs;
-    if (heartbeatAt == null) return undefined;
-
-    let active = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let abortInFlight = false;
-    const cutoffUtcMs = Math.max(heartbeatAt, snapshot.startedAtUtcMs) + HOST_STALE_AFTER_MS;
-    let attemptAbort: () => Promise<void>;
-    const retry = () => {
-      if (!active) return;
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(attemptAbort, STALE_ROOM_RETRY_MS);
-    };
-    attemptAbort = async () => {
-      if (!active || abortInFlight || AppState.currentState !== 'active') return;
-      abortInFlight = true;
-      try {
-        await roomLivenessRepository.abortStaleRoom(lobbyRoom.roomId);
-      } catch (error) {
-        if (__DEV__ && active && (!(error instanceof RoomLivenessError) || error.code !== 'rejected')) {
-          const code = error instanceof RoomLivenessError ? error.code : 'unknown';
-          console.warn('[room-liveness] stale check failed', { code });
-        }
-        retry();
-      } finally {
-        abortInFlight = false;
-      }
-    };
-    const remainingMs = cutoffUtcMs - Date.now();
-    timer = setTimeout(attemptAbort, Math.max(0, remainingMs) + 1);
-    const appStateSubscription = AppState.addEventListener('change', state => {
-      if (state === 'active') void attemptAbort();
-    });
-    const networkSubscription = Network.addNetworkStateListener(state => {
-      if (state.isConnected === true && state.isInternetReachable !== false) void attemptAbort();
-    });
-    return () => {
-      active = false;
-      if (timer) clearTimeout(timer);
-      appStateSubscription.remove();
-      networkSubscription.remove();
-    };
-  }, [lobbyRoom?.roomId, profile.uid, roomLivenessRepository, roomLobbyState?.kind,
-    roomLobbyState?.snapshot?.hostHeartbeatAtUtcMs, roomLobbyState?.snapshot?.startedAtUtcMs,
-    roomLobbyState?.snapshot?.status]);
-
-  useEffect(() => {
-    if (!lobbyRoom) return undefined;
-    return listenToOpenEarlyExitRequests(
-      roomRuntime.firestore,
-      lobbyRoom.roomId,
-      requests => { setOpenEarlyExitRequests(requests); setEarlyExitError(undefined); },
-      () => setEarlyExitError('Could not load early-exit requests. Reopen the room while connected to retry.'),
-    );
-  }, [lobbyRoom?.roomId, roomRuntime.firestore]);
-
-  useEffect(() => {
-    if (!lobbyRoom) {
-      setTerminationVoteState({ vote: null, ownBallot: null, error: false });
-      return undefined;
-    }
-    return listenToTerminationVote(roomRuntime.firestore, lobbyRoom.roomId, profile.uid, state => {
-      setTerminationVoteState(state);
-      if (!state.error) setTerminationVoteError(undefined);
-    });
-  }, [lobbyRoom?.roomId, roomRuntime.firestore, profile.uid]);
-
-  useEffect(() => {
-    const snapshot = roomLobbyState?.snapshot;
-    const isTerminalRoom = snapshot?.status === 'COMPLETED' || snapshot?.status === 'ABORTED' || snapshot?.status === 'CANCELLED';
-    if (roomLobbyState && snapshot && isTerminalRoom && snapshot.endedAtUtcMs !== null && snapshot.endedAtUtcMs !== undefined
-      && !(snapshot.status === 'CANCELLED' && snapshot.startedAtUtcMs === null)
-      && ['live', 'cached'].includes(roomLobbyState.kind)
-      && !terminalRoomCleanupInFlight.current.has(snapshot.roomId)) {
-      const roomId = snapshot.roomId;
-      const endedAtUtcMs = snapshot.endedAtUtcMs;
-      const shouldShowSummary = shouldNavigateToGroupSummary({
-        roomId: snapshot.roomId, roomStatus: snapshot.status,
-        restoredRoomId: restoredGroupRoomId.current,
-        isRoomMember: snapshot.members.some(member => member.uid === profile.uid),
-      });
-      const ownMember = snapshot.members.find(member => member.uid === profile.uid);
-      const earlyExitCutoffUtcMs = ownMember?.status === 'EARLY_EXIT' ? ownMember.earlyExitAtUtcMs : null;
-      const startedAtUtcMs = snapshot.startedAtUtcMs;
-      terminalRoomCleanupInFlight.current.add(roomId);
-      // The live Firestore snapshot is sufficient for Summary. Local SQLite
-      // projection is best-effort and must never hold navigation on Group Active.
-      if (shouldShowSummary) setCurrentScreen('13-group-summary');
-      void (async () => {
-        try {
-          // Không chốt local interval cho tới khi lần ghi capture cuối cùng đã hoàn tất.
-          await groupCaptureWork.current.get(roomId)?.waitForIdle();
-          if (snapshot.status === 'COMPLETED' || snapshot.status === 'ABORTED' || snapshot.status === 'CANCELLED') {
-            // Reconcile candidate nền theo cutoff server trước khi terminal cleanup đóng session.
-            const cutoffUtcMs = earlyExitCutoffUtcMs == null
-              ? endedAtUtcMs : Math.min(endedAtUtcMs, earlyExitCutoffUtcMs);
-            await reconcileGroupLifecycleAtCutoff(roomId, profile.uid, cutoffUtcMs);
-          }
-          if (earlyExitCutoffUtcMs != null && startedAtUtcMs != null) {
-            // Nếu đây là snapshot đầu tiên sau khi Host duyệt, áp cutoff trước giờ kết thúc phòng.
-            await runEarlyExitCutoffCleanup({
-              roomId, userId: profile.uid, cutoffUtcMs: Math.min(earlyExitCutoffUtcMs, snapshot.endedAtUtcMs!), startedAtUtcMs, historySnapshot: snapshot,
-            });
-          }
-          // Chốt violation đã xác nhận theo mốc kết thúc server, giữ outbox pending cho SL-020 reconciliation.
-          await groupViolationRepository.finalizeOpenAtRoomEnd({ roomId, userId: profile.uid, endedAtUtcMs });
-          if (snapshot.reconciliationStatus === 'FINALIZED' && snapshot.finalizationReason === 'HOST_OVERRIDE') {
-            // Member quay lại sau override vẫn gửi event đủ điều kiện vào history, không mở lại điểm.
-            await groupViolationRepository.syncPending(roomId).catch(() => undefined);
-          }
-          await persistTerminalRoomProjection(getLocalDatabase(), {
-            roomId, userId: profile.uid, status: snapshot.status as 'COMPLETED' | 'ABORTED' | 'CANCELLED', endedAtUtcMs,
-            reconciliationStatus: snapshot.reconciliationStatus,
-            pendingMemberCount: snapshot.pendingMemberCount,
-            finalizationReason: snapshot.finalizationReason,
-            historySnapshot: snapshot,
-          });
-          if (restoredGroupRoomId.current === roomId) restoredGroupRoomId.current = null;
-          if (snapshot.status !== 'COMPLETED') {
-            setCreatedRoom(current => current?.roomId === roomId ? null : current);
-            setJoinedRoom(current => current?.roomId === roomId ? null : current);
-          }
-          if (snapshot.status !== 'COMPLETED') {
-            setCurrentScreen(current => current === '06-group-active' ? '05-group-lobby' : current);
-          }
-        } catch (error) {
-          terminalRoomCleanupInFlight.current.delete(roomId);
-          if (__DEV__) console.warn('[group-terminal] local projection cleanup failed', error);
-        }
-      })();
-    }
-    const ownMembershipCanView = snapshot?.members.some(member => member.uid === profile.uid
-      && ['ACTIVE', 'EARLY_EXIT'].includes(member.status)) === true;
-    const isRestoredRoom = snapshot?.roomId === restoredGroupRoomId.current && currentScreen === '02-solo-select';
-    if (roomLobbyState && snapshot?.status === 'ACTIVE' && snapshot.startedAtUtcMs !== null && ownMembershipCanView
-      && ['live', 'cached'].includes(roomLobbyState.kind)
-      && (currentScreen === '05-group-lobby' || isRestoredRoom)) {
-      setCurrentScreen('06-group-active');
-      restoredGroupRoomId.current = null;
-    }
-  }, [roomLobbyState, currentScreen, profile.uid, groupViolationRepository,
-    runEarlyExitCutoffCleanup, reconcileGroupLifecycleAtCutoff]);
+  useGroupTerminalLifecycle({
+    roomState: roomLobbyState,
+    currentScreen,
+    uid: profile.uid,
+    violationRepository: groupViolationRepository,
+    cleanupInFlight: terminalRoomCleanupInFlight,
+    restoredRoomId: restoredGroupRoomId,
+    captureWork: groupCaptureWork,
+    setCurrentScreen,
+    setCreatedRoom,
+    setJoinedRoom,
+    reconcileLifecycleAtCutoff: reconcileGroupLifecycleAtCutoff,
+    runEarlyExitCutoffCleanup,
+  });
 
   const earlyExitSnapshot = roomLobbyState?.snapshot;
-  const earlyExitMember = earlyExitSnapshot?.members.find(member => member.uid === profile.uid);
-  const earlyExitCutoffUtcMs = earlyExitMember?.earlyExitAtUtcMs;
-  useEffect(() => {
-    const snapshot = earlyExitSnapshot;
-    const ownMember = earlyExitMember;
-    const cutoffUtcMs = earlyExitCutoffUtcMs;
-    if (!snapshot || !['ACTIVE', 'COMPLETED', 'CANCELLED', 'ABORTED'].includes(snapshot.status)
-      || ownMember?.status !== 'EARLY_EXIT'
-      || cutoffUtcMs == null || snapshot.startedAtUtcMs == null
-      || earlyExitCleanupInFlight.current.has(snapshot.roomId)) return;
-
-    const roomId = snapshot.roomId;
-    const startedAtUtcMs = snapshot.startedAtUtcMs;
-    earlyExitCleanupInFlight.current.add(roomId);
-    let disposed = false;
-    let localCleanupComplete = false;
-    let online = false;
-    let networkSubscription: ReturnType<typeof Network.addNetworkStateListener> | undefined;
-    let cleanupRetryController: ReturnType<typeof createEarlyExitCleanupRetry> | undefined;
-    let retryController: ReturnType<typeof createEarlyExitSyncRetry> | undefined;
-    const updateConnection = (state: Awaited<ReturnType<typeof Network.getNetworkStateAsync>>) => {
-      if (disposed) return;
-      online = state.isConnected === true && state.isInternetReachable !== false;
-      setGroupIsOnline(online);
-      if (online) cleanupRetryController?.retryNow();
-      retryController?.setOnline(online);
-    };
-    cleanupRetryController = createEarlyExitCleanupRetry(
-      async () => {
-        // Dùng cùng cleanup với terminal path để hai snapshot không chốt sai thứ tự.
-        await runEarlyExitCutoffCleanup({ roomId, userId: profile.uid, cutoffUtcMs, startedAtUtcMs, historySnapshot: snapshot });
-        if (disposed) return;
-      },
-      {
-        onRetrying: () => setGroupSyncMessage('The room approved your exit, but local session cleanup failed. The app will retry automatically.'),
-        onComplete: () => {
-          localCleanupComplete = true;
-          retryController = createEarlyExitSyncRetry(roomId, groupViolationRepository, {
-            onPending: count => {
-              setGroupSyncPendingCount(count);
-              setGroupSyncMessage(`${count} eligible violation${count === 1 ? '' : 's'} waiting to sync. The app will retry while connected.`);
-            },
-            onDrained: failed => {
-              setGroupSyncPendingCount(0);
-              setGroupSyncMessage(failed > 0
-                ? `${failed} violation${failed === 1 ? '' : 's'} could not sync and remain saved on this device.`
-                : undefined);
-            },
-            onReconciliation: () => setGroupSyncMessage('A saved violation is waiting for room reconciliation.'),
-            onRetrying: () => setGroupSyncMessage('Eligible violations are saved on this device. Sync will retry while connected.'),
-          });
-          retryController.setOnline(online);
-        },
-      },
-    );
-    networkSubscription = Network.addNetworkStateListener(updateConnection);
-    void Network.getNetworkStateAsync().then(updateConnection).catch(() => undefined);
-    cleanupRetryController.start();
-    return () => {
-      disposed = true;
-      if (!localCleanupComplete) earlyExitCleanupInFlight.current.delete(roomId);
-      cleanupRetryController?.dispose();
-      retryController?.dispose();
-      networkSubscription?.remove();
-    };
-  }, [earlyExitSnapshot?.roomId, earlyExitSnapshot?.status, earlyExitSnapshot?.startedAtUtcMs,
-    earlyExitMember?.status, earlyExitCutoffUtcMs, profile.uid, groupViolationRepository, runEarlyExitCutoffCleanup]);
-
-  const handleCreateRoom = async () => {
-    if (isCreatingRoom) return;
-    const attemptId = ++roomCreateAttempt.current;
-    setIsCreatingRoom(true);
-    setRoomCreateError(undefined);
-    const command = pendingRoomCommand.current ?? roomRepository.createCommand();
-    pendingRoomCommand.current = command;
-    try {
-      const result = await roomRepository.createRoom(profile.displayName, command);
-      if (attemptId !== roomCreateAttempt.current) return;
-      pendingRoomCommand.current = null;
-      setJoinedRoom(null);
-      restoredGroupRoomId.current = null;
-      setCreatedRoom(result);
-    } catch (error) {
-      if (!(error instanceof RoomCreateError) || error.code !== 'unavailable') pendingRoomCommand.current = null;
-      if (attemptId !== roomCreateAttempt.current) return;
-      if (__DEV__ && error instanceof RoomCreateError) {
-        console.warn('[room-create] failed', JSON.stringify({
-          code: error.code, stage: error.stage, firebaseCode: error.firebaseCode,
-        }));
-      }
-      setRoomCreateError(roomCreateErrorMessage(error));
-    } finally {
-      if (attemptId === roomCreateAttempt.current) setIsCreatingRoom(false);
-    }
-  };
-
-  const cancelRoomCreateAndJoin = () => {
-    // Client không thể hủy transaction Firestore đã gửi; bỏ kết quả muộn và giữ requestId để retry lấy lại cùng phòng nếu đã commit.
-    roomCreateAttempt.current += 1;
-    setIsCreatingRoom(false);
-    setRoomCreateError(undefined);
-    setJoinedRoom(null);
-    setRoomJoinError(undefined);
-    pendingRoomJoinCommand.current = null;
-    setCurrentScreen('12-join-room');
-  };
+  const earlyExitCutoffUtcMs = earlyExitSnapshot?.members.find(member => member.uid === profile.uid)?.earlyExitAtUtcMs;
+  useEarlyExitCutoffRetry({
+    snapshot: earlyExitSnapshot,
+    uid: profile.uid,
+    cutoffUtcMs: earlyExitCutoffUtcMs,
+    repository: groupViolationRepository,
+    cleanupInFlight: earlyExitCleanupInFlight,
+    runCleanup: runEarlyExitCutoffCleanup,
+    setOnline: setGroupIsOnline,
+    setSyncPendingCount: setGroupSyncPendingCount,
+    setSyncMessage: setGroupSyncMessage,
+  });
 
   useEffect(() => {
     if (!lobbyRoom) return undefined;
     const roomId = lobbyRoom.roomId;
     return listenToOwnRoomRemoval(roomRuntime.firestore, roomId, profile.uid, () => {
-      if (leavingLobby.current) return;
+      if (lobbyMembership.isLeavingRef.current) return;
       setCreatedRoom(current => current?.roomId === roomId ? null : current);
       setJoinedRoom(current => current?.roomId === roomId ? null : current);
       setRoomLobbyState(current => current?.snapshot?.roomId === roomId ? null : current);
-      pendingRoomJoinCommand.current = null;
-      pendingRoomStartCommand.current = null;
-      pendingRoomCommand.current = null;
-      setRoomRemoveError(undefined);
+      roomEntry.clearPendingRoomCommands();
+      roomStart.clearPendingStart();
+      lobbyMembership.clearRemoveError();
       setCurrentScreen(current => ['05-group-lobby', '12-join-room', '06-group-active'].includes(current) ? '05-group-lobby' : current);
       void getLocalDatabase().then(db => db.runAsync('DELETE FROM room_members WHERE room_id = ? AND uid = ?', roomId, profile.uid))
         .catch(error => { if (__DEV__) console.warn('[room-removal] local cleanup pending', error); });
       Alert.alert('No longer in room', 'You are no longer a member of this room.');
     });
-  }, [lobbyRoom?.roomId, roomRuntime.firestore, profile.uid]);
+  }, [lobbyRoom?.roomId, roomRuntime.firestore, profile.uid, roomEntry.clearPendingRoomCommands,
+    roomStart.clearPendingStart, lobbyMembership.clearRemoveError, lobbyMembership.isLeavingRef]);
 
-  const handleStartRoom = async () => {
-    if (!lobbyRoom || isStartingRoom || leavingLobby.current || kickingLobby.current) return;
-    setIsStartingRoom(true);
-    setRoomStartError(undefined);
-    const command = pendingRoomStartCommand.current?.roomId === lobbyRoom.roomId
-      ? pendingRoomStartCommand.current
-      : roomRepository.startCommand(lobbyRoom.roomId);
-    pendingRoomStartCommand.current = command;
-    try {
-      await roomRepository.startRoom(command);
-      pendingRoomStartCommand.current = null;
-    } catch (error) {
-      if (!(error instanceof RoomStartError) || error.code !== 'unavailable') pendingRoomStartCommand.current = null;
-      if (__DEV__ && error instanceof RoomStartError) {
-        console.warn('[room-start] failed', JSON.stringify({ code: error.code, firebaseCode: error.firebaseCode }));
-      }
-      setRoomStartError(roomStartErrorMessage(error));
-    } finally {
-      setIsStartingRoom(false);
-    }
-  };
-
-  const confirmLeaveLobby = () => {
-    if (!lobbyRoom || isStartingRoom || leavingLobby.current || kickingLobby.current || roomLobbyState?.kind !== 'live'
-      || roomLobbyState.snapshot.status !== 'WAITING') return;
-    const roomId = lobbyRoom.roomId;
-    const snapshot = roomLobbyState.snapshot;
-    const description = snapshot.hostUid === profile.uid
-      ? snapshot.participantCount > 1
-        ? 'Host duties will pass to the earliest remaining member. The room will stay open.'
-        : 'You are the last member. This will close the room.'
-      : 'You will leave this lobby. You can join again with the room PIN while it is waiting.';
-    Alert.alert('Leave room?', description, [
-      { text: 'Stay', style: 'cancel' },
-      { text: 'Leave Room', style: 'destructive', onPress: () => {
-        if (leavingLobby.current || kickingLobby.current) return;
-        leavingLobby.current = true;
-        setIsLeavingRoom(true);
-        setRoomLeaveError(undefined);
-        void lobbyLeaveRepository.leave(roomId).then(() => {
-          setCreatedRoom(current => current?.roomId === roomId ? null : current);
-          setJoinedRoom(current => current?.roomId === roomId ? null : current);
-          setRoomLobbyState(null);
-          setRoomRemoveError(undefined);
-          pendingRoomCommand.current = null;
-          pendingRoomJoinCommand.current = null;
-          pendingRoomStartCommand.current = null;
-          setCurrentScreen('05-group-lobby');
-        }).catch(error => {
-          const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
-          setRoomLeaveError(code.includes('permission-denied')
-            ? 'Leave was not allowed. The room may have changed, or the room rules need updating.'
-            : code ? 'Could not leave the room. Reconnect and try again.'
-              : error instanceof Error ? error.message : 'Could not leave the room. Please retry.');
-        }).finally(() => { leavingLobby.current = false; setIsLeavingRoom(false); });
-      } },
-    ]);
-  };
-
-  const confirmRemoveLobbyMember = (memberUid: string, displayName: string) => {
-    if (!lobbyRoom || memberUid === profile.uid || isStartingRoom || leavingLobby.current || kickingLobby.current
-      || roomLobbyState?.kind !== 'live' || roomLobbyState.snapshot.status !== 'WAITING'
-      || roomLobbyState.snapshot.hostUid !== profile.uid) return;
-    const roomId = lobbyRoom.roomId;
-    Alert.alert('Remove member?', `Remove ${displayName} from this lobby? They can join again with the PIN.`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove Member', style: 'destructive', onPress: () => {
-        if (kickingLobby.current || leavingLobby.current) return;
-        kickingLobby.current = true;
-        setRemovingMemberUid(memberUid);
-        setRoomRemoveError(undefined);
-        void lobbyLeaveRepository.removeMember(roomId, memberUid).catch(error => {
-          const isSdkError = typeof error === 'object' && error !== null && 'code' in error;
-          setRoomRemoveError(isSdkError ? 'Could not remove this member. Check your connection and host permissions, then retry.'
-            : error instanceof Error ? error.message : 'Could not remove this member. Please retry.');
-        }).finally(() => { kickingLobby.current = false; setRemovingMemberUid(undefined); });
-      } },
-    ]);
-  };
-
-  const handleCompleteRoom = async () => {
-    if (!lobbyRoom || isCompletingRoom) return;
-    setIsCompletingRoom(true);
-    setRoomCompletionError(undefined);
-    const pending = pendingRoomCompletion.current?.roomId === lobbyRoom.roomId
-      ? pendingRoomCompletion.current
-      : { roomId: lobbyRoom.roomId, requestId: Crypto.randomUUID() };
-    pendingRoomCompletion.current = pending;
-    try {
-      await roomCompletionRepository.completeRoom(pending);
-      pendingRoomCompletion.current = null;
-      setCurrentScreen('13-group-summary');
-    } catch (error) {
-      if (!(error instanceof RoomCompletionError) || error.code !== 'unavailable') pendingRoomCompletion.current = null;
-      if (__DEV__ && error instanceof RoomCompletionError) {
-        console.warn('[room-complete] failed', JSON.stringify({ code: error.code }));
-      }
-      setRoomCompletionError(error instanceof RoomCompletionError && error.code === 'permission-denied'
-        ? 'Firebase rejected room completion. Check the deployed Firestore Rules and Host membership.'
-        : error instanceof RoomCompletionError && error.code === 'failed-precondition'
-          ? 'This room is no longer active. Refresh the room state and try again.'
-          : 'Could not end the room. Reconnect and retry; the request was not queued offline.');
-    } finally {
-      setIsCompletingRoom(false);
-    }
-  };
-
-  const handleFinalizeRoomOverride = async (unsyncedMemberUids: string[]) => {
-    const snapshot = roomLobbyState?.snapshot;
-    const ownMember = snapshot?.members.find(member => member.uid === profile.uid);
-    if (!lobbyRoom || !snapshot || snapshot.status !== 'COMPLETED' || ownMember?.role !== 'HOST'
-      || isFinalizingRoomOverride) return;
-    setIsFinalizingRoomOverride(true);
-    setRoomOverrideError(undefined);
-    const pending = pendingRoomOverride.current?.roomId === lobbyRoom.roomId
-      ? pendingRoomOverride.current
-      : { roomId: lobbyRoom.roomId, requestId: Crypto.randomUUID() };
-    pendingRoomOverride.current = pending;
-    try {
-      await roomCompletionRepository.finalizeRoomScores({
-        ...pending,
-        reason: 'HOST_OVERRIDE',
-        confirmedWarning: true,
-        unsyncedMemberUids,
-      });
-      pendingRoomOverride.current = null;
-      // Ghi history-only cho violation local còn pending sau khi server đã khóa điểm.
-      void groupViolationRepository.syncPending(lobbyRoom.roomId).catch(() => undefined);
-    } catch (error) {
-      if (!(error instanceof RoomCompletionError) || error.code !== 'unavailable') pendingRoomOverride.current = null;
-      if (__DEV__ && error instanceof RoomCompletionError) {
-        console.warn('[room-override] failed', JSON.stringify({ code: error.code }));
-      }
-      setRoomOverrideError(error instanceof RoomCompletionError && error.code === 'permission-denied'
-        ? 'Firebase rejected finalization. Check that the Spark Firestore Rules are deployed.'
-        : error instanceof RoomCompletionError && error.code === 'failed-precondition'
-          ? 'The room state changed. Wait for the latest room snapshot and retry if members are still pending.'
-          : error instanceof RoomCompletionError && error.code === 'unavailable'
-            ? 'Could not confirm the request with Firebase. Reconnect and retry; the same request will be reused.'
-            : 'Could not finalize the room. Your scores have not been changed by this attempt.');
-    } finally {
-      setIsFinalizingRoomOverride(false);
-    }
-  };
-
-  const handleAcknowledgeRoomSync = async () => {
-    const snapshot = roomLobbyState?.snapshot;
-    if (!lobbyRoom || !snapshot || snapshot.status !== 'COMPLETED' || isAcknowledgingRoom) return;
-    setIsAcknowledgingRoom(true);
-    setRoomAcknowledgmentError(undefined);
-    const pending = pendingRoomAcknowledgment.current?.roomId === lobbyRoom.roomId
-      ? pendingRoomAcknowledgment.current
-      : { roomId: lobbyRoom.roomId, requestId: Crypto.randomUUID() };
-    pendingRoomAcknowledgment.current = pending;
-    try {
-      // Chờ sensor/recovery đã ghi xong, sau đó chốt interval mở tại endedAt và gửi hết outbox đủ điều kiện.
-      await groupCaptureWork.current.get(lobbyRoom.roomId)?.waitForIdle();
-      if (snapshot.endedAtUtcMs == null) throw new RoomCompletionError('failed-precondition');
-      const ownMember = snapshot.members.find(member => member.uid === profile.uid);
-      const lifecycleCutoffUtcMs = ownMember?.status === 'EARLY_EXIT' && ownMember.earlyExitAtUtcMs != null
-        ? Math.min(snapshot.endedAtUtcMs, ownMember.earlyExitAtUtcMs)
-        : snapshot.endedAtUtcMs;
-      await reconcileGroupLifecycleAtCutoff(lobbyRoom.roomId, profile.uid, lifecycleCutoffUtcMs);
-      if (snapshot.startedAtUtcMs != null) {
-        if (ownMember?.status === 'EARLY_EXIT' && ownMember.earlyExitAtUtcMs != null) {
-          await runEarlyExitCutoffCleanup({
-            roomId: lobbyRoom.roomId, userId: profile.uid,
-            cutoffUtcMs: ownMember.earlyExitAtUtcMs, startedAtUtcMs: snapshot.startedAtUtcMs, historySnapshot: snapshot,
-          });
-        }
-      }
-      await groupViolationRepository.finalizeOpenAtRoomEnd({
-        roomId: lobbyRoom.roomId, userId: profile.uid, endedAtUtcMs: snapshot.endedAtUtcMs,
-      });
-      await groupViolationRepository.syncPending(lobbyRoom.roomId);
-      const pendingCount = await groupViolationRepository.getPendingCount(lobbyRoom.roomId);
-      if (pendingCount > 0) throw new RoomCompletionError('failed-precondition');
-      await roomCompletionRepository.acknowledgeMemberSync(pending);
-      pendingRoomAcknowledgment.current = null;
-    } catch (error) {
-      if (!(error instanceof RoomCompletionError) || error.code !== 'unavailable') pendingRoomAcknowledgment.current = null;
-      if (__DEV__ && error instanceof RoomCompletionError) {
-        console.warn('[room-ack] failed', JSON.stringify({ code: error.code }));
-      }
-      setRoomAcknowledgmentError(error instanceof RoomCompletionError && error.code === 'failed-precondition'
-        ? 'Some saved session data is still waiting to sync. Reconnect and retry.'
-        : error instanceof RoomCompletionError && error.code === 'permission-denied'
-          ? 'Firebase rejected the sync acknowledgment. Check the deployed Firestore Rules.'
-          : 'Could not confirm the final sync. Reconnect and retry.');
-    } finally {
-      setIsAcknowledgingRoom(false);
-    }
-  };
-
-  const handleJoinRoom = async (pin: string) => {
-    if (isJoiningRoom) return;
-    setIsJoiningRoom(true);
-    setRoomJoinError(undefined);
-    const command = pendingRoomJoinCommand.current?.pin === pin
-      ? pendingRoomJoinCommand.current
-      : { requestId: Crypto.randomUUID(), pin };
-    pendingRoomJoinCommand.current = command;
-    try {
-      const result = await roomRepository.joinRoomByPin(command);
-      pendingRoomJoinCommand.current = null;
-      setCreatedRoom(null);
-      restoredGroupRoomId.current = null;
-      setJoinedRoom(result);
-    } catch (error) {
-      if (!(error instanceof RoomJoinError) || error.code !== 'unavailable') pendingRoomJoinCommand.current = null;
-      if (__DEV__ && error instanceof RoomJoinError) {
-        console.warn('[room-join] failed', JSON.stringify({ code: error.code, firebaseCode: error.firebaseCode }));
-      }
-      setRoomJoinError(roomJoinErrorMessage(error));
-    } finally {
-      setIsJoiningRoom(false);
-    }
-  };
-
-  const handleRequestEarlyExit = async () => {
-    if (!lobbyRoom || isRequestingEarlyExit) return;
-    setIsRequestingEarlyExit(true);
-    setEarlyExitError(undefined);
-    const pending = pendingEarlyExitRequest.current?.roomId === lobbyRoom.roomId
-      ? pendingEarlyExitRequest.current
-      : { roomId: lobbyRoom.roomId, requestId: Crypto.randomUUID() };
-    pendingEarlyExitRequest.current = pending;
-    try {
-      await earlyExitRepository.requestEarlyExit({ roomId: lobbyRoom.roomId, requestId: pending.requestId });
-      pendingEarlyExitRequest.current = null;
-    } catch (error) {
-      if (!(error instanceof EarlyExitError) || error.code !== 'unavailable') pendingEarlyExitRequest.current = null;
-      setEarlyExitError(earlyExitErrorMessage(error));
-    } finally {
-      setIsRequestingEarlyExit(false);
-    }
-  };
-
-  const handleDecideEarlyExit = async (request: EarlyExitRequest, decision: EarlyExitDecision) => {
-    if (!lobbyRoom || decidingEarlyExit) return;
-    setDecidingEarlyExit({ requestId: request.requestId, decision });
-    setEarlyExitError(undefined);
-    try {
-      await earlyExitRepository.decideEarlyExit({
-        roomId: lobbyRoom.roomId, memberUid: request.memberUid, requestId: request.requestId, decision,
-      });
-    } catch (error) {
-      setEarlyExitError(earlyExitErrorMessage(error));
-    } finally {
-      setDecidingEarlyExit(null);
-    }
-  };
-
-  const handleOpenTerminationVote = async () => {
-    if (!lobbyRoom || isOpeningTerminationVote) return;
-    setIsOpeningTerminationVote(true);
-    setTerminationVoteError(undefined);
-    const pending = pendingTerminationVoteOpen.current?.roomId === lobbyRoom.roomId
-      ? pendingTerminationVoteOpen.current : { roomId: lobbyRoom.roomId, requestId: Crypto.randomUUID() };
-    pendingTerminationVoteOpen.current = pending;
-    try {
-      await terminationVoteRepository.open(pending);
-      pendingTerminationVoteOpen.current = null;
-    } catch (error) {
-      if (!(error instanceof TerminationVoteError) || error.code !== 'unavailable') pendingTerminationVoteOpen.current = null;
-      setTerminationVoteError(error instanceof TerminationVoteError && error.code === 'permission-denied'
-        ? 'Could not start a new vote. The current vote may still be open; wait and try again.'
-        : 'Could not start the vote. Reconnect and try again.');
-    } finally { setIsOpeningTerminationVote(false); }
-  };
-
-  const handleCastTerminationVote = async (choice: TerminationChoice) => {
-    if (!lobbyRoom || !terminationVoteState.vote || isCastingTerminationVote) return;
-    setIsCastingTerminationVote(true);
-    setTerminationVoteError(undefined);
-    const currentVote = terminationVoteState.vote;
-    const pending = pendingTerminationBallot.current?.roomId === lobbyRoom.roomId
-      && pendingTerminationBallot.current.voteId === currentVote.voteId
-      && pendingTerminationBallot.current.choice === choice
-      ? pendingTerminationBallot.current
-      : { roomId: lobbyRoom.roomId, voteId: currentVote.voteId, requestId: Crypto.randomUUID(), choice };
-    pendingTerminationBallot.current = pending;
-    try {
-      await terminationVoteRepository.cast(pending);
-      pendingTerminationBallot.current = null;
-    } catch (error) {
-      if (!(error instanceof TerminationVoteError) || error.code !== 'unavailable') pendingTerminationBallot.current = null;
-      setTerminationVoteError(error instanceof TerminationVoteError && error.code === 'permission-denied'
-        ? 'Your vote was not accepted. The voting window may have ended; check the room and try again.'
-        : 'Could not submit your vote. Reconnect and try again.');
-    } finally { setIsCastingTerminationVote(false); }
-  };
-
-  const cancelRoomJoin = useCallback(() => {
-    if (isJoiningRoom) return;
-    setCurrentScreen('05-group-lobby');
-    setRoomJoinError(undefined);
-    pendingRoomJoinCommand.current = null;
-  }, [isJoiningRoom]);
+  const roomCompletion = useRoomCompletionActions({
+    repository: roomCompletionRepository,
+    violationRepository: groupViolationRepository,
+    roomId: lobbyRoom?.roomId,
+    snapshot: roomLobbyState?.snapshot,
+    uid: profile.uid,
+    captureWork: groupCaptureWork,
+    reconcileLifecycleAtCutoff: reconcileGroupLifecycleAtCutoff,
+    runEarlyExitCutoffCleanup,
+    onCompleted: () => setCurrentScreen('13-group-summary'),
+  });
 
   useEffect(() => {
     if (currentScreen !== '12-join-room') return undefined;
     const back = BackHandler.addEventListener('hardwareBackPress', () => {
-      cancelRoomJoin();
+      roomEntry.cancelRoomJoin();
       return true;
     });
     return () => back.remove();
-  }, [currentScreen, cancelRoomJoin]);
+  }, [currentScreen, roomEntry.cancelRoomJoin]);
 
   const solo = useSoloSessionRuntime({
     userId: profile.uid,
@@ -1286,11 +447,6 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     handleStartSolo, continueActiveSoloSession, confirmCancelSoloSession, requestFinishSoloSession,
   } = solo;
   // Group State
-  const [groupTimerSeconds, setGroupTimerSeconds] = useState(0);
-  const [groupDetection, setGroupDetection] = useState<ForegroundDetectionViewState>(INITIAL_DETECTION_STATE);
-  const [groupIsOnline, setGroupIsOnline] = useState(false);
-  const [groupSyncMessage, setGroupSyncMessage] = useState<string>();
-  const [groupSyncPendingCount, setGroupSyncPendingCount] = useState(0);
   const candidateGroupRoom = roomLobbyState?.snapshot;
   const groupRoomSnapshot = candidateGroupRoom?.status === 'ACTIVE'
     && candidateGroupRoom.startedAtUtcMs !== null ? candidateGroupRoom : null;
@@ -1308,37 +464,21 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const [paymentDetailsRevision, setPaymentDetailsRevision] = useState(0);
   const [publishedBillState, setPublishedBillState] = useState<PublishedBillState>({ kind: 'loading' });
   const [billListenerRevision, setBillListenerRevision] = useState(0);
-  const [committedBill, setCommittedBill] = useState<PublishedBill | null>(null);
-  const [isPublishingBill, setIsPublishingBill] = useState(false);
-  const [billPublishError, setBillPublishError] = useState<string>();
   const paymentStatusRepository = useMemo(() => createPaymentStatusRepository({
     firestore: roomRuntime.firestore, auth: roomRuntime.auth,
   }), [roomRuntime.firestore, roomRuntime.auth]);
-  const [isMarkingPayment, setIsMarkingPayment] = useState(false);
-  const [paymentError, setPaymentError] = useState<string>();
-  const pendingPayment = useRef<MarkPaymentCommand | null>(null);
-  const [isApplyingBillOverride, setIsApplyingBillOverride] = useState(false);
-  const [billOverrideError, setBillOverrideError] = useState<string>();
-  const pendingBillCommand = useRef<{ command: CalculateBillCommand; rosterMemberUids: string[] } | null>(null);
-  const pendingBillOverride = useRef<{ command: ApplyBillOverridesCommand; rosterMemberUids: string[] } | null>(null);
-  const activeBillRoomId = useRef<string | null>(null);
-  const latestBillRevision = useRef<{ roomId: string | null; revision: number; paidCount: number }>({ roomId: null, revision: -1, paidCount: 0 });
   const autoOpenedBillPublications = useRef(new Set<string>());
 
-  useEffect(() => {
-    activeBillRoomId.current = groupSummarySnapshot?.roomId ?? null;
-    latestBillRevision.current = { roomId: activeBillRoomId.current, revision: -1, paidCount: 0 };
-    pendingPayment.current = null;
-    setIsMarkingPayment(false);
-    setPaymentError(undefined);
-    pendingBillCommand.current = null;
-    pendingBillOverride.current = null;
-    setCommittedBill(null);
-    setBillPublishError(undefined);
-    setBillOverrideError(undefined);
-    setIsPublishingBill(false);
-    setIsApplyingBillOverride(false);
-  }, [groupSummarySnapshot?.roomId]);
+  const billActions = useGroupBillActions({
+    snapshot: groupSummarySnapshot,
+    uid: profile.uid,
+    isOnline: groupIsOnline,
+    repository: billRepository,
+    paymentRepository: paymentStatusRepository,
+    publishedBillState,
+    setPublishedBillState,
+    setListenerRevision: setBillListenerRevision,
+  });
 
   useEffect(() => {
     if (!groupSummarySnapshot || groupSummarySnapshot.reconciliationStatus !== 'FINALIZED') {
@@ -1348,16 +488,17 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     setPublishedBillState({ kind: 'loading' });
     const roomId = groupSummarySnapshot.roomId;
     return listenToPublishedBill(roomRuntime.firestore, roomId, state => {
-      if (activeBillRoomId.current !== roomId) return;
+      if (billActions.activeBillRoomId.current !== roomId) return;
       if (state.kind === 'published') {
         const revision = state.bill.billRevision ?? 0;
-        const latest = latestBillRevision.current;
+        const latest = billActions.latestBillRevision.current;
         if (!acceptsBillProgress(state.bill, latest)) return;
-        latestBillRevision.current = { roomId, revision, paidCount: state.bill.billPaidCount ?? 0 };
+        billActions.latestBillRevision.current = { roomId, revision, paidCount: state.bill.billPaidCount ?? 0 };
       }
       setPublishedBillState(state);
     });
-  }, [groupSummarySnapshot?.roomId, groupSummarySnapshot?.reconciliationStatus, roomRuntime.firestore, billListenerRevision]);
+  }, [groupSummarySnapshot?.roomId, groupSummarySnapshot?.reconciliationStatus, roomRuntime.firestore, billListenerRevision,
+    billActions.activeBillRoomId, billActions.latestBillRevision]);
 
   useEffect(() => {
     const ownMember = groupSummarySnapshot?.members.find(member => member.uid === profile.uid);
@@ -1369,28 +510,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     }
   }, [publishedBillState, groupSummarySnapshot, profile.uid, currentScreen]);
 
-  useEffect(() => {
-    if (publishedBillState.kind === 'published') setCommittedBill(publishedBillState.bill);
-    if (publishedBillState.kind === 'published' && pendingPayment.current
-      && publishedBillState.bill.shares.some(share => share.uid === pendingPayment.current?.memberUid
-        && share.paymentStatus === 'MARKED_AS_PAID')) {
-      pendingPayment.current = null;
-      setIsMarkingPayment(false);
-      setPaymentError(undefined);
-    }
-    if (publishedBillState.kind === 'published') pendingBillCommand.current = null;
-    if (publishedBillState.kind === 'published' && pendingBillOverride.current?.command.requestId === publishedBillState.bill.requestId) {
-      pendingBillOverride.current = null;
-      setBillOverrideError(undefined);
-    }
-    if (publishedBillState.kind === 'published' && (publishedBillState.bill.billPaidCount ?? 0) > 0) {
-      // Khi payment đã thắng revision race, request override chưa commit sẽ không còn được Rules chấp nhận.
-      pendingBillOverride.current = null;
-      setIsApplyingBillOverride(false);
-    }
-  }, [publishedBillState]);
-
-  const billScreenState = selectPublishedBillState(publishedBillState, committedBill, groupSummarySnapshot?.roomId);
+  const billScreenState = selectPublishedBillState(publishedBillState, billActions.committedBill, groupSummarySnapshot?.roomId);
   useEffect(() => {
     if (currentScreen !== '08-vietqr-settlement') return undefined;
     setPaymentDetailsState({ kind: 'loading' });
@@ -1439,359 +559,19 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     return () => clearInterval(timer);
   }, [groupRoomSnapshot?.roomId, groupRoomSnapshot?.startedAtUtcMs]);
 
-  useEffect(() => {
-    if (!groupCaptureRoomSnapshot) {
-      setGroupDetection(INITIAL_DETECTION_STATE);
-      return undefined;
-    }
-    const roomId = groupCaptureRoomSnapshot.roomId;
-    const workTracker = createGroupCaptureWorkTracker();
-    groupCaptureWork.current.set(roomId, workTracker);
-    const controller = createForegroundDetectionController(
-      { id: roomId, userId: profile.uid }, groupViolationRepository,
-      () => feedbackService.notifyConfirmedViolation(profile.uid),
-    );
-    let disposed = false;
-    let initialized = false;
-    let processing = false;
-    let lifecyclePending = false;
-    let lifecycleReady = false;
-    const startupState = AppState.currentState;
-    let latestStartupState = startupState;
-    const startupTransitions: { state: typeof AppState.currentState; observedAt: ReturnType<typeof backgroundRecovery.captureTime> }[] = [];
-    if (startupState !== 'active') {
-      startupTransitions.push({ state: startupState, observedAt: backgroundRecovery.captureTime() });
-    }
-    let lifecycleController: ReturnType<typeof createSessionLifecycleController> | undefined;
-    let lastDetectionState = INITIAL_DETECTION_STATE;
-    let latestMeasurement: AccelerometerMeasurement | undefined;
-    let tickRequested = false;
-    let drainWork: Promise<void> = Promise.resolve();
-
-    const refreshPending = async () => {
-      try {
-        const [pending, failed] = await Promise.all([
-          groupViolationRepository.getPendingCount(roomId),
-          groupViolationRepository.getFailedCount(roomId),
-        ]);
-        if (!disposed) {
-          setGroupSyncPendingCount(pending);
-          setGroupSyncMessage(failed > 0
-            ? `${failed} violation${failed === 1 ? '' : 's'} could not sync and remain saved on this device.`
-            : pending > 0 ? `${pending} violation${pending === 1 ? '' : 's'} waiting to sync` : undefined);
-        }
-      } catch {
-        if (!disposed) setGroupSyncMessage('Could not check pending sync yet.');
-      }
-    };
-    const drain = () => {
-      if (disposed || !initialized || lifecyclePending || AppState.currentState !== 'active') return Promise.resolve();
-      if (processing) return drainWork;
-      processing = true;
-      drainWork = workTracker.track((async () => {
-        try {
-          while (!disposed && !lifecyclePending && AppState.currentState === 'active' && (latestMeasurement || tickRequested)) {
-            if (latestMeasurement) {
-              const sample = latestMeasurement;
-              latestMeasurement = undefined;
-              const next = await controller.observeSample(sample, Date.now());
-              if (!disposed) {
-                setGroupDetection(next);
-                if (lastDetectionState.isViolationActive && !next.isViolationActive) {
-                  void groupViolationRepository.syncPending(roomId).then(refreshPending).catch(() => refreshPending());
-                }
-                lastDetectionState = next;
-              }
-            } else {
-              tickRequested = false;
-              const next = await controller.tick(Date.now());
-              if (!disposed) {
-                setGroupDetection(next);
-                if (lastDetectionState.isViolationActive && !next.isViolationActive) {
-                  void groupViolationRepository.syncPending(roomId).then(refreshPending).catch(() => refreshPending());
-                }
-                lastDetectionState = next;
-              }
-            }
-          }
-        } catch {
-          if (!disposed) setGroupDetection(state => ({
-            ...state, persistenceError: 'Could not save the group violation on this device. It will retry automatically.',
-          }));
-        } finally {
-          processing = false;
-          if (!disposed && !lifecyclePending && (latestMeasurement || tickRequested)) void drain();
-        }
-      })());
-      return drainWork;
-    };
-
-    // Đệm AppState trong lúc mở SQLite/controller để không bỏ mất candidate nếu app chuyển nền sớm.
-    const appStateSubscription = AppState.addEventListener('change', state => {
-      const wasActive = latestStartupState === 'active';
-      latestStartupState = state;
-      const observedAt = backgroundRecovery.captureTime();
-      if (lifecycleController && lifecycleReady) {
-        void workTracker.track(lifecycleController.handleChangeAt(state, observedAt)).catch(() => undefined);
-        if (state === 'active') {
-          void drain();
-          void groupViolationRepository.syncPending(roomId).then(refreshPending).catch(() => refreshPending());
-        }
-      } else if ((wasActive && state !== 'active') || (!wasActive && state === 'active')) {
-        startupTransitions.push({ state, observedAt });
-      }
-    });
-
-    const initialization = (async () => {
-      try {
-        const db = await getLocalDatabase();
-        // Room ID là khóa chính cục bộ; khi đổi tài khoản, chuyển session đang hoạt động sang chủ tài khoản hiện tại.
-        await db.runAsync(
-          `INSERT INTO sessions (id, user_id, mode, status, duration_seconds, started_at, completed_at, synced_at)
-           VALUES (?, ?, 'GROUP', 'ACTIVE', 0, ?, NULL, NULL)
-           ON CONFLICT(id) DO UPDATE SET
-             user_id = excluded.user_id,
-             mode = 'GROUP',
-             status = 'ACTIVE',
-             started_at = excluded.started_at,
-             completed_at = NULL,
-             synced_at = NULL`,
-          roomId, profile.uid, new Date(groupCaptureRoomSnapshot.startedAtUtcMs!).toISOString(),
-        );
-        const state = await controller.initialize();
-        if (disposed) return;
-        setGroupDetection(state);
-        lastDetectionState = state;
-        initialized = true;
-        lifecycleController = createSessionLifecycleController({
-          session: { sessionId: roomId, userId: profile.uid },
-          // Mọi thay đổi kể từ lúc effect bắt đầu được replay từ trạng thái foreground này.
-          initialState: 'active',
-          repository: {
-            begin: input => backgroundRecovery.begin(input),
-            reconcile: input => {
-              const cutoffUtcMs = groupLifecycleCutoffs.current.get(input.sessionId);
-              return cutoffUtcMs == null
-                ? backgroundRecovery.reconcile(input)
-                : backgroundRecovery.reconcileAtCutoff(input, cutoffUtcMs);
-            },
-          },
-          captureTime: backgroundRecovery.captureTime,
-          getDetector: () => controller,
-          onPendingChange: pending => {
-            lifecyclePending = pending;
-            if (!pending) void drain();
-          },
-          onRecovered: (recovery, detection) => {
-            if (detection) { setGroupDetection(detection); lastDetectionState = detection; }
-            void groupViolationRepository.syncPending(roomId).then(refreshPending).catch(() => refreshPending());
-            if (recovery === 'needs-review') Alert.alert(
-              'Session recovery needs review',
-              'Background time could not be verified. No group violation was added for that interval.',
-            );
-          },
-          onError: stage => setGroupDetection(current => ({
-            ...current,
-            persistenceError: stage === 'begin'
-              ? 'Could not save this background transition; its interval may not count.'
-              : 'Could not recover the background interval. It remains saved locally for retry.',
-          })),
-        });
-        let replayedStartupTransition = false;
-        let reconciledCurrentState = false;
-        while (!disposed) {
-          while (startupTransitions.length > 0 && !disposed) {
-            const transition = startupTransitions.shift()!;
-            replayedStartupTransition = true;
-            await workTracker.track(lifecycleController.handleChangeAt(transition.state, transition.observedAt));
-          }
-          if (disposed) return;
-          if (!replayedStartupTransition && !reconciledCurrentState) {
-            reconciledCurrentState = true;
-            // Nếu AppState đổi trong lúc recovery đọc SQLite, vòng lặp xử lý mốc vừa được đệm.
-            await workTracker.track(lifecycleController.reconcileCurrent());
-            continue;
-          }
-          if (startupTransitions.length === 0) break;
-        }
-        lifecycleReady = true;
-        void drain();
-        void refreshPending();
-      } catch {
-        if (!disposed) setGroupDetection(current => ({ ...current, persistenceError: 'Could not load this room’s local violation history.' }));
-      }
-    })();
-    workTracker.track(initialization);
-
-    let sensorSubscription: ReturnType<typeof accelerometerAdapter.subscribe> | undefined;
-    let timer: ReturnType<typeof setInterval> | undefined;
-    try {
-      accelerometerAdapter.setUpdateInterval(20);
-      sensorSubscription = accelerometerAdapter.subscribe(sample => { latestMeasurement = sample; void drain(); });
-      timer = setInterval(() => { tickRequested = true; void drain(); }, 200);
-    } catch {
-      setGroupDetection(state => ({ ...state, persistenceError: 'Could not start the accelerometer. Check sensor availability.' }));
-    }
-    const networkSubscription = Network.addNetworkStateListener(state => {
-      const online = state.isConnected === true && state.isInternetReachable !== false;
-      setGroupIsOnline(online);
-      if (online) void groupViolationRepository.syncPending(roomId).then(refreshPending).catch((error: GroupViolationError) => {
-        if (error.code === 'failed-precondition') setGroupSyncMessage('A saved violation is waiting for room reconciliation.');
-        else void refreshPending();
-      });
-    });
-    void Network.getNetworkStateAsync().then(state => {
-      const online = state.isConnected === true && state.isInternetReachable !== false;
-      if (!disposed) setGroupIsOnline(online);
-      if (online) void groupViolationRepository.syncPending(roomId).then(refreshPending).catch(() => refreshPending());
-    }).catch(() => { if (!disposed) setGroupIsOnline(false); });
-
-    return () => {
-      disposed = true;
-      sensorSubscription?.remove();
-      if (timer) clearInterval(timer);
-      appStateSubscription.remove();
-      networkSubscription.remove();
-      lifecycleController?.dispose();
-    };
-  }, [groupCaptureRoomSnapshot?.roomId, profile.uid, groupViolationRepository]);
-
-  const handlePublishBill = async (totalBillVnd?: number, shareOverrides?: BillShareOverride[], receiptEvidencePath?: string) => {
-    const snapshot = groupSummarySnapshot;
-    const ownMember = snapshot?.members.find(member => member.uid === profile.uid);
-    if (!snapshot || snapshot.reconciliationStatus !== 'FINALIZED' || ownMember?.role !== 'HOST'
-      || ownMember.status !== 'ACTIVE' || isPublishingBill) return;
-
-    let pending = pendingBillCommand.current;
-    if (!pending) {
-      if (totalBillVnd == null) return;
-      pending = {
-        command: { version: 1, requestId: Crypto.randomUUID(), roomId: snapshot.roomId, totalBillVnd,
-          ...(receiptEvidencePath ? { receiptEvidencePath } : {}),
-          ...(shareOverrides?.length ? { shareOverrides: [...shareOverrides].sort((a, b) => a.uid.localeCompare(b.uid)) } : {}) },
-        rosterMemberUids: snapshot.members
-          .filter(member => member.status === 'ACTIVE' || member.status === 'EARLY_EXIT')
-          .map(member => member.uid),
-      };
-      pendingBillCommand.current = pending;
-    } else if (pending.command.roomId !== snapshot.roomId
-      || (totalBillVnd != null && pending.command.totalBillVnd !== totalBillVnd)
-      || (receiptEvidencePath != null && pending.command.receiptEvidencePath !== receiptEvidencePath)
-      || (shareOverrides != null && JSON.stringify([...(pending.command.shareOverrides ?? [])].sort((a, b) => a.uid.localeCompare(b.uid)))
-        !== JSON.stringify([...shareOverrides].sort((a, b) => a.uid.localeCompare(b.uid))))) {
-      return;
-    }
-
-    setIsPublishingBill(true);
-    setBillPublishError(undefined);
-    try {
-      const result = await billRepository.publish(pending.command, pending.rosterMemberUids);
-      if (activeBillRoomId.current === pending.command.roomId) {
-        pendingBillCommand.current = null;
-        if (acceptsBillProgress(result, latestBillRevision.current)) {
-          latestBillRevision.current = { roomId: result.roomId, revision: result.billRevision ?? 0, paidCount: result.billPaidCount ?? 0 };
-          setCommittedBill(result);
-          setPublishedBillState({ kind: 'published', bill: result });
-        }
-      }
-    } catch (error) {
-      if (activeBillRoomId.current === pending.command.roomId) setBillPublishError(billPublishErrorMessage(error));
-      if (activeBillRoomId.current === pending.command.roomId
-        && error instanceof BillRepositoryError && error.code !== 'unavailable') {
-        pendingBillCommand.current = null;
-      }
-    } finally {
-      if (activeBillRoomId.current === pending.command.roomId) setIsPublishingBill(false);
-    }
-  };
-
-  const handleRetryPublishedBill = () => {
-    if (!groupSummarySnapshot) return;
-    // Listener lỗi đã dừng; retry phải gắn subscription mới để tiếp tục nhận publication realtime.
-    setBillListenerRevision(revision => revision + 1);
-  };
-
-  const handleApplyBillOverrides = async (overrides?: BillShareOverride[], expectedRevision?: number) => {
-    const snapshot = groupSummarySnapshot;
-    const ownMember = snapshot?.members.find(member => member.uid === profile.uid);
-    if (!snapshot || snapshot.reconciliationStatus !== 'FINALIZED' || ownMember?.role !== 'HOST'
-      || ownMember.status !== 'ACTIVE' || isApplyingBillOverride || !groupIsOnline
-      || pendingPayment.current || isMarkingPayment) return;
-    let pending = pendingBillOverride.current;
-    if (!pending) {
-      if (!overrides?.length || expectedRevision == null) return;
-      pending = {
-        command: { version: 1, requestId: Crypto.randomUUID(), roomId: snapshot.roomId, expectedRevision, overrides },
-        rosterMemberUids: snapshot.members
-          .filter(member => member.status === 'ACTIVE' || member.status === 'EARLY_EXIT')
-          .map(member => member.uid),
-      };
-      pendingBillOverride.current = pending;
-    } else if (pending.command.roomId !== snapshot.roomId
-      || (expectedRevision != null && pending.command.expectedRevision !== expectedRevision)) return;
-
-    setIsApplyingBillOverride(true);
-    setBillOverrideError(undefined);
-    try {
-      const result = await billRepository.applyOverrides(pending.command, pending.rosterMemberUids);
-      if (activeBillRoomId.current === pending.command.roomId) {
-        pendingBillOverride.current = null;
-        const latest = latestBillRevision.current;
-        const resultRevision = result.billRevision ?? 0;
-        if (acceptsBillProgress(result, latest)) {
-          latestBillRevision.current = { roomId: pending.command.roomId, revision: resultRevision, paidCount: result.billPaidCount ?? 0 };
-          setCommittedBill(result);
-          setPublishedBillState({ kind: 'published', bill: result });
-        }
-      }
-    } catch (error) {
-      if (activeBillRoomId.current === pending.command.roomId) setBillOverrideError(billPublishErrorMessage(error));
-      if (activeBillRoomId.current === pending.command.roomId
-        && error instanceof BillRepositoryError && error.code !== 'unavailable') {
-        pendingBillOverride.current = null;
-      }
-    } finally {
-      if (activeBillRoomId.current === pending.command.roomId) setIsApplyingBillOverride(false);
-    }
-  };
-
-  const handleMarkPayment = async (memberUid?: string, publicationRequestId?: string, expectedRevision?: number) => {
-    const snapshot = groupSummarySnapshot;
-    const host = snapshot?.members.find(member => member.uid === profile.uid);
-    if (!snapshot || activeBillRoomId.current !== snapshot.roomId || host?.role !== 'HOST' || host.status !== 'ACTIVE'
-      || snapshot.reconciliationStatus !== 'FINALIZED' || !groupIsOnline || isMarkingPayment
-      || pendingBillOverride.current || isApplyingBillOverride) return;
-    let command = pendingPayment.current;
-    if (!command) {
-      if (!memberUid || !publicationRequestId || expectedRevision == null) return;
-      command = { version: 1, requestId: Crypto.randomUUID(), roomId: snapshot.roomId, memberUid,
-        targetStatus: 'MARKED_AS_PAID', publicationRequestId, expectedRevision };
-      pendingPayment.current = command;
-    } else if (command.roomId !== snapshot.roomId || (memberUid && command.memberUid !== memberUid)) return;
-    const pending = command;
-    setIsMarkingPayment(true);
-    setPaymentError(undefined);
-    try {
-      await paymentStatusRepository.markPaid(pending, groupIsOnline);
-      if (activeBillRoomId.current === pending.roomId && pendingPayment.current?.requestId === pending.requestId) {
-        // Chỉ subscription xác nhận trạng thái hiển thị; receipt không tự nâng UI thành paid.
-        setBillListenerRevision(revision => revision + 1);
-      }
-    } catch (error) {
-      if (activeBillRoomId.current !== pending.roomId || pendingPayment.current?.requestId !== pending.requestId) return;
-      const code = error instanceof PaymentStatusError ? error.code : 'unavailable';
-      setPaymentError(code === 'unavailable' ? 'Could not confirm the result. Reconnect and retry the saved request.'
-        : code === 'failed-precondition' || code === 'already-exists' ? 'The bill or payment status changed. Refresh and review it before confirming again.'
-          : code === 'permission-denied' ? 'Payment confirmation was denied. Check the Host role and deployed Firestore Rules.'
-            : 'The payment could not be confirmed. Refresh the bill and try again.');
-      if (code !== 'unavailable') {
-        pendingPayment.current = null;
-        setBillListenerRevision(revision => revision + 1);
-      }
-    } finally {
-      if (activeBillRoomId.current === pending.roomId) setIsMarkingPayment(false);
-    }
-  };
+  useGroupSessionRuntime({
+    snapshot: groupCaptureRoomSnapshot,
+    userId: profile.uid,
+    repository: groupViolationRepository,
+    backgroundRecovery,
+    feedbackService,
+    lifecycleCutoffs: groupLifecycleCutoffs,
+    captureWork: groupCaptureWork,
+    setDetection: setGroupDetection,
+    setOnline: setGroupIsOnline,
+    setSyncPendingCount: setGroupSyncPendingCount,
+    setSyncMessage: setGroupSyncMessage,
+  });
 
   const openSettings = () => {
     if (currentScreen !== '17-settings') settingsReturnScreen.current = currentScreen;
@@ -1896,26 +676,26 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
                   avatarUri: member.avatarUri, premiumExpiresAtUtcMs: member.uid === profile.uid
                     ? profile.premiumExpiresAtUtcMs : member.premiumExpiresAtUtcMs }))}
               state={billScreenState}
-              pendingPaymentMemberUid={pendingPayment.current?.memberUid}
-              isMarkingPayment={isMarkingPayment}
-              paymentError={paymentError}
-              onMarkPaid={(uid, publicationId, revision) => { void handleMarkPayment(uid, publicationId, revision); }}
-              onRetryPayment={() => { void handleMarkPayment(); }}
+              pendingPaymentMemberUid={billActions.pendingPayment.current?.memberUid}
+              isMarkingPayment={billActions.isMarkingPayment}
+              paymentError={billActions.paymentError}
+              onMarkPaid={(uid, publicationId, revision) => { void billActions.handleMarkPayment(uid, publicationId, revision); }}
+              onRetryPayment={() => { void billActions.handleMarkPayment(); }}
               actorUid={profile.uid}
               onPayShare={() => setCurrentScreen('08-vietqr-settlement')}
               isOnline={groupIsOnline}
-              isPublishing={isPublishingBill}
-              pendingTotalVnd={pendingBillCommand.current?.command.totalBillVnd}
-              pendingShareOverrides={pendingBillCommand.current?.command.shareOverrides}
-              isApplyingOverride={isApplyingBillOverride}
-              hasPendingOverride={pendingBillOverride.current != null}
-              publishError={billPublishError}
-              overrideError={billOverrideError}
-              onPublish={(amount, overrides, evidencePath) => { void handlePublishBill(amount, overrides, evidencePath); }}
-              onApplyOverrides={(overrides, revision) => { void handleApplyBillOverrides(overrides, revision); }}
-              onRetry={() => { void handleRetryPublishedBill(); }}
-              onRetryPublish={() => { void handlePublishBill(); }}
-              onRetryOverride={() => { void handleApplyBillOverrides(); }}
+              isPublishing={billActions.isPublishingBill}
+              pendingTotalVnd={billActions.pendingBillCommand.current?.command.totalBillVnd}
+              pendingShareOverrides={billActions.pendingBillCommand.current?.command.shareOverrides}
+              isApplyingOverride={billActions.isApplyingBillOverride}
+              hasPendingOverride={billActions.pendingBillOverride.current != null}
+              publishError={billActions.billPublishError}
+              overrideError={billActions.billOverrideError}
+              onPublish={(amount, overrides, evidencePath) => { void billActions.handlePublishBill(amount, overrides, evidencePath); }}
+              onApplyOverrides={(overrides, revision) => { void billActions.handleApplyBillOverrides(overrides, revision); }}
+              onRetry={() => { void billActions.handleRetryPublishedBill(); }}
+              onRetryPublish={() => { void billActions.handlePublishBill(); }}
+              onRetryOverride={() => { void billActions.handleApplyBillOverrides(); }}
               onBack={() => setCurrentScreen('13-group-summary')}
             />
           ) : <Text accessibilityRole="alert">Waiting for finalized room scores…</Text>
@@ -2005,58 +785,54 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
             currentUserId={profile.uid}
             currentUserPremiumExpiresAtUtcMs={profile.premiumExpiresAtUtcMs}
             onOpenHistory={() => { setGroupHistoryInitialRoomId(undefined); setCurrentScreen('15-group-history'); }}
-            recentSessions={recentGroupSessions}
-            recentMemberPreviews={recentGroupMemberPreviews}
-            recentSessionsState={recentSessionsState}
-            actionableSessions={actionableGroupSessions}
-            actionableSessionsState={actionableSessionsState}
-            actionableErrorMessage={actionableErrorMessage}
-            actionableHasMore={actionableHasMore}
-            isLoadingMoreActionable={isLoadingMoreActionable}
+            recentSessions={lobbyDashboard.recentSessions}
+            recentMemberPreviews={lobbyDashboard.recentMemberPreviews}
+            recentSessionsState={lobbyDashboard.recentSessionsState}
+            actionableSessions={lobbyDashboard.actionableSessions}
+            actionableSessionsState={lobbyDashboard.actionableSessionsState}
+            actionableErrorMessage={lobbyDashboard.actionableErrorMessage}
+            actionableHasMore={lobbyDashboard.actionableHasMore}
+            isLoadingMoreActionable={lobbyDashboard.isLoadingMoreActionable}
             onOpenRecentSession={roomId => { setGroupHistoryInitialRoomId(roomId); setCurrentScreen('15-group-history'); }}
-            onRetryRecentSessions={() => { void loadRecentGroupSessions(); }}
+            onRetryRecentSessions={() => { void lobbyDashboard.loadRecentSessions(); }}
             onOpenActionableSession={item => { void openActionableGroupSession(item); }}
-            onRetryActionableSessions={() => { void loadActionableGroupSessions(); }}
-            onLoadMoreActionableSessions={() => { void loadMoreActionableGroupSessions(); }}
+            onRetryActionableSessions={() => { void lobbyDashboard.loadActionableSessions(); }}
+            onLoadMoreActionableSessions={() => { void lobbyDashboard.loadMoreActionableSessions(); }}
             room={lobbyRoom ? {
               roomId: lobbyRoom.roomId, pin: lobbyRoom.pin, invitation: lobbyRoom.invitation,
               hostUid: lobbyRoom.hostUid,
               createdAt: 'createdAt' in lobbyRoom ? lobbyRoom.createdAt : lobbyRoom.roomCreatedAt,
               localCacheSaved: lobbyRoom.localCacheSaved,
             } : null}
-            isCreating={isCreatingRoom}
-            errorMessage={roomCreateError}
-            onCancelCreate={cancelRoomCreateAndJoin}
+            isCreating={roomEntry.isCreatingRoom}
+            errorMessage={roomEntry.roomCreateError}
+            onCancelCreate={roomEntry.cancelRoomCreateAndJoin}
             lobbyState={roomLobbyState}
             isHost={lobbyRoom?.hostUid === profile.uid}
-            isStarting={isStartingRoom}
-            isLeaving={isLeavingRoom}
-            leaveError={roomLeaveError}
-            onLeaveRoom={confirmLeaveLobby}
-            onRemoveMember={confirmRemoveLobbyMember}
-            removingMemberUid={removingMemberUid}
-            removeError={roomRemoveError}
-            startError={roomStartError}
-            onStartRoom={() => { void handleStartRoom(); }}
-            onCreateRoom={() => { void handleCreateRoom(); }}
-            onJoinRoom={() => {
-              setJoinedRoom(null);
-              setRoomLeaveError(undefined);
-              setRoomRemoveError(undefined);
-              setRoomJoinError(undefined);
-              pendingRoomJoinCommand.current = null;
-              setCurrentScreen('12-join-room');
-            }}
+            isStarting={roomStart.isStartingRoom}
+            isLeaving={lobbyMembership.isLeaving}
+            leaveError={lobbyMembership.leaveError}
+            onLeaveRoom={lobbyMembership.confirmLeave}
+            onRemoveMember={lobbyMembership.confirmRemoveMember}
+            removingMemberUid={lobbyMembership.removingMemberUid}
+            removeError={lobbyMembership.removeError}
+            startError={roomStart.roomStartError}
+            onStartRoom={() => { void roomStart.startRoom(); }}
+            onCreateRoom={() => { void roomEntry.handleCreateRoom(); }}
+            onJoinRoom={() => roomEntry.openJoinRoom(() => {
+              lobbyMembership.clearLeaveError();
+              lobbyMembership.clearRemoveError();
+            })}
           />
         )}
 
         {currentScreen === '12-join-room' && (
           <JoinRoomScreen
             result={joinedRoom}
-            isJoining={isJoiningRoom}
-            errorMessage={roomJoinError}
-            onJoin={(pin) => { void handleJoinRoom(pin); }}
-            onCancel={cancelRoomJoin}
+            isJoining={roomEntry.isJoiningRoom}
+            errorMessage={roomEntry.roomJoinError}
+            onJoin={(pin) => { void roomEntry.handleJoinRoom(pin); }}
+            onCancel={roomEntry.cancelRoomJoin}
             onOpenLobby={() => { setCurrentScreen('05-group-lobby'); }}
           />
         )}
@@ -2067,15 +843,15 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
                 detection={groupDetection} isOnline={groupIsOnline} syncMessage={groupSyncMessage}
                 pendingSyncCount={groupSyncPendingCount}
                 actorUid={profile.uid} currentUserPremiumExpiresAtUtcMs={profile.premiumExpiresAtUtcMs} openEarlyExitRequests={openEarlyExitRequests}
-                isRequestingEarlyExit={isRequestingEarlyExit} decidingEarlyExit={decidingEarlyExit}
-                earlyExitError={earlyExitError} onRequestEarlyExit={() => { void handleRequestEarlyExit(); }}
-                onDecideEarlyExit={(request, decision) => { void handleDecideEarlyExit(request, decision); }}
-                terminationVoteState={terminationVoteState} isOpeningTerminationVote={isOpeningTerminationVote}
-                isCastingTerminationVote={isCastingTerminationVote} terminationVoteError={terminationVoteError}
-                onOpenTerminationVote={() => { void handleOpenTerminationVote(); }}
-                onCastTerminationVote={choice => { void handleCastTerminationVote(choice); }}
-                isCompletingRoom={isCompletingRoom} completionError={roomCompletionError}
-                onCompleteRoom={() => { void handleCompleteRoom(); }} />
+                isRequestingEarlyExit={votingActions.isRequestingEarlyExit} decidingEarlyExit={votingActions.decidingEarlyExit}
+                earlyExitError={votingActions.earlyExitError} onRequestEarlyExit={() => { void votingActions.handleRequestEarlyExit(); }}
+                onDecideEarlyExit={(request, decision) => { void votingActions.handleDecideEarlyExit(request, decision); }}
+                terminationVoteState={terminationVoteState} isOpeningTerminationVote={votingActions.isOpeningTerminationVote}
+                isCastingTerminationVote={votingActions.isCastingTerminationVote} terminationVoteError={votingActions.terminationVoteError}
+                onOpenTerminationVote={() => { void votingActions.handleOpenTerminationVote(); }}
+                onCastTerminationVote={choice => { void votingActions.handleCastTerminationVote(choice); }}
+                isCompletingRoom={roomCompletion.isCompletingRoom} completionError={roomCompletion.roomCompletionError}
+                onCompleteRoom={() => { void roomCompletion.handleCompleteRoom(); }} />
             : <Text accessibilityRole="alert">Waiting for the active room snapshot…</Text>
         )}
 
@@ -2083,12 +859,12 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
           groupSummarySnapshot
             ? <GroupSummaryScreen snapshot={groupSummarySnapshot} actorUid={profile.uid}
                 currentUserPremiumExpiresAtUtcMs={profile.premiumExpiresAtUtcMs}
-                isOnline={groupIsOnline} isSyncing={isAcknowledgingRoom}
-                isFinalizingOverride={isFinalizingRoomOverride}
-                errorMessage={roomAcknowledgmentError}
-                overrideErrorMessage={roomOverrideError}
-                onSyncAndAcknowledge={() => { void handleAcknowledgeRoomSync(); }}
-                onFinalizeWithOverride={uids => { void handleFinalizeRoomOverride(uids); }}
+                isOnline={groupIsOnline} isSyncing={roomCompletion.isAcknowledgingRoom}
+                isFinalizingOverride={roomCompletion.isFinalizingRoomOverride}
+                errorMessage={roomCompletion.roomAcknowledgmentError}
+                overrideErrorMessage={roomCompletion.roomOverrideError}
+                onSyncAndAcknowledge={() => { void roomCompletion.handleAcknowledgeRoomSync(); }}
+                onFinalizeWithOverride={uids => { void roomCompletion.handleFinalizeRoomOverride(uids); }}
                 billState={billScreenState}
                 onOpenBillAllocation={() => setCurrentScreen('07-bill-allocation')}
                 onOpenSettlementDetails={() => {

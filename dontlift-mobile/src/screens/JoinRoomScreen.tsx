@@ -8,12 +8,15 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  type TextInputInstance,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/theme';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { RoomQrScanner } from '../components/RoomQrScanner';
+import { RoomPinInput } from '../features/rooms/components/RoomPinInput';
+import { JoinedRoomCard } from '../features/rooms/components/JoinedRoomCard';
 import { parseRoomInvitation } from '../features/rooms/room-invite-parser';
 import type { JoinedRoom } from '../features/rooms/room-repository';
 
@@ -34,21 +37,7 @@ export function JoinRoomScreen({
   onCancel,
   onOpenLobby,
 }: JoinRoomScreenProps) {
-  const colors = {
-    ...Colors.light,
-    authFormSurface: Colors.light.authFormSurface ?? 'rgba(255, 255, 255, 0.42)',
-    glassSurface: Colors.light.glassSurface ?? 'rgba(255, 255, 255, 0.58)',
-    glassBorder: Colors.light.glassBorder ?? 'rgba(255, 255, 255, 0.88)',
-    inputSurface: Colors.light.inputSurface ?? 'rgba(255, 255, 255, 0.66)',
-    backgroundElement: Colors.light.backgroundElement ?? '#F3F4F6',
-    backgroundSelected: Colors.light.backgroundSelected ?? '#EFF6FF',
-    glassShadow: Colors.light.glassShadow ?? 'rgba(37, 74, 153, 0.12)',
-    success: Colors.light.success ?? '#059669',
-    successSurface: Colors.light.successSurface ?? '#DCFCE7',
-    error: Colors.light.error ?? '#B42318',
-    textSecondary: Colors.light.textSecondary ?? '#64748B',
-    border: Colors.light.border ?? '#C3C6D7',
-  };
+  const colors = Colors.light;
 
   const [pin, setPin] = useState('');
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -57,7 +46,7 @@ export function JoinRoomScreen({
   const [cameraDeniedPermanently, setCameraDeniedPermanently] = useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const scannedRef = useRef(false);
-  const textInputRef = useRef<TextInput>(null);
+  const textInputRef = useRef<TextInputInstance>(null);
 
   const openScanner = async () => {
     setScanError(undefined);
@@ -98,12 +87,6 @@ export function JoinRoomScreen({
   };
 
   const isPinValid = pin.length === 4 || pin.length === 8;
-
-  const formattedPinResult = result?.pin
-    ? result.pin.length === 8
-      ? `${result.pin.slice(0, 4)} ${result.pin.slice(4)}`
-      : result.pin
-    : '';
 
   return (
     <View style={styles.container}>
@@ -202,42 +185,7 @@ export function JoinRoomScreen({
 
       {/* Main Content Area */}
       {result ? (
-        /* Joined Room Result View */
-        <View style={styles.resultCard}>
-          <View style={styles.successBadge}>
-            <Ionicons name="checkmark-circle" size={16} color={colors.success} />
-            <Text style={styles.successBadgeText}>ROOM READY</Text>
-          </View>
-
-          <View style={styles.pinDisplayBox}>
-            <Text style={styles.pinBoxLabel}>ROOM PIN</Text>
-            <Text selectable style={styles.pinValue}>
-              {formattedPinResult}
-            </Text>
-            <View style={styles.rosterPill}>
-              <Ionicons name="people" size={15} color={colors.primary} />
-              <Text style={styles.rosterText}>
-                Members: {result.participantCount}
-              </Text>
-            </View>
-          </View>
-
-          <PrimaryButton
-            title="Open Lobby"
-            icon={<Ionicons name="enter-outline" size={18} color="#FFFFFF" />}
-            onPress={onOpenLobby ?? onCancel}
-            style={styles.startCallToAction}
-          />
-
-          {!result.localCacheSaved ? (
-            <View style={styles.warningBanner} accessibilityRole="alert">
-              <Ionicons name="information-circle-outline" size={16} color={colors.textSecondary} />
-              <Text style={styles.warningBannerText}>
-                You joined, but the room could not be saved on this device. Enter the PIN again to retry.
-              </Text>
-            </View>
-          ) : null}
-        </View>
+        <JoinedRoomCard result={result} onOpenLobby={onOpenLobby ?? onCancel} />
       ) : isScannerOpen ? (
         /* Scanner Mode */
         <View style={styles.scannerCard}>
@@ -253,7 +201,6 @@ export function JoinRoomScreen({
           <PrimaryButton
             title="Close Scanner · Enter PIN"
             variant="secondary"
-            // icon={<Ionicons name="keypad-outline" size={18} color={colors.primary} />}
             onPress={() => {
               scannedRef.current = true;
               setScannerOpen(false);
@@ -284,106 +231,17 @@ export function JoinRoomScreen({
             ) : null}
           </View>
 
-          {/* Interactive PIN Digits Display */}
-          <Pressable
-            accessibilityRole="none"
-            onPress={() => textInputRef.current?.focus()}
-            style={styles.pinDisplayContainer}
-          >
-            <View style={styles.digitsRow}>
-              {/* First 4 digits */}
-              <View style={styles.digitGroup}>
-                {[0, 1, 2, 3].map((idx) => {
-                  const char = pin[idx];
-                  const isActive = isInputFocused && idx === pin.length;
-                  return (
-                    <View
-                      key={idx}
-                      style={[
-                        styles.digitSlot,
-                        char ? styles.digitSlotFilled : null,
-                        isActive ? styles.digitSlotActive : null,
-                      ]}
-                    >
-                      <Text style={[styles.digitChar, char ? styles.digitCharFilled : null]}>
-                        {char || (isActive ? '|' : '•')}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
-
-              <View style={styles.digitSeparator}>
-                <View style={styles.separatorBar} />
-              </View>
-
-              {/* Second 4 digits */}
-              <View style={styles.digitGroup}>
-                {[4, 5, 6, 7].map((idx) => {
-                  const char = pin[idx];
-                  const isActive = isInputFocused && idx === pin.length;
-                  return (
-                    <View
-                      key={idx}
-                      style={[
-                        styles.digitSlot,
-                        char ? styles.digitSlotFilled : null,
-                        isActive ? styles.digitSlotActive : null,
-                      ]}
-                    >
-                      <Text style={[styles.digitChar, char ? styles.digitCharFilled : null]}>
-                        {char || (isActive ? '|' : '•')}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
-
-            {/* Native TextInput overlayed for touch & keyboard accessibility */}
-            <TextInput
-              ref={textInputRef}
-              accessibilityLabel="Room PIN"
-              accessibilityHint="Enter an 8-digit PIN. Older 4-digit PINs are also accepted."
-              autoComplete="off"
-              autoCorrect={false}
-              keyboardType="number-pad"
-              maxLength={8}
-              onChangeText={(value) => setPin(value.replace(/\D/g, '').slice(0, 8))}
-              placeholder="Enter PIN"
-              placeholderTextColor="transparent"
-              returnKeyType="done"
-              style={styles.realHiddenInput}
-              value={pin}
-              editable={!isJoining}
-              onSubmitEditing={() => {
-                if (pin.length === 4 || pin.length === 8) onJoin(pin);
-              }}
-              onFocus={() => setIsInputFocused(true)}
-              onBlur={() => setIsInputFocused(false)}
-            />
-          </Pressable>
-
-          {/* Validation Status Indicator */}
-          <View style={styles.statusRow}>
-            {pin.length === 8 ? (
-              <View style={styles.statusBadgeSuccess}>
-                <Ionicons name="checkmark-circle" size={14} color={colors.success} />
-                <Text style={styles.statusTextSuccess}>8-digit PIN · Ready</Text>
-              </View>
-            ) : pin.length === 4 ? (
-              <View style={styles.statusBadgeInfo}>
-                <Ionicons name="checkmark-circle" size={14} color={colors.primary} />
-                <Text style={styles.statusTextInfo}>Legacy 4-digit PIN · Ready</Text>
-              </View>
-            ) : pin.length > 0 ? (
-              <Text style={styles.counterText}>{pin.length}/8 digits entered</Text>
-            ) : (
-              <Text style={styles.hintSubtext}>
-                Use the host’s 8-digit PIN or an older 4-digit PIN
-              </Text>
-            )}
-          </View>
+          <RoomPinInput
+            pin={pin}
+            inputRef={textInputRef}
+            isFocused={isInputFocused}
+            disabled={isJoining}
+            onChange={setPin}
+            onFocusChange={setIsInputFocused}
+            onSubmit={() => {
+              if (pin.length === 4 || pin.length === 8) onJoin(pin);
+            }}
+          />
 
           {/* Primary Action Button */}
           {isJoining ? (
@@ -600,124 +458,6 @@ const styles = StyleSheet.create({
     color: Colors.light.textSecondary,
   },
 
-  /* PIN Display & Slots */
-  pinDisplayContainer: {
-    position: 'relative',
-    paddingVertical: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  digitsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  digitGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  digitSlot: {
-    width: 32,
-    height: 46,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: Colors.light.border,
-    backgroundColor: Colors.light.inputSurface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  digitSlotFilled: {
-    borderColor: Colors.light.primary,
-    backgroundColor: Colors.light.backgroundSelected,
-  },
-  digitSlotActive: {
-    borderColor: Colors.light.primary,
-    borderWidth: 2,
-    backgroundColor: '#FFFFFF',
-    shadowColor: Colors.light.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  digitChar: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: Colors.light.border,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    fontVariant: ['tabular-nums'],
-    textAlign: 'center',
-  },
-  digitCharFilled: {
-    color: Colors.light.primary,
-    fontWeight: '900',
-  },
-  digitSeparator: {
-    paddingHorizontal: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  separatorBar: {
-    width: 6,
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: Colors.light.border,
-  },
-
-  /* Hidden native input overlay */
-  realHiddenInput: {
-    ...StyleSheet.absoluteFill,
-    opacity: 0.01,
-    color: 'transparent',
-  },
-
-  /* Status Row */
-  statusRow: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 22,
-  },
-  statusBadgeSuccess: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: Colors.light.successSurface,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 999,
-  },
-  statusTextSuccess: {
-    color: Colors.light.success,
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  statusBadgeInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: Colors.light.backgroundSelected,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 999,
-  },
-  statusTextInfo: {
-    color: Colors.light.primary,
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  counterText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.light.textSecondary,
-    fontVariant: ['tabular-nums'],
-  },
-  hintSubtext: {
-    fontSize: 12,
-    color: Colors.light.textSecondary,
-  },
-
   /* CTA Button - Matches Solo startCallToAction */
   startCallToAction: {
     height: 54,
@@ -778,93 +518,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 24,
     elevation: 4,
-  },
-
-  /* Joined Room Result View */
-  resultCard: {
-    borderRadius: 28,
-    padding: 22,
-    borderWidth: 1,
-    borderColor: Colors.light.glassBorder,
-    backgroundColor: Colors.light.authFormSurface,
-    alignItems: 'center',
-    gap: 16,
-    shadowColor: Colors.light.glassShadow,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.1,
-    shadowRadius: 24,
-    elevation: 4,
-  },
-  successBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: Colors.light.successSurface,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 999,
-  },
-  successBadgeText: {
-    color: Colors.light.success,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  pinDisplayBox: {
-    width: '100%',
-    alignItems: 'center',
-    backgroundColor: Colors.light.inputSurface,
-    paddingVertical: 18,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    gap: 8,
-  },
-  pinBoxLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1,
-    color: Colors.light.textSecondary,
-  },
-  pinValue: {
-    fontSize: 30,
-    lineHeight: 36,
-    fontWeight: '900',
-    color: Colors.light.primary,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    fontVariant: ['tabular-nums'],
-    letterSpacing: 4,
-  },
-  rosterPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: Colors.light.backgroundSelected,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 999,
-    marginTop: 2,
-  },
-  rosterText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Colors.light.primary,
-  },
-  warningBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(100, 116, 139, 0.08)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-  },
-  warningBannerText: {
-    flex: 1,
-    color: Colors.light.textSecondary,
-    fontSize: 11,
-    lineHeight: 16,
   },
 
   /* Error Banners */

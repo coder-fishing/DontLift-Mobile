@@ -1,10 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { Ionicons } from "@expo/vector-icons";
 import {
   ActivityIndicator,
-  FlatList,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -13,87 +11,22 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { Image } from "expo-image";
 import { GlassCard } from "../components/GlassCard";
 import { PrimaryButton } from "../components/PrimaryButton";
 import { BottomTabInset, Colors } from "../constants/theme";
-import type {
-  SettlementDetails,
-  SettlementDetailsError,
-  SettlementDetailsInput,
-} from "../features/settlement/settlement-details-repository";
-import type { BankOption } from "../features/settlement/bank-directory";
-
-type Repository = {
-  read: (roomId: string) => Promise<SettlementDetails | null>;
-  save: (
-    input: SettlementDetailsInput,
-  ) => Promise<{ version: 1; roomId: string; expiresAtUtcMs: number }>;
-};
+import { BankLogo, BankPickerModal } from "../features/settlement/components/BankPickerModal";
+import { useSettlementDetailsForm, getSettlementFieldError, type SettlementDetailsFields, type SettlementDetailsRepositoryPort, type BankDirectoryPort } from "../features/settlement/use-settlement-details-form";
+import type { SettlementDetails } from "../features/settlement/settlement-details-repository";
 
 type Props = {
   roomId: string;
   mode: "host" | "member";
-  repository: Repository;
+  repository: SettlementDetailsRepositoryPort;
   onSaved: (details: SettlementDetails) => void;
   onContinueToBill?: () => void;
   onBack: () => void;
-  bankDirectory: { list: () => Promise<BankOption[]> };
+  bankDirectory: BankDirectoryPort;
 };
-
-type Fields = Pick<
-  SettlementDetailsInput,
-  "bankId" | "accountNumber" | "accountName"
->;
-const EMPTY_FIELDS: Fields = { bankId: "", accountNumber: "", accountName: "" };
-
-function BankLogo({ bank }: { bank: BankOption }) {
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    setFailed(false);
-  }, [bank.bin, bank.logo]);
-  return (
-    <View style={styles.bankLogo}>
-      {bank.logo && !failed ? (
-        <Image
-          source={{ uri: bank.logo }}
-          contentFit="contain"
-          transition={120}
-          style={styles.bankLogoImage}
-          accessibilityIgnoresInvertColors
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        <Text style={styles.bankLogoFallback}>
-          {bank.shortName.slice(0, 3).toUpperCase()}
-        </Text>
-      )}
-    </View>
-  );
-}
-
-function fieldError(key: keyof Fields, value: string): string | undefined {
-  const trimmed = value.trim();
-  const limit = key === "bankId" ? 32 : key === "accountNumber" ? 64 : 100;
-  if (!trimmed) return "This field is required.";
-  if (trimmed.length > limit) return `Use ${limit} characters or fewer.`;
-  return undefined;
-}
-
-function saveErrorMessage(error: unknown): string {
-  const code =
-    error && typeof error === "object" && "code" in error
-      ? (error as SettlementDetailsError).code
-      : undefined;
-  if (code === "permission-denied")
-    return "Only the Host can save details after scores are finalized.";
-  if (code === "failed-precondition")
-    return "Settlement details unlock after the room scores are finalized.";
-  if (code === "invalid-argument") return "Check the fields and try again.";
-  if (code === "unauthenticated")
-    return "Your sign-in expired. Sign in again and retry.";
-  return "Could not save to Firebase. Reconnect and retry; no offline write was queued.";
-}
 
 export function SettlementDetailsScreen({
   roomId,
@@ -104,119 +37,27 @@ export function SettlementDetailsScreen({
   onBack,
   bankDirectory,
 }: Props) {
-  const [fields, setFields] = useState<Fields>(EMPTY_FIELDS);
-  const [details, setDetails] = useState<SettlementDetails | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [loadError, setLoadError] = useState(false);
-  const [saveError, setSaveError] = useState<string>();
-  const [touched, setTouched] = useState<
-    Partial<Record<keyof Fields, boolean>>
-  >({});
-  const [banks, setBanks] = useState<BankOption[]>([]);
-  const [bankLoading, setBankLoading] = useState(false);
-  const [bankError, setBankError] = useState(false);
-  const [bankPickerVisible, setBankPickerVisible] = useState(false);
-  const [bankSearch, setBankSearch] = useState("");
-  const [selectedBank, setSelectedBank] = useState<BankOption | null>(null);
-  const [manualBankEntry, setManualBankEntry] = useState(false);
-  const isDirty = details
-    ? fields.bankId.trim() !== details.bankId ||
-      fields.accountNumber.trim() !== details.accountNumber ||
-      fields.accountName.trim() !== details.accountName
-    : Boolean(fields.bankId.trim() || fields.accountNumber.trim() || fields.accountName.trim());
-  const canContinueWithoutSaving = Boolean(details && !isDirty && onContinueToBill);
-
-  useEffect(() => {
-    if (!fields.bankId) {
-      setSelectedBank(null);
-      return;
-    }
-    const match = banks.find((bank) => bank.bin === fields.bankId);
-    setSelectedBank(match ?? null);
-  }, [banks, fields.bankId]);
-
-  const loadBanks = async () => {
-    setBankLoading(true);
-    setBankError(false);
-    try {
-      setBanks(await bankDirectory.list());
-    } catch {
-      setBankError(true);
-    } finally {
-      setBankLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    let active = true;
-    setLoading(true);
-    setLoadError(false);
-    void repository
-      .read(roomId)
-      .then((value) => {
-        if (!active) return;
-        setDetails(value);
-        if (value) {
-          setFields({
-            bankId: value.bankId,
-            accountNumber: value.accountNumber,
-            accountName: value.accountName,
-          });
-          setSelectedBank(null);
-        }
-        if (value && /^\d{6}$/.test(value.bankId)) void loadBanks();
-      })
-      .catch(() => {
-        if (active) setLoadError(true);
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [mode, repository, roomId]);
-
-  const change = (key: keyof Fields, value: string) => {
-    setFields((current) => ({ ...current, [key]: value }));
-    setSaveError(undefined);
-  };
-  const submit = async () => {
-    const errors = (Object.keys(fields) as (keyof Fields)[]).map((key) =>
-      fieldError(key, fields[key]),
-    );
-    setTouched({ bankId: true, accountNumber: true, accountName: true });
-    if (errors.some(Boolean) || saving) return;
-    setSaving(true);
-    setSaveError(undefined);
-    try {
-      const result = await repository.save({ roomId, ...fields });
-      const saved: SettlementDetails = {
-        version: 1,
-        roomId,
-        bankId: fields.bankId.trim(),
-        accountNumber: fields.accountNumber.trim(),
-        accountName: fields.accountName.trim(),
-        updatedAtUtcMs: null,
-        expiresAtUtcMs: result.expiresAtUtcMs,
-      };
-      setDetails(saved);
-      onSaved(saved);
-    } catch (error) {
-      setSaveError(saveErrorMessage(error));
-    } finally {
-      setSaving(false);
-    }
-  };
+  const {
+    fields, details, loading, saving, loadError, saveError, touched,
+    banks, bankLoading, bankError, bankPickerVisible, bankSearch, selectedBank, manualBankEntry,
+    setBankPickerVisible, setBankSearch, setSelectedBank, setManualBankEntry, setTouched,
+    canContinueWithoutSaving, loadBanks, change, submit,
+  } = useSettlementDetailsForm({
+    roomId,
+    mode,
+    repository,
+    bankDirectory,
+    onSaved,
+    hasContinueAction: Boolean(onContinueToBill),
+  });
 
   const field = (
-    key: keyof Fields,
+    key: keyof SettlementDetailsFields,
     label: string,
     hint: string,
     keyboardType: "default" | "number-pad" = "default",
   ) => {
-    const error = touched[key] ? fieldError(key, fields[key]) : undefined;
+    const error = touched[key] ? getSettlementFieldError(key, fields[key]) : undefined;
     return (
       <View style={styles.field} key={key}>
         <Text style={styles.label}>{label}</Text>
@@ -396,97 +237,26 @@ export function SettlementDetailsScreen({
                         </Text>
                       </Pressable>
                     ) : null}
-                    <Modal
+                    <BankPickerModal
                       visible={bankPickerVisible}
-                      animationType="slide"
-                      onRequestClose={() => setBankPickerVisible(false)}
-                    >
-                      <View style={styles.modal}>
-                        <Text style={styles.eyebrow}>ROOM SETTLEMENT</Text>
-                        <Text style={styles.title}>Choose a bank</Text>
-                        <TextInput
-                          accessibilityLabel="Search banks"
-                          value={bankSearch}
-                          onChangeText={setBankSearch}
-                          placeholder="Search by bank name or code"
-                          placeholderTextColor={Colors.light.textSecondary}
-                          style={styles.input}
-                        />
-                        <FlatList
-                          style={styles.bankList}
-                          data={banks.filter((bank) =>
-                            `${bank.name} ${bank.shortName} ${bank.code} ${bank.bin}`
-                              .toLocaleLowerCase()
-                              .includes(bankSearch.trim().toLocaleLowerCase()),
-                          )}
-                          keyExtractor={(item) => item.bin}
-                          keyboardShouldPersistTaps="handled"
-                          renderItem={({ item }) => (
-                            <Pressable
-                              accessibilityRole="button"
-                              accessibilityLabel={`${item.shortName}, ${item.name}`}
-                              accessibilityState={{
-                                selected: selectedBank?.bin === item.bin,
-                              }}
-                              onPress={() => {
-                                setManualBankEntry(false);
-                                change("bankId", item.bin);
-                                setBankPickerVisible(false);
-                              }}
-                              style={styles.bankRow}
-                            >
-                              <BankLogo bank={item} />
-                              <View style={styles.bankRowText}>
-                                <Text
-                                  numberOfLines={1}
-                                  ellipsizeMode="tail"
-                                  style={styles.bankValue}
-                                >
-                                  {item.shortName}
-                                </Text>
-                                <Text
-                                  numberOfLines={1}
-                                  ellipsizeMode="tail"
-                                  style={styles.bankMeta}
-                                >
-                                  {item.name}
-                                </Text>
-                              </View>
-                            </Pressable>
-                          )}
-                          ListEmptyComponent={
-                            <Text style={styles.empty}>
-                              {bankLoading
-                                ? "Loading banks…"
-                                : "No matching banks."}
-                            </Text>
-                          }
-                        />
-                        <Pressable
-                          accessibilityRole="button"
-                          accessibilityLabel="Enter bank manually"
-                          onPress={() => {
-                            setManualBankEntry(true);
-                            setSelectedBank(null);
-                            change("bankId", "");
-                            setBankPickerVisible(false);
-                          }}
-                          style={styles.manualPickerAction}
-                        >
-                          <Text style={styles.manualToggleText}>Enter bank manually</Text>
-                          <Text style={styles.manualPickerHint}>
-                            Use a bank name or identifier not listed here
-                          </Text>
-                        </Pressable>
-                        <Pressable
-                          accessibilityRole="button"
-                          onPress={() => setBankPickerVisible(false)}
-                          style={styles.closePicker}
-                        >
-                          <Text style={styles.backText}>Close</Text>
-                        </Pressable>
-                      </View>
-                    </Modal>
+                      banks={banks}
+                      loading={bankLoading}
+                      selectedBank={selectedBank}
+                      search={bankSearch}
+                      onSearchChange={setBankSearch}
+                      onSelect={item => {
+                        setManualBankEntry(false);
+                        change("bankId", item.bin);
+                        setBankPickerVisible(false);
+                      }}
+                      onManualEntry={() => {
+                        setManualBankEntry(true);
+                        setSelectedBank(null);
+                        change("bankId", "");
+                        setBankPickerVisible(false);
+                      }}
+                      onClose={() => setBankPickerVisible(false)}
+                    />
                   </View>
                 ) : (
                   field("bankId", "Bank", "Bank name or identifier")
@@ -630,23 +400,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   bankMeta: { color: Colors.light.textSecondary, fontSize: 12, lineHeight: 16 },
-  modal: {
-    flex: 1,
-    padding: 20,
-    paddingTop: Platform.OS === "android" ? 32 : 56,
-    gap: 12,
-    backgroundColor: Colors.light.background,
-  },
-  bankList: { flex: 1 },
-  bankRow: {
-    minHeight: 72,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.light.border,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    paddingVertical: 10,
-  },
   bankSelector: {
     minHeight: 68,
     borderWidth: 1,
@@ -666,17 +419,6 @@ const styles = StyleSheet.create({
     lineHeight: 30,
     paddingLeft: 4,
   },
-  bankLogo: {
-    width: 48,
-    height: 48,
-    borderRadius: 13,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    backgroundColor: Colors.light.background,
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-  },
   bankLogoPlaceholder: {
     width: 48,
     height: 48,
@@ -687,7 +429,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  bankLogoImage: { width: 44, height: 44 },
   bankLogoFallback: {
     color: Colors.light.primary,
     fontSize: 10,

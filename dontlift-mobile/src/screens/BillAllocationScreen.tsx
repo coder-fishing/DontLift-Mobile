@@ -1,27 +1,23 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, FlatList, Image, Keyboard, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, useColorScheme, View,
+  ActivityIndicator, Alert, FlatList, Keyboard, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, useColorScheme, View,
   type ImageSourcePropType,
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
 import { GlassCard } from '../components/GlassCard';
-import { PremiumAvatar } from '../components/PremiumAvatar';
 import { BottomTabInset, Colors } from '../constants/theme';
 import { formatVND } from '../constants';
-import { calculateBillSharesWithOverrides, calculateDefaultBillShares, type BillShareOverride } from '../features/settlement/bill-allocation';
-import { AiBillScanCard } from '../features/settlement/components/AiBillScanCard';
+import type { BillShareOverride } from '../features/settlement/bill-allocation';
+import { InitialBillSplitCard } from '../features/settlement/components/InitialBillSplitCard';
+import { BillShareListRow, shareLabel, type BillAllocationMember } from '../features/settlement/components/BillShareListRow';
+import { BillAllocationFooter } from '../features/settlement/components/BillAllocationFooter';
+import type { OverrideDraft } from '../features/settlement/components/OverrideMemberEditor';
+import { useReceiptEvidence } from '../features/settlement/use-receipt-evidence';
+import { useBillAllocationPreview } from '../features/settlement/use-bill-allocation-preview';
 import type { ReceiptScanResult } from '../features/settlement/receipt-scan-api';
 import type { BillShare } from '../features/settlement/bill-repository';
 import type { PublishedBillState } from '../features/settlement/published-bill-listener';
 
-export type BillAllocationMember = { uid: string; displayName: string; penaltyScore: number; avatarUri?: string; premiumExpiresAtUtcMs?: number | null };
-
-function MemberAvatar({ member, colors }: { member?: BillAllocationMember; colors: typeof Colors.light | typeof Colors.dark }) {
-  const initials = shareLabel(member).trim().split(/\s+/).slice(0, 2).map(part => part[0]?.toUpperCase() ?? '').join('') || '?';
-  return <PremiumAvatar displayName={shareLabel(member)} imageUri={member?.avatarUri} premiumExpiresAtUtcMs={member?.premiumExpiresAtUtcMs}
-    initials={initials} size={46} backgroundColor={colors.backgroundSelected} fallbackColor={colors.primary}
-    borderColor={colors.border} style={styles.memberAvatar} textStyle={styles.memberAvatarInitials} />;
-}
+export type { BillAllocationMember } from '../features/settlement/components/BillShareListRow';
 
 type Props = {
   actorUid?: string;
@@ -57,69 +53,6 @@ type Props = {
   onBack: () => void;
 };
 
-function shareLabel(member: BillAllocationMember | undefined): string {
-  return member?.displayName.trim() || 'Participant';
-}
-
-type OverrideDraft = { type: BillShareOverride['type']; value: string };
-
-function OverrideMemberEditor({
-  member, currentShareVnd, draft, colors, disabled, onDraftChange,
-}: {
-  member: BillAllocationMember;
-  currentShareVnd: number;
-  draft?: OverrideDraft;
-  colors: typeof Colors.light | typeof Colors.dark;
-  disabled: boolean;
-  onDraftChange: (value: OverrideDraft | null) => void;
-}) {
-  const name = shareLabel(member);
-  return (
-    <View style={[styles.overrideRow, { borderTopColor: colors.border }]}>
-      <View style={styles.overrideRowHeading}>
-        <View style={styles.memberInfo}>
-          <Text style={[styles.memberName, { color: colors.text }]} numberOfLines={2}>{name}</Text>
-          <Text style={[styles.helper, { color: colors.textSecondary }]}>Current share · {formatVND(currentShareVnd)} VND</Text>
-        </View>
-        <Pressable accessibilityRole="button" accessibilityLabel={`${draft ? 'Remove custom amount for' : 'Set custom amount for'} ${name}`}
-          accessibilityState={{ checked: Boolean(draft), disabled }} disabled={disabled}
-          onPress={() => onDraftChange(draft ? null : { type: 'FIXED_VND', value: '' })}
-          style={({ pressed }) => [styles.rowToggle, { borderColor: colors.border }, pressed && styles.pressed, disabled && styles.disabled]}>
-          <Text style={[styles.rowToggleText, { color: colors.primary }]}>{draft ? 'Use default' : 'Customize'}</Text>
-        </Pressable>
-      </View>
-      {draft ? (
-        <View style={styles.overrideInputs}>
-          <View style={styles.overrideTypes}>
-            {(['FIXED_VND', 'PERCENT_BPS'] as const).map(type => (
-              <Pressable key={type} accessibilityRole="button" accessibilityState={{ selected: draft.type === type, disabled }}
-                accessibilityLabel={type === 'FIXED_VND' ? `Set fixed VND for ${name}` : `Set percentage for ${name}`}
-                disabled={disabled} onPress={() => onDraftChange({ ...draft, type })}
-                style={({ pressed }) => [styles.typeButton,
-                  { backgroundColor: draft.type === type ? colors.primary : colors.inputSurface,
-                    borderColor: draft.type === type ? colors.primary : colors.border }, pressed && styles.pressed, disabled && styles.disabled]}>
-                <Text style={[styles.typeButtonText, { color: draft.type === type ? colors.onPrimary : colors.textSecondary }]}>
-                  {type === 'FIXED_VND' ? 'Fixed VND' : 'Percent'}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-          <View style={[styles.inputWrap, { borderColor: colors.border, backgroundColor: colors.inputSurface }]}>
-            <Text accessibilityElementsHidden style={[styles.currency, { color: colors.textSecondary }]}>{draft.type === 'FIXED_VND' ? '₫' : '%'}</Text>
-            <TextInput accessibilityLabel={`${draft.type === 'FIXED_VND' ? 'Fixed VND amount' : 'Bill percentage'} for ${name}`}
-              accessibilityHint={draft.type === 'FIXED_VND' ? 'Whole Vietnamese dong.' : 'Zero to one hundred percent, up to two decimal places.'}
-              editable={!disabled} keyboardType={draft.type === 'FIXED_VND' ? 'number-pad' : 'decimal-pad'}
-              returnKeyType="done" value={draft.value}
-              onChangeText={value => onDraftChange({ ...draft, value: value.replace(draft.type === 'FIXED_VND' ? /[^\d]/g : /[^\d.]/g, '') })}
-              onSubmitEditing={Keyboard.dismiss} placeholder={draft.type === 'FIXED_VND' ? 'e.g. 150000' : 'e.g. 25.00'}
-              placeholderTextColor={colors.textSecondary} style={[styles.input, { color: colors.text }]} />
-          </View>
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
 export function BillAllocationScreen({
   roomId, mode, members, state, isOnline, isPublishing, pendingTotalVnd, pendingShareOverrides, actorUid, onPayShare,
   isApplyingOverride = false, hasPendingOverride = false, publishError, overrideError,
@@ -135,17 +68,6 @@ export function BillAllocationScreen({
     (pendingShareOverrides ?? []).filter(item => item.type === 'PERCENT_BPS').map(item => [item.uid, (item.value / 100).toFixed(2).replace(/\.00$/, '')]),
   ));
   const [submitted, setSubmitted] = useState(false);
-  const [isScanningReceipt, setIsScanningReceipt] = useState(false);
-  const [receiptPreviewUri, setReceiptPreviewUri] = useState<string>();
-  const [receiptPreviewMimeType, setReceiptPreviewMimeType] = useState<string>();
-  const [receiptEvidencePath, setReceiptEvidencePath] = useState<string>();
-  const [isSavingReceiptEvidence, setIsSavingReceiptEvidence] = useState(false);
-  const [receiptEvidenceError, setReceiptEvidenceError] = useState<string>();
-  const [receiptEvidenceImageSource, setReceiptEvidenceImageSource] = useState<ImageSourcePropType>();
-  const [receiptEvidenceImageError, setReceiptEvidenceImageError] = useState(false);
-  const [receiptScanResult, setReceiptScanResult] = useState<ReceiptScanResult | null>(null);
-  const [receiptScanError, setReceiptScanError] = useState<string>();
-  const receiptScanBusy = useRef(false);
   const [overrideEditingRequested, setIsEditingOverrides] = useState(false);
   const [overrideDrafts, setOverrideDrafts] = useState<Record<string, { type: BillShareOverride['type']; value: string }>>({});
   const billListRef = useRef<FlatList<BillShare>>(null);
@@ -153,40 +75,6 @@ export function BillAllocationScreen({
   const host = mode === 'host';
   const parsedTotal = pendingTotalVnd ?? (billInput ? Number(billInput.replace(/\D/g, '')) : 0);
   const validTotal = Number.isSafeInteger(parsedTotal) && parsedTotal >= 1_000;
-  const customOrder = useMemo(() => [...members].sort((left, right) => left.penaltyScore - right.penaltyScore
-    || left.displayName.localeCompare(right.displayName) || left.uid.localeCompare(right.uid)), [members]);
-  const initialPercentOverrides = useMemo(() => {
-    if (initialSplitMode !== 'CUSTOM_PERCENT') return { entries: undefined as BillShareOverride[] | undefined, error: undefined as string | undefined, totalBps: 0 };
-    const entries: BillShareOverride[] = [];
-    let totalBps = 0;
-    for (const member of members) {
-      const raw = (initialPercentDrafts[member.uid] ?? '').trim();
-      if (!raw || !/^\d{1,3}(?:\.\d{1,2})?$/.test(raw)) return { entries: undefined, error: 'Enter a percentage for every member (0–100, up to 2 decimals).', totalBps };
-      const value = Math.round(Number(raw) * 100);
-      if (value > 10_000) return { entries: undefined, error: 'A member percentage cannot exceed 100%.', totalBps };
-      totalBps += value;
-      entries.push({ uid: member.uid, type: 'PERCENT_BPS', value });
-    }
-    if (totalBps !== 10_000) return { entries: undefined, error: `Percentages must total 100% (currently ${(totalBps / 100).toFixed(2)}%).`, totalBps };
-    return { entries, error: undefined, totalBps };
-  }, [initialSplitMode, initialPercentDrafts, members]);
-  const preview = useMemo(() => {
-    if (!host || !validTotal || members.length === 0) return null;
-    try {
-      if (initialSplitMode === 'CUSTOM_PERCENT') {
-        if (!initialPercentOverrides.entries) return null;
-        return calculateBillSharesWithOverrides(parsedTotal, members, initialPercentOverrides.entries);
-      }
-      return calculateDefaultBillShares(parsedTotal, members);
-    } catch {
-      return null;
-    }
-  }, [host, validTotal, parsedTotal, members, initialSplitMode, initialPercentOverrides]);
-  const customInputRows = useMemo(() => customOrder.map((member, index) => ({
-    uid: member.uid,
-    shareVnd: preview?.shares.find(share => share.uid === member.uid)?.shareVnd ?? 0,
-    rank: index + 1,
-  })), [customOrder, preview]);
   const bringPercentInputIntoView = (uid: string) => {
     const index = customOrder.findIndex(member => member.uid === uid);
     if (index < 0) return;
@@ -202,56 +90,42 @@ export function BillAllocationScreen({
     } else Keyboard.dismiss();
   };
   const confirmedBill = state.bill ?? null;
-  useEffect(() => {
-    let active = true;
-    const path = confirmedBill?.receiptEvidencePath;
-    setReceiptEvidenceImageSource(undefined);
-    setReceiptEvidenceImageError(false);
-    if (!path || !getReceiptEvidenceImageSource) return () => { active = false; };
-    void getReceiptEvidenceImageSource(roomId, path).then(source => {
-      if (active) setReceiptEvidenceImageSource(source);
-    }).catch(() => {
-      if (active) setReceiptEvidenceImageError(true);
-    });
-    return () => { active = false; };
-  }, [roomId, confirmedBill?.receiptEvidencePath, getReceiptEvidenceImageSource]);
+  const receipt = useReceiptEvidence({
+    roomId,
+    confirmedEvidencePath: confirmedBill?.receiptEvidencePath,
+    onScanReceipt,
+    onUploadReceiptEvidence,
+    onDeleteReceiptEvidence,
+    getReceiptEvidenceImageSource,
+    setBillInput,
+    setSubmitted,
+  });
   const paidLocked = (confirmedBill?.billPaidCount ?? 0) > 0;
   const canOverride = host && confirmedBill != null && !paidLocked && state.kind === 'published'
     && !pendingPaymentMemberUid && !isMarkingPayment;
   // Thanh toán trên thiết bị khác có thể khóa bill ngay khi Host đang sửa; hiển thị lại các hành động thanh toán.
   const isEditingOverrides = canOverride && overrideEditingRequested;
-  const parsedOverrides = useMemo(() => {
-    const overrides: BillShareOverride[] = [];
-    for (const [uid, draft] of Object.entries(overrideDrafts)) {
-      const raw = draft.value.trim();
-      if (!raw) return { entries: null, message: 'Enter a value for each custom amount.' };
-      let value: number;
-      if (draft.type === 'PERCENT_BPS') {
-        if (!/^\d{1,3}(?:\.\d{1,2})?$/.test(raw)) return { entries: null, message: 'Use a percentage from 0 to 100, with up to two decimal places.' };
-        value = Math.round(Number(raw) * 100);
-        if (value > 10_000) return { entries: null, message: 'A member percentage cannot be greater than 100%.' };
-      } else {
-        if (!/^\d+$/.test(raw)) return { entries: null, message: 'Enter a whole VND amount.' };
-        value = Number(raw);
-        if (!Number.isSafeInteger(value)) return { entries: null, message: 'The VND amount is too large.' };
-      }
-      overrides.push({ uid, type: draft.type, value });
-    }
-    return { entries: overrides, message: undefined };
-  }, [overrideDrafts]);
-  const overridePreview = useMemo(() => {
-    if (!canOverride || !isEditingOverrides || parsedOverrides.entries === null) return null;
-    if (parsedOverrides.entries.length === 0) return confirmedBill;
-    try {
-      return calculateBillSharesWithOverrides(confirmedBill.totalBillVnd, members, parsedOverrides.entries);
-    } catch {
-      return null;
-    }
-  }, [canOverride, confirmedBill, isEditingOverrides, members, parsedOverrides]);
-  const overrideTotalMismatch = Boolean(isEditingOverrides && parsedOverrides.entries?.length
-    && !overridePreview && !parsedOverrides.message);
-  const displayedShares: readonly BillShare[] = canOverride && isEditingOverrides && overridePreview
-    ? overridePreview.shares : confirmedBill?.shares ?? preview?.shares ?? [];
+  const {
+    customInputRows,
+    customOrder,
+    displayedShares,
+    initialPercentOverrides,
+    overridePreview,
+    overrideTotalMismatch,
+    parsedOverrides,
+    preview,
+  } = useBillAllocationPreview({
+    members,
+    host,
+    validTotal,
+    parsedTotal,
+    initialSplitMode,
+    initialPercentDrafts,
+    overrideDrafts,
+    confirmedBill,
+    canOverride,
+    isEditingOverrides,
+  });
   const membersByUid = useMemo(() => new Map(members.map(member => [member.uid, member])), [members]);
   const payableShares = confirmedBill?.shares.filter(share => share.shareVnd > 0) ?? [];
   const paidShares = payableShares.filter(share => share.paymentStatus === 'MARKED_AS_PAID');
@@ -267,98 +141,8 @@ export function BillAllocationScreen({
         onPress: () => onMarkPaid(share.uid, publication, revision) }]);
   };
 
-  const scanReceiptAsset = async (asset: ImagePicker.ImagePickerAsset | undefined) => {
-    if (!asset || receiptScanBusy.current) return;
-    const extension = asset.fileName?.split('.').pop()?.toLowerCase();
-    const mimeType = asset.mimeType ?? (extension === 'png' ? 'image/png' : extension === 'webp' ? 'image/webp'
-      : extension === 'jpg' || extension === 'jpeg' ? 'image/jpeg' : undefined);
-    if (!mimeType || !['image/jpeg', 'image/png', 'image/webp'].includes(mimeType)) {
-      setReceiptScanError('This photo format is not supported. Choose a JPEG, PNG, or WebP image.');
-      return;
-    }
-    if (asset.fileSize != null && asset.fileSize > 10 * 1024 * 1024) {
-      setReceiptScanError('Choose an image smaller than 10 MB.');
-      return;
-    }
-    if (receiptEvidencePath) void onDeleteReceiptEvidence?.(roomId, receiptEvidencePath).catch(() => undefined);
-    setReceiptEvidencePath(undefined);
-    setReceiptEvidenceError(undefined);
-    receiptScanBusy.current = true;
-    setReceiptPreviewUri(asset.uri);
-    setReceiptPreviewMimeType(mimeType);
-    setIsScanningReceipt(true);
-    setReceiptScanError(undefined);
-    setReceiptScanResult(null);
-    try {
-      if (!onScanReceipt) throw new Error('Receipt scanning is not available. Enter the amount manually.');
-      setReceiptScanResult(await onScanReceipt(roomId, asset.uri, mimeType));
-    } catch (error) {
-      setReceiptScanError(error instanceof Error ? error.message : 'Could not scan this receipt. Enter the amount manually.');
-    } finally {
-      receiptScanBusy.current = false;
-      setIsScanningReceipt(false);
-    }
-  };
-
-  const acceptReceiptAmount = async (amount: number) => {
-    if (!receiptPreviewUri || !receiptPreviewMimeType) {
-      setReceiptEvidenceError('The receipt image is no longer available. Select it again to save evidence.');
-      return;
-    }
-    setIsSavingReceiptEvidence(true);
-    setReceiptEvidenceError(undefined);
-    try {
-      if (!onUploadReceiptEvidence) throw new Error('Receipt evidence storage is not configured.');
-      const path = await onUploadReceiptEvidence(roomId, receiptPreviewUri, receiptPreviewMimeType);
-      setReceiptEvidencePath(path);
-      setBillInput(String(amount));
-      setSubmitted(false);
-      setReceiptScanResult(null);
-      setReceiptPreviewUri(undefined);
-      setReceiptPreviewMimeType(undefined);
-    } catch (error) {
-      setReceiptEvidenceError(error instanceof Error ? error.message : 'Could not save receipt evidence. Retry or continue without evidence.');
-    } finally {
-      setIsSavingReceiptEvidence(false);
-    }
-  };
-
-  const continueWithoutReceiptEvidence = () => {
-    setBillInput(String(receiptScanResult?.suggested_amount ?? receiptScanResult?.amount ?? ''));
-    setSubmitted(false);
-    setReceiptScanResult(null);
-    setReceiptPreviewUri(undefined);
-    setReceiptPreviewMimeType(undefined);
-    setReceiptEvidenceError(undefined);
-  };
-
-  const captureReceipt = async () => {
-    setReceiptScanError(undefined);
-    try {
-      const permission = await ImagePicker.requestCameraPermissionsAsync();
-      if (!permission.granted) {
-        setReceiptScanError('Allow camera access in Settings to take a receipt photo. You can also choose a photo.');
-        return;
-      }
-      const picked = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.9 });
-      if (!picked.canceled) await scanReceiptAsset(picked.assets?.[0]);
-    } catch {
-      setReceiptScanError('Could not open the camera. Check camera access or choose a photo instead.');
-    }
-  };
-
-  const selectReceipt = async () => {
-    setReceiptScanError(undefined);
-    try {
-      const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 });
-      if (!picked.canceled) await scanReceiptAsset(picked.assets?.[0]);
-    } catch {
-      setReceiptScanError('Could not open your photo library. Check photo access and retry.');
-    }
-  };
-
   const requestPublish = () => {
-    if (!preview || !isOnline || isPublishing || isSavingReceiptEvidence) return;
+    if (!preview || !isOnline || isPublishing || receipt.isSavingEvidence) return;
     Keyboard.dismiss();
     Alert.alert(
       'Publish this bill split?',
@@ -366,14 +150,14 @@ export function BillAllocationScreen({
       [
         { text: 'Review again', style: 'cancel' },
         { text: 'Publish once', onPress: () => onPublish(preview.totalBillVnd,
-          initialSplitMode === 'CUSTOM_PERCENT' ? initialPercentOverrides.entries : undefined, receiptEvidencePath) },
+          initialSplitMode === 'CUSTOM_PERCENT' ? initialPercentOverrides.entries : undefined, receipt.evidencePath) },
       ],
     );
   };
 
   const leaveAllocation = () => {
-    if (!confirmedBill && pendingTotalVnd == null && !isPublishing && receiptEvidencePath) {
-      void onDeleteReceiptEvidence?.(roomId, receiptEvidencePath).catch(() => undefined);
+    if (!confirmedBill && pendingTotalVnd == null && !isPublishing && receipt.evidencePath) {
+      receipt.deleteEvidence(receipt.evidencePath);
     }
     onBack();
   };
@@ -474,76 +258,35 @@ export function BillAllocationScreen({
           ) : host && paymentError ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.error }]}>{paymentError}</Text> : null}
 
           {host && !confirmedBill ? (
-            <GlassCard style={[styles.entryCard, { backgroundColor: colors.authFormSurface, borderColor: colors.glassBorder, shadowColor: colors.glassShadow }]}>
-              <AiBillScanCard
-                colors={colors}
-                isPremium={isPremium}
-                isScanning={isScanningReceipt}
-                isSavingEvidence={isSavingReceiptEvidence}
-                hasSavedEvidence={receiptEvidencePath != null}
-                previewUri={receiptPreviewUri}
-                scanError={receiptScanError}
-                evidenceError={receiptEvidenceError}
-                result={receiptScanResult}
-                onCapture={() => { void captureReceipt(); }}
-                onSelectPhoto={() => { void selectReceipt(); }}
-                onOpenPremium={onOpenPremium}
-                onConfirm={amount => { void acceptReceiptAmount(amount); }}
-                onReject={() => {
-                  if (receiptEvidencePath) void onDeleteReceiptEvidence?.(roomId, receiptEvidencePath).catch(() => undefined);
-                  setReceiptEvidencePath(undefined); setReceiptEvidenceError(undefined); setReceiptScanResult(null);
-                  setReceiptPreviewUri(undefined); setReceiptPreviewMimeType(undefined);
-                }}
-                onContinueWithoutEvidence={continueWithoutReceiptEvidence}
-              />
-              <View style={[styles.sectionDivider, { backgroundColor: colors.border }]} />
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Bill total</Text>
-              <Text style={[styles.helper, { color: colors.textSecondary }]}>Minimum 1,000 VND.</Text>
-              <View style={[styles.inputWrap,
-                { borderColor: submitted && !validTotal ? colors.error : colors.border, backgroundColor: colors.inputSurface },
-                submitted && !validTotal && styles.inputInvalid]}>
-                <Text accessibilityElementsHidden style={[styles.currency, { color: colors.textSecondary }]}>₫</Text>
-                <TextInput
-                  accessibilityLabel="Total bill amount in Vietnamese dong"
-                  accessibilityHint="Enter a whole number of dong, at least 1,000. A preview appears below."
-                  editable={!isPublishing && pendingTotalVnd == null}
-                  keyboardType="number-pad"
-                  returnKeyType="done"
-                  selectTextOnFocus
-                  value={pendingTotalVnd == null ? billInput : String(pendingTotalVnd)}
-                  onChangeText={value => setBillInput(value.replace(/\D/g, ''))}
-                  onSubmitEditing={Keyboard.dismiss}
-                  onBlur={() => setSubmitted(true)}
-                  placeholder="e.g. 450000"
-                  placeholderTextColor={colors.textSecondary}
-                  style={[styles.input, { color: colors.text }]}
-                />
-              </View>
-              {submitted && !validTotal ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.error }]}>Enter a whole amount of at least 1,000 VND.</Text> : null}
-              {pendingTotalVnd != null ? <Text style={[styles.helper, { color: colors.textSecondary }]}>Retrying the same request so a delayed commit cannot publish twice.</Text> : null}
-              <View style={[styles.sectionDivider, { backgroundColor: colors.border }]} />
-              <View style={styles.splitMethod}>
-                <View style={styles.splitMethodHeader}>
-                  <Text style={[styles.sectionTitle, { color: colors.text }]}>Split method</Text>
-                  <View style={[styles.methodOptions, { backgroundColor: colors.backgroundElement }]}>
-                    {(['ROOM_SCORE', 'CUSTOM_PERCENT'] as const).map(method => {
-                      const selected = initialSplitMode === method;
-                      return <Pressable key={method} accessibilityRole="button" accessibilityLabel={method === 'ROOM_SCORE' ? 'Split by room score' : 'Enter custom percentages'}
-                        accessibilityState={{ selected }} disabled={pendingTotalVnd != null || isPublishing} onPress={() => setInitialSplitMode(method)}
-                        style={[styles.methodOption, { backgroundColor: selected ? '#2563EB' : 'transparent' }]}>
-                        <Text style={[styles.methodTagText, { color: selected ? '#FFFFFF' : '#334155' }]}>{method === 'ROOM_SCORE' ? 'Room score' : 'Custom %'}</Text>
-                      </Pressable>;
-                    })}
-                  </View>
-                </View>
-                <Text style={[styles.helper, { color: colors.textSecondary }]}>{initialSplitMode === 'ROOM_SCORE'
-                  ? 'Calculated from finalized room scores. You can adjust shares after publishing, before anyone is marked paid.'
-                  : 'Set each member’s share. Percentages must add up to exactly 100%.'}</Text>
-                {initialSplitMode === 'CUSTOM_PERCENT' ? <Text style={[styles.percentTotal, { color: initialPercentOverrides.totalBps === 10_000 ? colors.success : colors.textSecondary }]}>Total {(initialPercentOverrides.totalBps / 100).toFixed(2)}% / 100%</Text> : null}
-                {initialSplitMode === 'CUSTOM_PERCENT' && initialPercentOverrides.error ? <Text accessibilityRole="alert" style={[styles.helper, { color: colors.error }]}>{initialPercentOverrides.error}</Text> : null}
-              </View>
-            </GlassCard>
-          ) : null}
+            <InitialBillSplitCard
+              colors={colors}
+              isPremium={isPremium}
+              isScanning={receipt.isScanning}
+              isSavingEvidence={receipt.isSavingEvidence}
+              hasSavedEvidence={receipt.evidencePath != null}
+              previewUri={receipt.previewUri}
+              scanError={receipt.scanError}
+              evidenceError={receipt.evidenceError}
+              scanResult={receipt.scanResult}
+              onCapture={() => { void receipt.captureReceipt(); }}
+              onSelectPhoto={() => { void receipt.selectReceipt(); }}
+              onOpenPremium={onOpenPremium}
+              onConfirmReceipt={amount => { void receipt.acceptAmount(amount); }}
+              onRejectReceipt={receipt.rejectReceipt}
+              onContinueWithoutEvidence={receipt.continueWithoutEvidence}
+              isPublishing={isPublishing}
+              pendingTotalVnd={pendingTotalVnd}
+              billInput={billInput}
+              onBillInputChange={value => setBillInput(value.replace(/\D/g, ''))}
+              submitted={submitted}
+              validTotal={validTotal}
+              onSubmit={() => Keyboard.dismiss()}
+              onBlur={() => setSubmitted(true)}
+              splitMode={initialSplitMode}
+              onSplitModeChange={setInitialSplitMode}
+              percentTotalBps={initialPercentOverrides.totalBps}
+              percentError={initialPercentOverrides.error}
+            />          ) : null}
 
           {stateCopy ? (
             <GlassCard style={[styles.stateCard, { backgroundColor: colors.authFormSurface, borderColor: colors.glassBorder, shadowColor: colors.glassShadow }]}>
@@ -635,119 +378,68 @@ export function BillAllocationScreen({
       )}
       renderItem={({ item }) => {
         const member = membersByUid.get(item.uid);
+        const percentIndex = customOrder.findIndex(candidate => candidate.uid === item.uid);
+        const customPercentRow = host && !confirmedBill && initialSplitMode === 'CUSTOM_PERCENT';
         return (
-          <View>
-            <View style={[styles.shareRow, { borderBottomColor: colors.border }]}>
-              {host && !confirmedBill && initialSplitMode === 'CUSTOM_PERCENT'
-                ? <View style={[styles.rankBadge, { backgroundColor: colors.primary }]}><Text style={styles.rankNumber}>{String(customInputRows.find(row => row.uid === item.uid)?.rank ?? 0)}</Text></View>
-                : null}
-              <MemberAvatar member={member} colors={colors} />
-              <View style={styles.memberInfo}>
-                <Text style={[styles.memberName, { color: colors.text }]} numberOfLines={2}>{shareLabel(member)}</Text>
-                {host && !confirmedBill && initialSplitMode === 'CUSTOM_PERCENT' ? (
-                  <View style={[styles.percentInputWrap, { borderColor: colors.border, backgroundColor: colors.inputSurface }]}>
-                    <TextInput ref={input => { percentInputRefs.current[item.uid] = input; }} accessibilityLabel={`Bill percentage for ${shareLabel(member)}`} keyboardType="decimal-pad"
-                      returnKeyType={customOrder.findIndex(candidate => candidate.uid === item.uid) < customOrder.length - 1 ? 'next' : 'done'}
-                      blurOnSubmit={false} onFocus={() => bringPercentInputIntoView(item.uid)}
-                      onSubmitEditing={() => focusNextPercentInput(item.uid)}
-                      editable={!isPublishing && pendingTotalVnd == null} value={initialPercentDrafts[item.uid] ?? ''}
-                      onChangeText={value => setInitialPercentDrafts(current => ({ ...current, [item.uid]: value.replace(/[^\d.]/g, '') }))}
-                      placeholder="0" placeholderTextColor={colors.textSecondary} style={[styles.percentInput, { color: colors.text }]} />
-                    <Text style={[styles.percentSuffix, { color: colors.textSecondary }]}>%</Text>
-                  </View>
-                ) : null}
-                {confirmedBill ? <Text style={[styles.helper, { color: item.paymentStatus === 'MARKED_AS_PAID' ? colors.primary : colors.textSecondary }]}>
-                  {item.shareVnd === 0 ? 'No payment due' : item.paymentStatus === 'MARKED_AS_PAID'
-                    ? `Paid · Host confirmed${state.kind !== 'published' ? ' (saved copy)' : ''}` : 'Awaiting Host confirmation'}
-                </Text> : null}
-              </View>
-              <Text accessibilityLabel={host && !confirmedBill && initialSplitMode === 'CUSTOM_PERCENT' && !preview
-                ? `Share amount for ${shareLabel(member)} not calculated until percentages total 100 percent`
-                : `${shareLabel(member)} pays ${formatVND(item.shareVnd)} Vietnamese dong`}
-                style={[styles.shareAmount, { color: colors.text }]}>{host && !confirmedBill && initialSplitMode === 'CUSTOM_PERCENT' && !preview ? '— VND' : `${formatVND(item.shareVnd)} VND`}</Text>
-            </View>
-            {host && confirmedBill && !isEditingOverrides && item.shareVnd > 0
-              && item.paymentStatus !== 'MARKED_AS_PAID' && onMarkPaid ? (
-              <Pressable accessibilityRole="button" accessibilityLabel={`Mark ${shareLabel(member)} as paid`}
-                disabled={paymentDisabled} accessibilityState={{ disabled: paymentDisabled }}
-                onPress={() => requestMarkPaid(item)} style={({ pressed }) => [styles.markPaidButton,
-                  { borderColor: colors.border }, pressed && styles.pressed, paymentDisabled && styles.disabled]}>
-                <Text style={[styles.secondaryButtonText, { color: colors.primary }]}>Mark as paid</Text>
-              </Pressable>
-            ) : null}
-            {canOverride && isEditingOverrides && member ? (
-              <OverrideMemberEditor member={member} currentShareVnd={item.shareVnd} draft={overrideDrafts[item.uid]}
-                colors={colors} disabled={isApplyingOverride || hasPendingOverride}
-                onDraftChange={value => setOverrideDrafts(current => {
-                  const next = { ...current };
-                  if (value) next[item.uid] = value;
-                  else delete next[item.uid];
-                  return next;
-                })} />
-            ) : null}
-          </View>
+          <BillShareListRow
+            item={item}
+            member={member}
+            colors={colors}
+            showRank={customPercentRow}
+            rank={customInputRows.find(row => row.uid === item.uid)?.rank ?? 0}
+            showPercentInput={customPercentRow}
+            percentValue={initialPercentDrafts[item.uid] ?? ''}
+            inputRef={input => { percentInputRefs.current[item.uid] = input; }}
+            percentReturnKey={percentIndex < customOrder.length - 1 ? 'next' : 'done'}
+            percentEditable={!isPublishing && pendingTotalVnd == null}
+            onPercentChange={value => setInitialPercentDrafts(current => ({ ...current, [item.uid]: value.replace(/[^\d.]/g, '') }))}
+            onPercentFocus={() => bringPercentInputIntoView(item.uid)}
+            onPercentSubmit={() => focusNextPercentInput(item.uid)}
+            showPaymentStatus={Boolean(confirmedBill)}
+            hasSavedPaymentState={state.kind !== 'published'}
+            showUncalculatedAmount={customPercentRow && !preview}
+            showMarkPaid={Boolean(host && confirmedBill && !isEditingOverrides && item.shareVnd > 0
+              && item.paymentStatus !== 'MARKED_AS_PAID' && onMarkPaid)}
+            paymentDisabled={paymentDisabled}
+            onMarkPaid={() => requestMarkPaid(item)}
+            showOverrideEditor={Boolean(canOverride && isEditingOverrides && member)}
+            isApplyingOverride={isApplyingOverride}
+            hasPendingOverride={hasPendingOverride}
+            overrideDraft={overrideDrafts[item.uid]}
+            onOverrideDraftChange={value => setOverrideDrafts(current => {
+              const next = { ...current };
+              if (value) next[item.uid] = value;
+              else delete next[item.uid];
+              return next;
+            })}
+          />
         );
-      }}
-      ListEmptyComponent={host && validTotal
+      }}      ListEmptyComponent={host && validTotal
         ? <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No room members are available for this calculation.</Text>
         : undefined}
       ListFooterComponent={(
-        <View style={styles.footer}>
-          {confirmedBill && !isEditingOverrides && onPayShare && confirmedBill.shares.some(share => share.uid === actorUid) ? (
-            <Pressable accessibilityRole="button" accessibilityLabel="View VietQR for your published share"
-              disabled={!isOnline || state.kind !== 'published' || hasPendingOverride || isApplyingOverride}
-              accessibilityState={{ disabled: !isOnline || state.kind !== 'published' || hasPendingOverride || isApplyingOverride }}
-              onPress={onPayShare} style={({ pressed }) => [styles.publishButton,
-                { backgroundColor: colors.backgroundSelected, borderColor: colors.primary, borderWidth: 1 },
-                pressed && styles.pressed,
-                (!isOnline || state.kind !== 'published' || hasPendingOverride || isApplyingOverride) && styles.disabled]}>
-              <Text style={[styles.publishText, { color: colors.primary }]}>{confirmedBill.shares.find(share => share.uid === actorUid)?.paymentStatus === 'MARKED_AS_PAID'
-                ? 'View payment confirmation' : 'Pay your share'}</Text>
-            </Pressable>
-          ) : null}
-          {confirmedBill ? (
-            <GlassCard style={[styles.publishedCard, { backgroundColor: colors.authFormSurface, borderColor: colors.glassBorder, shadowColor: colors.glassShadow }]}>
-              <Text style={[styles.publishedTitle, { color: colors.primary }]}>{state.kind === 'published' ? 'Published to this room' : 'Saved copy'}</Text>
-              <Text style={[styles.helper, { color: colors.textSecondary }]}>
-                {state.kind === 'published'
-                  ? 'The Host calculated this breakdown on their device from the finalized scores. Members can review it until payment details expire.'
-                  : 'These amounts were confirmed earlier. Reconnect or retry to check the current room bill.'}
-              </Text>
-              {confirmedBill.receiptEvidencePath ? (
-                <View style={styles.receiptEvidence}>
-                  <Text style={[styles.sectionTitle, { color: colors.text }]}>Receipt evidence</Text>
-                  {receiptEvidenceImageSource ? <Image accessibilityLabel="Receipt evidence for this bill"
-                    source={receiptEvidenceImageSource} resizeMode="contain" style={[styles.receiptEvidenceImage, { backgroundColor: colors.backgroundElement }]} />
-                    : receiptEvidenceImageError ? <Text style={[styles.helper, { color: colors.error }]}>Could not load the receipt image. Reconnect and reopen this bill.</Text>
-                      : <ActivityIndicator accessibilityLabel="Loading receipt evidence" color={colors.primary} />}
-                </View>
-              ) : null}
-            </GlassCard>
-          ) : null}
-          {host && !confirmedBill ? (
-            <>
-              {publishError ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.error }]}>{publishError}</Text> : null}
-              {!isOnline ? <Text style={[styles.helper, { color: colors.textSecondary }]}>Connect to the internet to publish. The request is never queued offline.</Text> : null}
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={pendingTotalVnd == null ? 'Publish bill shares once' : 'Retry publishing the same bill request'}
-                accessibilityState={{ disabled: !preview || !isOnline || isPublishing || isSavingReceiptEvidence }}
-                disabled={!preview || !isOnline || isPublishing || isSavingReceiptEvidence}
-                onPress={pendingTotalVnd == null ? requestPublish : onRetryPublish}
-                style={[styles.publishButton, {
-                  backgroundColor: preview && isOnline ? '#2563EB' : '#DBEAFE',
-                  borderColor: preview && isOnline ? '#1D4ED8' : '#93C5FD',
-                }]}
-              >
-                {isPublishing ? <ActivityIndicator color={preview && isOnline ? '#FFFFFF' : '#1D4ED8'} /> : null}
-                <Text style={[styles.publishText, { color: preview && isOnline ? '#FFFFFF' : '#1D4ED8' }]}>{isPublishing ? 'Publishing…' : pendingTotalVnd == null ? 'Publish shares once' : 'Retry publish'}</Text>
-              </Pressable>
-              <Text style={[styles.oneTimeNote, { color: colors.textSecondary }]}>Check the preview before publishing. The Host can adjust the split until the first payment is marked.</Text>
-            </>
-          ) : null}
-          {host && !confirmedBill ? <Text style={[styles.authorityNote, { color: colors.textSecondary }]}>Rules authorize the Host and room state. They do not verify the calculation or prove that every member was included.</Text> : null}
-          {confirmedBill ? <Text style={[styles.roomReference, { color: colors.textSecondary }]}>Room · {roomId.slice(0, 8).toUpperCase()}</Text> : null}
-        </View>
+        <BillAllocationFooter
+          actorUid={actorUid}
+          confirmedBill={confirmedBill}
+          roomId={roomId}
+          stateKind={state.kind}
+          colors={colors}
+          host={host}
+          isEditingOverrides={isEditingOverrides}
+          isOnline={isOnline}
+          hasPendingOverride={hasPendingOverride}
+          isApplyingOverride={isApplyingOverride}
+          onPayShare={onPayShare}
+          receiptImageSource={receipt.imageSource}
+          receiptImageError={receipt.imageError}
+          pendingTotalVnd={pendingTotalVnd}
+          preview={preview}
+          isPublishing={isPublishing}
+          isSavingEvidence={receipt.isSavingEvidence}
+          publishError={publishError}
+          onRequestPublish={requestPublish}
+          onRetryPublish={onRetryPublish}
+        />
       )}
     />
     </KeyboardAvoidingView>
@@ -755,8 +447,6 @@ export function BillAllocationScreen({
 }
 
 const styles = StyleSheet.create({
-  markPaidButton: { minHeight: 48, paddingHorizontal: 18, paddingVertical: 12, borderWidth: 1,
-    borderRadius: 14, alignSelf: 'flex-end', justifyContent: 'center', marginBottom: 12 },
   flex: { flex: 1 },
   list: { flex: 1 },
   content: { paddingHorizontal: 20, paddingTop: 12, gap: 10 },
@@ -771,35 +461,14 @@ const styles = StyleSheet.create({
   totalRow: { borderTopWidth: 1, borderTopColor: Colors.light.border, paddingTop: 12, gap: 4 },
   totalLabel: { color: Colors.light.textSecondary, fontSize: 13, fontWeight: '600' },
   totalValue: { color: Colors.light.text, fontSize: 24, lineHeight: 30, fontWeight: '800', fontVariant: ['tabular-nums'] },
-  entryCard: { gap: 12, padding: 18, borderRadius: 24 },
-  sectionDivider: { height: StyleSheet.hairlineWidth, marginVertical: 2 },
-  splitMethod: { gap: 6 },
-  splitMethodHeader: { minHeight: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  methodOptions: { flexDirection: 'row', gap: 3, borderRadius: 11, padding: 3 },
-  methodOption: { minHeight: 32, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 9, borderRadius: 8 },
-  methodTagText: { fontSize: 13, fontWeight: '700' },
-  percentTotal: { fontSize: 13, fontWeight: '800', fontVariant: ['tabular-nums'] },
   lockCard: { gap: 6, padding: 16, borderRadius: 18, borderWidth: 1 },
   overrideCard: { gap: 12, padding: 18, borderRadius: 20 },
-  overrideRow: { gap: 10, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },
-  overrideRowHeading: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
-  rowToggle: { minHeight: 48, minWidth: 92, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, borderWidth: 1, borderRadius: 12 },
-  rowToggleText: { fontSize: 13, fontWeight: '700' },
-  overrideInputs: { gap: 8, paddingBottom: 8 },
-  overrideTypes: { flexDirection: 'row', gap: 8 },
-  typeButton: { minWidth: 64, minHeight: 48, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, borderWidth: 1, borderRadius: 12 },
-  typeButtonText: { fontSize: 13, fontWeight: '800' },
   overrideActions: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 },
   secondaryButton: { minHeight: 50, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, borderWidth: 1, borderRadius: 14 },
   secondaryButtonText: { fontSize: 15, fontWeight: '800' },
   cancelButton: { minHeight: 50, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, borderWidth: 1, borderRadius: 14 },
   sectionTitle: { color: Colors.light.text, fontSize: 17, fontWeight: '800' },
   helper: { color: Colors.light.textSecondary, fontSize: 13, lineHeight: 19 },
-  inputWrap: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14,
-    borderRadius: 14, borderWidth: 1 },
-  inputInvalid: { borderWidth: 2 },
-  currency: { color: Colors.light.textSecondary, fontSize: 21, fontWeight: '700' },
-  input: { flex: 1, minHeight: 52, color: Colors.light.text, fontSize: 20, fontWeight: '700', fontVariant: ['tabular-nums'] },
   error: { color: Colors.light.error, fontSize: 13, lineHeight: 19 },
   stateCard: { minHeight: 88, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 18, borderRadius: 20 },
   stateText: { flex: 1, color: Colors.light.textSecondary, fontSize: 14, lineHeight: 20 },
@@ -809,30 +478,10 @@ const styles = StyleSheet.create({
   previewCopy: { gap: 2 },
   memberCount: { color: Colors.light.textSecondary, fontSize: 12, fontWeight: '700' },
   previewTotal: { color: Colors.light.textSecondary, fontSize: 13, fontWeight: '700', marginBottom: 2 },
-  shareRow: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10,
-    paddingHorizontal: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.light.border },
-  memberAvatar: { width: 46, height: 46, borderRadius: 23, borderWidth: 1, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
-  memberAvatarInitials: { fontSize: 15, fontWeight: '800' },
-  rankBadge: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  rankNumber: { color: '#FFFFFF', fontSize: 12, fontWeight: '800', fontVariant: ['tabular-nums'] },
-  percentInputWrap: { width: 92, minHeight: 38, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 9, borderRadius: 10, borderWidth: 1 },
-  percentInput: { flex: 1, minHeight: 36, paddingVertical: 0, fontSize: 15, fontWeight: '700', textAlign: 'right', fontVariant: ['tabular-nums'] },
-  percentSuffix: { marginLeft: 4, fontSize: 14, fontWeight: '700' },
-  memberInfo: { flex: 1, gap: 3 },
-  memberName: { color: Colors.light.text, fontSize: 15, lineHeight: 20, fontWeight: '700' },
-  shareAmount: { maxWidth: '46%', color: Colors.light.text, fontSize: 15, lineHeight: 21, fontWeight: '800', fontVariant: ['tabular-nums'], textAlign: 'right' },
   emptyText: { color: Colors.light.textSecondary, fontSize: 14, lineHeight: 20, paddingVertical: 16 },
-  footer: { gap: 12, paddingTop: 14 },
-  publishedCard: { gap: 8, padding: 16, borderRadius: 18 },
-  receiptEvidence: { gap: 8, paddingTop: 8 },
-  receiptEvidenceImage: { width: '100%', height: 320, borderRadius: 14 },
-  publishedTitle: { color: Colors.light.primary, fontSize: 15, fontWeight: '800' },
   publishButton: { width: '88%', alignSelf: 'center', minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     paddingHorizontal: 18, borderRadius: 14, backgroundColor: Colors.light.primary },
   publishText: { color: Colors.light.onPrimary, fontSize: 15, fontWeight: '800' },
   pressed: { opacity: 0.78 },
   disabled: { opacity: 0.48 },
-  oneTimeNote: { color: Colors.light.textSecondary, fontSize: 12, lineHeight: 18, textAlign: 'center' },
-  authorityNote: { color: Colors.light.textSecondary, fontSize: 11, lineHeight: 16 },
-  roomReference: { alignSelf: 'center', color: Colors.light.textSecondary, fontSize: 11, letterSpacing: 0.6 },
 });
