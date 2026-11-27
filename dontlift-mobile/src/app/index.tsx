@@ -79,6 +79,7 @@ import { createBankAppDirectoryRepository } from '../features/bank-transfer/bank
 import { createReceiptScanApi } from '../features/settlement/receipt-scan-api';
 import { createReceiptEvidenceApi } from '../features/settlement/receipt-evidence-api';
 import { createProfileRepository } from '../features/profile/profile-repository';
+import { useCanonicalProfile } from '../features/profile/use-canonical-profile';
 import { createBillRepository } from '../features/settlement/bill-repository';
 import { createPaymentStatusRepository } from '../features/settlement/payment-status-repository';
 import { acceptsBillProgress } from '../features/settlement/payment-status-domain';
@@ -177,34 +178,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const premiumApi = useMemo(() => createPremiumApi(roomRuntime.auth), [roomRuntime.auth]);
   const receiptScanApi = useMemo(() => createReceiptScanApi(roomRuntime.auth), [roomRuntime.auth]);
   const receiptEvidenceApi = useMemo(() => createReceiptEvidenceApi(roomRuntime.auth), [roomRuntime.auth]);
-  const profileProjectionSync = useRef<{ uid: string; uri?: string; premiumExpiresAtUtcMs?: number | null; initialized: boolean }>(
-    { uid: profile.uid, uri: profile.avatarUri ?? undefined, premiumExpiresAtUtcMs: profile.premiumExpiresAtUtcMs, initialized: false },
-  );
-  useEffect(() => profileRepository.listen(profile.uid, (canonical, fromCache) => {
-    if (!fromCache) {
-      acceptCanonicalProfile(canonical);
-      const avatarUri = canonical.avatarUri ?? undefined;
-      const premiumExpiresAtUtcMs = canonical.premiumExpiresAtUtcMs;
-      const previous = profileProjectionSync.current;
-      if (previous.uid !== profile.uid || !previous.initialized || previous.uri !== avatarUri
-        || previous.premiumExpiresAtUtcMs !== premiumExpiresAtUtcMs) {
-        profileProjectionSync.current = { uid: profile.uid, uri: avatarUri, premiumExpiresAtUtcMs, initialized: true };
-        void profileRepository.syncProfileToRooms(profile.uid, avatarUri, premiumExpiresAtUtcMs);
-      }
-    }
-  }, () => undefined), [profileRepository, profile.uid, acceptCanonicalProfile]);
-  useEffect(() => {
-    if (!profile.premiumExpiresAtUtcMs) return;
-    let timer: ReturnType<typeof setTimeout>;
-    const check = () => {
-      const remaining = profile.premiumExpiresAtUtcMs! - Date.now();
-      if (remaining <= 0) {
-        if (profile.isPremium) acceptCanonicalProfile({ ...profile, isPremium: false });
-      } else timer = setTimeout(check, Math.min(remaining, 86400000));
-    };
-    check();
-    return () => clearTimeout(timer);
-  }, [profile, acceptCanonicalProfile]);
+  useCanonicalProfile({ profile, repository: profileRepository, acceptCanonicalProfile });
   const handleProfileUpdated = useCallback((canonical: RegistrationProfile) => {
     acceptCanonicalProfile(canonical);
   }, [acceptCanonicalProfile]);
