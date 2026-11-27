@@ -55,7 +55,8 @@ import type { RegistrationProfile, RegistrationUser } from '../features/auth/aut
 import type { AuthSessionState } from '../features/auth/auth-session-controller';
 import { getConfiguredFirebaseRuntime } from '../features/auth/firebase-adapters';
 import { getLocalDatabase } from '../features/local/database';
-import { createRoomRepository, persistEarlyExitProjection, persistRoomLobbyProjection, persistTerminalRoomProjection, restoreCachedActiveRoom, RoomCreateError, type CreatedRoom, type RoomCreateCommand, type JoinedRoom, RoomJoinError, roomJoinErrorMessage, RoomStartError, roomStartErrorMessage, type RoomStartCommand } from '../features/rooms/room-repository';
+import { createRoomRepository, persistEarlyExitProjection, persistRoomLobbyProjection, persistTerminalRoomProjection, restoreCachedActiveRoom, type CreatedRoom, type JoinedRoom, RoomStartError, roomStartErrorMessage, type RoomStartCommand } from '../features/rooms/room-repository';
+import { useRoomEntry } from '../features/rooms/use-room-entry';
 import { listenToRoomLobby, listenToOwnRoomRemoval, type RoomLobbyState, type RoomLobbySnapshot } from '../features/rooms/room-listener';
 import { createGroupViolationRepository, GroupViolationError } from '../features/rooms/group-violation-repository';
 import { createEarlyExitSyncRetry } from '../features/rooms/early-exit-sync-retry';
@@ -86,7 +87,6 @@ import {
   RoomLivenessError,
 } from '../features/rooms/room-liveness-repository';
 import { listenToTerminationVote, type TerminationVoteState } from '../features/rooms/termination-vote-listener';
-import { roomCreateErrorMessage } from '../features/rooms/room-create-error';
 import { JoinRoomScreen } from '../screens/JoinRoomScreen';
 import { createBackgroundRecoveryRepository } from '../features/solo/background-recovery';
 import { createSessionLifecycleController } from '../features/solo/session-lifecycle-controller';
@@ -308,14 +308,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const terminalRoomCleanupInFlight = useRef(new Set<string>());
   const earlyExitCutoffCleanupTasks = useRef(new Map<string, Promise<void>>());
   const groupLifecycleCutoffs = useRef(new Map<string, number>());
-  const [isCreatingRoom, setIsCreatingRoom] = useState(false);
-  const [roomCreateError, setRoomCreateError] = useState<string | undefined>();
-  const pendingRoomCommand = useRef<RoomCreateCommand | null>(null);
-  const roomCreateAttempt = useRef(0);
-  const [isJoiningRoom, setIsJoiningRoom] = useState(false);
   const [joinedRoom, setJoinedRoom] = useState<JoinedRoom | null>(null);
-  const [roomJoinError, setRoomJoinError] = useState<string | undefined>();
-  const pendingRoomJoinCommand = useRef<{ requestId: string; pin: string } | null>(null);
   const [roomLobbyState, setRoomLobbyState] = useState<RoomLobbyState | null>(null);
   const pendingGroupActionDestination = useRef<{ roomId: string; action: GroupActionableSession['action'] } | null>(null);
   const [isStartingRoom, setIsStartingRoom] = useState(false);
@@ -349,6 +342,15 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const pendingRoomAcknowledgment = useRef<{ roomId: string; requestId: string } | null>(null);
   const earlyExitCleanupInFlight = useRef(new Set<string>());
   const groupCaptureWork = useRef(new Map<string, ReturnType<typeof createGroupCaptureWorkTracker>>());
+  const roomEntry = useRoomEntry({
+    repository: roomRepository,
+    displayName: profile.displayName,
+    setCurrentScreen,
+    setCreatedRoom,
+    setJoinedRoom,
+    restoredRoomId: restoredGroupRoomId,
+    createRequestId: Crypto.randomUUID,
+  });
   const lobbyRoom = joinedRoom ?? createdRoom;
   const lobbyDashboard = useGroupLobbyDashboard({
     repository: groupHistoryRepository,
@@ -783,45 +785,6 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   }, [earlyExitSnapshot?.roomId, earlyExitSnapshot?.status, earlyExitSnapshot?.startedAtUtcMs,
     earlyExitMember?.status, earlyExitCutoffUtcMs, profile.uid, groupViolationRepository, runEarlyExitCutoffCleanup]);
 
-  const handleCreateRoom = async () => {
-    if (isCreatingRoom) return;
-    const attemptId = ++roomCreateAttempt.current;
-    setIsCreatingRoom(true);
-    setRoomCreateError(undefined);
-    const command = pendingRoomCommand.current ?? roomRepository.createCommand();
-    pendingRoomCommand.current = command;
-    try {
-      const result = await roomRepository.createRoom(profile.displayName, command);
-      if (attemptId !== roomCreateAttempt.current) return;
-      pendingRoomCommand.current = null;
-      setJoinedRoom(null);
-      restoredGroupRoomId.current = null;
-      setCreatedRoom(result);
-    } catch (error) {
-      if (!(error instanceof RoomCreateError) || error.code !== 'unavailable') pendingRoomCommand.current = null;
-      if (attemptId !== roomCreateAttempt.current) return;
-      if (__DEV__ && error instanceof RoomCreateError) {
-        console.warn('[room-create] failed', JSON.stringify({
-          code: error.code, stage: error.stage, firebaseCode: error.firebaseCode,
-        }));
-      }
-      setRoomCreateError(roomCreateErrorMessage(error));
-    } finally {
-      if (attemptId === roomCreateAttempt.current) setIsCreatingRoom(false);
-    }
-  };
-
-  const cancelRoomCreateAndJoin = () => {
-    // Client không thể hủy transaction Firestore đã gửi; bỏ kết quả muộn và giữ requestId để retry lấy lại cùng phòng nếu đã commit.
-    roomCreateAttempt.current += 1;
-    setIsCreatingRoom(false);
-    setRoomCreateError(undefined);
-    setJoinedRoom(null);
-    setRoomJoinError(undefined);
-    pendingRoomJoinCommand.current = null;
-    setCurrentScreen('12-join-room');
-  };
-
   useEffect(() => {
     if (!lobbyRoom) return undefined;
     const roomId = lobbyRoom.roomId;
@@ -830,16 +793,15 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       setCreatedRoom(current => current?.roomId === roomId ? null : current);
       setJoinedRoom(current => current?.roomId === roomId ? null : current);
       setRoomLobbyState(current => current?.snapshot?.roomId === roomId ? null : current);
-      pendingRoomJoinCommand.current = null;
+      roomEntry.clearPendingRoomCommands();
       pendingRoomStartCommand.current = null;
-      pendingRoomCommand.current = null;
       setRoomRemoveError(undefined);
       setCurrentScreen(current => ['05-group-lobby', '12-join-room', '06-group-active'].includes(current) ? '05-group-lobby' : current);
       void getLocalDatabase().then(db => db.runAsync('DELETE FROM room_members WHERE room_id = ? AND uid = ?', roomId, profile.uid))
         .catch(error => { if (__DEV__) console.warn('[room-removal] local cleanup pending', error); });
       Alert.alert('No longer in room', 'You are no longer a member of this room.');
     });
-  }, [lobbyRoom?.roomId, roomRuntime.firestore, profile.uid]);
+  }, [lobbyRoom?.roomId, roomRuntime.firestore, profile.uid, roomEntry.clearPendingRoomCommands]);
 
   const handleStartRoom = async () => {
     if (!lobbyRoom || isStartingRoom || leavingLobby.current || kickingLobby.current) return;
@@ -885,8 +847,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
           setJoinedRoom(current => current?.roomId === roomId ? null : current);
           setRoomLobbyState(null);
           setRoomRemoveError(undefined);
-          pendingRoomCommand.current = null;
-          pendingRoomJoinCommand.current = null;
+          roomEntry.clearPendingRoomCommands();
           pendingRoomStartCommand.current = null;
           setCurrentScreen('05-group-lobby');
         }).catch(error => {
@@ -1035,31 +996,6 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     }
   };
 
-  const handleJoinRoom = async (pin: string) => {
-    if (isJoiningRoom) return;
-    setIsJoiningRoom(true);
-    setRoomJoinError(undefined);
-    const command = pendingRoomJoinCommand.current?.pin === pin
-      ? pendingRoomJoinCommand.current
-      : { requestId: Crypto.randomUUID(), pin };
-    pendingRoomJoinCommand.current = command;
-    try {
-      const result = await roomRepository.joinRoomByPin(command);
-      pendingRoomJoinCommand.current = null;
-      setCreatedRoom(null);
-      restoredGroupRoomId.current = null;
-      setJoinedRoom(result);
-    } catch (error) {
-      if (!(error instanceof RoomJoinError) || error.code !== 'unavailable') pendingRoomJoinCommand.current = null;
-      if (__DEV__ && error instanceof RoomJoinError) {
-        console.warn('[room-join] failed', JSON.stringify({ code: error.code, firebaseCode: error.firebaseCode }));
-      }
-      setRoomJoinError(roomJoinErrorMessage(error));
-    } finally {
-      setIsJoiningRoom(false);
-    }
-  };
-
   const handleRequestEarlyExit = async () => {
     if (!lobbyRoom || isRequestingEarlyExit) return;
     setIsRequestingEarlyExit(true);
@@ -1134,21 +1070,14 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     } finally { setIsCastingTerminationVote(false); }
   };
 
-  const cancelRoomJoin = useCallback(() => {
-    if (isJoiningRoom) return;
-    setCurrentScreen('05-group-lobby');
-    setRoomJoinError(undefined);
-    pendingRoomJoinCommand.current = null;
-  }, [isJoiningRoom]);
-
   useEffect(() => {
     if (currentScreen !== '12-join-room') return undefined;
     const back = BackHandler.addEventListener('hardwareBackPress', () => {
-      cancelRoomJoin();
+      roomEntry.cancelRoomJoin();
       return true;
     });
     return () => back.remove();
-  }, [currentScreen, cancelRoomJoin]);
+  }, [currentScreen, roomEntry.cancelRoomJoin]);
 
   const solo = useSoloSessionRuntime({
     userId: profile.uid,
@@ -1904,9 +1833,9 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
               createdAt: 'createdAt' in lobbyRoom ? lobbyRoom.createdAt : lobbyRoom.roomCreatedAt,
               localCacheSaved: lobbyRoom.localCacheSaved,
             } : null}
-            isCreating={isCreatingRoom}
-            errorMessage={roomCreateError}
-            onCancelCreate={cancelRoomCreateAndJoin}
+            isCreating={roomEntry.isCreatingRoom}
+            errorMessage={roomEntry.roomCreateError}
+            onCancelCreate={roomEntry.cancelRoomCreateAndJoin}
             lobbyState={roomLobbyState}
             isHost={lobbyRoom?.hostUid === profile.uid}
             isStarting={isStartingRoom}
@@ -1918,25 +1847,21 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
             removeError={roomRemoveError}
             startError={roomStartError}
             onStartRoom={() => { void handleStartRoom(); }}
-            onCreateRoom={() => { void handleCreateRoom(); }}
-            onJoinRoom={() => {
-              setJoinedRoom(null);
+            onCreateRoom={() => { void roomEntry.handleCreateRoom(); }}
+            onJoinRoom={() => roomEntry.openJoinRoom(() => {
               setRoomLeaveError(undefined);
               setRoomRemoveError(undefined);
-              setRoomJoinError(undefined);
-              pendingRoomJoinCommand.current = null;
-              setCurrentScreen('12-join-room');
-            }}
+            })}
           />
         )}
 
         {currentScreen === '12-join-room' && (
           <JoinRoomScreen
             result={joinedRoom}
-            isJoining={isJoiningRoom}
-            errorMessage={roomJoinError}
-            onJoin={(pin) => { void handleJoinRoom(pin); }}
-            onCancel={cancelRoomJoin}
+            isJoining={roomEntry.isJoiningRoom}
+            errorMessage={roomEntry.roomJoinError}
+            onJoin={(pin) => { void roomEntry.handleJoinRoom(pin); }}
+            onCancel={roomEntry.cancelRoomJoin}
             onOpenLobby={() => { setCurrentScreen('05-group-lobby'); }}
           />
         )}
