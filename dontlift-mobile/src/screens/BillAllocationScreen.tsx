@@ -1,13 +1,13 @@
 import React, { useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, FlatList, Keyboard, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, useColorScheme, View,
+  ActivityIndicator, Alert, FlatList, Keyboard, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, useColorScheme, View,
   type ImageSourcePropType,
 } from 'react-native';
 import { GlassCard } from '../components/GlassCard';
 import { BottomTabInset, Colors } from '../constants/theme';
 import { formatVND } from '../constants';
 import type { BillShareOverride } from '../features/settlement/bill-allocation';
-import { AiBillScanCard } from '../features/settlement/components/AiBillScanCard';
+import { InitialBillSplitCard } from '../features/settlement/components/InitialBillSplitCard';
 import { BillShareListRow, shareLabel, type BillAllocationMember } from '../features/settlement/components/BillShareListRow';
 import { BillAllocationFooter } from '../features/settlement/components/BillAllocationFooter';
 import type { OverrideDraft } from '../features/settlement/components/OverrideMemberEditor';
@@ -258,72 +258,35 @@ export function BillAllocationScreen({
           ) : host && paymentError ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.error }]}>{paymentError}</Text> : null}
 
           {host && !confirmedBill ? (
-            <GlassCard style={[styles.entryCard, { backgroundColor: colors.authFormSurface, borderColor: colors.glassBorder, shadowColor: colors.glassShadow }]}>
-              <AiBillScanCard
-                colors={colors}
-                isPremium={isPremium}
-                isScanning={receipt.isScanning}
-                isSavingEvidence={receipt.isSavingEvidence}
-                hasSavedEvidence={receipt.evidencePath != null}
-                previewUri={receipt.previewUri}
-                scanError={receipt.scanError}
-                evidenceError={receipt.evidenceError}
-                result={receipt.scanResult}
-                onCapture={() => { void receipt.captureReceipt(); }}
-                onSelectPhoto={() => { void receipt.selectReceipt(); }}
-                onOpenPremium={onOpenPremium}
-                onConfirm={amount => { void receipt.acceptAmount(amount); }}
-                onReject={receipt.rejectReceipt}
-                onContinueWithoutEvidence={receipt.continueWithoutEvidence}
-              />
-              <View style={[styles.sectionDivider, { backgroundColor: colors.border }]} />
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Bill total</Text>
-              <Text style={[styles.helper, { color: colors.textSecondary }]}>Minimum 1,000 VND.</Text>
-              <View style={[styles.inputWrap,
-                { borderColor: submitted && !validTotal ? colors.error : colors.border, backgroundColor: colors.inputSurface },
-                submitted && !validTotal && styles.inputInvalid]}>
-                <Text accessibilityElementsHidden style={[styles.currency, { color: colors.textSecondary }]}>₫</Text>
-                <TextInput
-                  accessibilityLabel="Total bill amount in Vietnamese dong"
-                  accessibilityHint="Enter a whole number of dong, at least 1,000. A preview appears below."
-                  editable={!isPublishing && pendingTotalVnd == null}
-                  keyboardType="number-pad"
-                  returnKeyType="done"
-                  selectTextOnFocus
-                  value={pendingTotalVnd == null ? billInput : String(pendingTotalVnd)}
-                  onChangeText={value => setBillInput(value.replace(/\D/g, ''))}
-                  onSubmitEditing={Keyboard.dismiss}
-                  onBlur={() => setSubmitted(true)}
-                  placeholder="e.g. 450000"
-                  placeholderTextColor={colors.textSecondary}
-                  style={[styles.input, { color: colors.text }]}
-                />
-              </View>
-              {submitted && !validTotal ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.error }]}>Enter a whole amount of at least 1,000 VND.</Text> : null}
-              {pendingTotalVnd != null ? <Text style={[styles.helper, { color: colors.textSecondary }]}>Retrying the same request so a delayed commit cannot publish twice.</Text> : null}
-              <View style={[styles.sectionDivider, { backgroundColor: colors.border }]} />
-              <View style={styles.splitMethod}>
-                <View style={styles.splitMethodHeader}>
-                  <Text style={[styles.sectionTitle, { color: colors.text }]}>Split method</Text>
-                  <View style={[styles.methodOptions, { backgroundColor: colors.backgroundElement }]}>
-                    {(['ROOM_SCORE', 'CUSTOM_PERCENT'] as const).map(method => {
-                      const selected = initialSplitMode === method;
-                      return <Pressable key={method} accessibilityRole="button" accessibilityLabel={method === 'ROOM_SCORE' ? 'Split by room score' : 'Enter custom percentages'}
-                        accessibilityState={{ selected }} disabled={pendingTotalVnd != null || isPublishing} onPress={() => setInitialSplitMode(method)}
-                        style={[styles.methodOption, { backgroundColor: selected ? '#2563EB' : 'transparent' }]}>
-                        <Text style={[styles.methodTagText, { color: selected ? '#FFFFFF' : '#334155' }]}>{method === 'ROOM_SCORE' ? 'Room score' : 'Custom %'}</Text>
-                      </Pressable>;
-                    })}
-                  </View>
-                </View>
-                <Text style={[styles.helper, { color: colors.textSecondary }]}>{initialSplitMode === 'ROOM_SCORE'
-                  ? 'Calculated from finalized room scores. You can adjust shares after publishing, before anyone is marked paid.'
-                  : 'Set each member’s share. Percentages must add up to exactly 100%.'}</Text>
-                {initialSplitMode === 'CUSTOM_PERCENT' ? <Text style={[styles.percentTotal, { color: initialPercentOverrides.totalBps === 10_000 ? colors.success : colors.textSecondary }]}>Total {(initialPercentOverrides.totalBps / 100).toFixed(2)}% / 100%</Text> : null}
-                {initialSplitMode === 'CUSTOM_PERCENT' && initialPercentOverrides.error ? <Text accessibilityRole="alert" style={[styles.helper, { color: colors.error }]}>{initialPercentOverrides.error}</Text> : null}
-              </View>
-            </GlassCard>
-          ) : null}
+            <InitialBillSplitCard
+              colors={colors}
+              isPremium={isPremium}
+              isScanning={receipt.isScanning}
+              isSavingEvidence={receipt.isSavingEvidence}
+              hasSavedEvidence={receipt.evidencePath != null}
+              previewUri={receipt.previewUri}
+              scanError={receipt.scanError}
+              evidenceError={receipt.evidenceError}
+              scanResult={receipt.scanResult}
+              onCapture={() => { void receipt.captureReceipt(); }}
+              onSelectPhoto={() => { void receipt.selectReceipt(); }}
+              onOpenPremium={onOpenPremium}
+              onConfirmReceipt={amount => { void receipt.acceptAmount(amount); }}
+              onRejectReceipt={receipt.rejectReceipt}
+              onContinueWithoutEvidence={receipt.continueWithoutEvidence}
+              isPublishing={isPublishing}
+              pendingTotalVnd={pendingTotalVnd}
+              billInput={billInput}
+              onBillInputChange={value => setBillInput(value.replace(/\D/g, ''))}
+              submitted={submitted}
+              validTotal={validTotal}
+              onSubmit={() => Keyboard.dismiss()}
+              onBlur={() => setSubmitted(true)}
+              splitMode={initialSplitMode}
+              onSplitModeChange={setInitialSplitMode}
+              percentTotalBps={initialPercentOverrides.totalBps}
+              percentError={initialPercentOverrides.error}
+            />          ) : null}
 
           {stateCopy ? (
             <GlassCard style={[styles.stateCard, { backgroundColor: colors.authFormSurface, borderColor: colors.glassBorder, shadowColor: colors.glassShadow }]}>
@@ -498,14 +461,6 @@ const styles = StyleSheet.create({
   totalRow: { borderTopWidth: 1, borderTopColor: Colors.light.border, paddingTop: 12, gap: 4 },
   totalLabel: { color: Colors.light.textSecondary, fontSize: 13, fontWeight: '600' },
   totalValue: { color: Colors.light.text, fontSize: 24, lineHeight: 30, fontWeight: '800', fontVariant: ['tabular-nums'] },
-  entryCard: { gap: 12, padding: 18, borderRadius: 24 },
-  sectionDivider: { height: StyleSheet.hairlineWidth, marginVertical: 2 },
-  splitMethod: { gap: 6 },
-  splitMethodHeader: { minHeight: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  methodOptions: { flexDirection: 'row', gap: 3, borderRadius: 11, padding: 3 },
-  methodOption: { minHeight: 32, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 9, borderRadius: 8 },
-  methodTagText: { fontSize: 13, fontWeight: '700' },
-  percentTotal: { fontSize: 13, fontWeight: '800', fontVariant: ['tabular-nums'] },
   lockCard: { gap: 6, padding: 16, borderRadius: 18, borderWidth: 1 },
   overrideCard: { gap: 12, padding: 18, borderRadius: 20 },
   overrideActions: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 },
@@ -514,11 +469,6 @@ const styles = StyleSheet.create({
   cancelButton: { minHeight: 50, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, borderWidth: 1, borderRadius: 14 },
   sectionTitle: { color: Colors.light.text, fontSize: 17, fontWeight: '800' },
   helper: { color: Colors.light.textSecondary, fontSize: 13, lineHeight: 19 },
-  inputWrap: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14,
-    borderRadius: 14, borderWidth: 1 },
-  inputInvalid: { borderWidth: 2 },
-  currency: { color: Colors.light.textSecondary, fontSize: 21, fontWeight: '700' },
-  input: { flex: 1, minHeight: 52, color: Colors.light.text, fontSize: 20, fontWeight: '700', fontVariant: ['tabular-nums'] },
   error: { color: Colors.light.error, fontSize: 13, lineHeight: 19 },
   stateCard: { minHeight: 88, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 18, borderRadius: 20 },
   stateText: { flex: 1, color: Colors.light.textSecondary, fontSize: 14, lineHeight: 20 },
