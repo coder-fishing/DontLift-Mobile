@@ -5,7 +5,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   GlassView,
-   isGlassEffectAPIAvailable,
+  isGlassEffectAPIAvailable,
 } from "expo-glass-effect";
 import { ScreenId } from "../types";
 import { Colors } from "../constants/theme";
@@ -45,13 +45,6 @@ const TABS = [
       "15-group-history",
     ],
   },
-  // {
-  //   label: 'Sensors',
-  //   icon: 'hardware-chip-outline' as const,
-  //   activeIcon: 'hardware-chip' as const,
-  //   screen: '10-hardware-diagnostics' as ScreenId,
-  //   screens: ['10-hardware-diagnostics'],
-  // },
   {
     label: "Pro",
     icon: "diamond-outline" as const,
