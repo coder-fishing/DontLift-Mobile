@@ -34,11 +34,10 @@ import { SettingsScreen } from '../screens/SettingsScreen';
 import { createSettingsRepository } from '../features/settings/settings-repository';
 import { createFeedbackService } from '../features/settings/feedback-service';
 import { nativeFeedbackAdapters } from '../features/settings/native-feedback';
-import { createGroupHistoryRepository, type GroupActionableCursor, type GroupActionableSession, type GroupRoomRosterPreview } from '../features/history/group-history-repository';
-import type { GroupHistoryEntry } from '../features/history/group-history-model';
+import { createGroupHistoryRepository, type GroupActionableSession } from '../features/history/group-history-repository';
 import { createSoloHistoryRepository } from '../features/history/solo-history-repository';
 import { GroupLobbyScreen } from '../screens/GroupLobbyScreen';
-import type { ActionableSessionsState, RecentSessionsState } from '../components/GroupHomeDashboard';
+import { useGroupLobbyDashboard } from '../features/history/use-group-lobby-dashboard';
 import { createLobbyLeaveRepository } from '../features/rooms/lobby-leave-repository';
 import { GroupActiveScreen } from '../screens/GroupActiveScreen';
 import { GroupSummaryScreen } from '../screens/GroupSummaryScreen';
@@ -318,17 +317,6 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const [roomJoinError, setRoomJoinError] = useState<string | undefined>();
   const pendingRoomJoinCommand = useRef<{ requestId: string; pin: string } | null>(null);
   const [roomLobbyState, setRoomLobbyState] = useState<RoomLobbyState | null>(null);
-  const [recentGroupSessions, setRecentGroupSessions] = useState<GroupHistoryEntry[]>([]);
-  const [recentGroupMemberPreviews, setRecentGroupMemberPreviews] = useState<Record<string, GroupRoomRosterPreview | null>>({});
-  const [recentSessionsState, setRecentSessionsState] = useState<RecentSessionsState>('loading');
-  const recentSessionsRequest = useRef(0);
-  const [actionableGroupSessions, setActionableGroupSessions] = useState<GroupActionableSession[]>([]);
-  const [actionableSessionsState, setActionableSessionsState] = useState<ActionableSessionsState>('loading');
-  const [actionableCursor, setActionableCursor] = useState<GroupActionableCursor | null>(null);
-  const [actionableHasMore, setActionableHasMore] = useState(false);
-  const [isLoadingMoreActionable, setIsLoadingMoreActionable] = useState(false);
-  const [actionableErrorMessage, setActionableErrorMessage] = useState<string>();
-  const actionableRequest = useRef(0);
   const pendingGroupActionDestination = useRef<{ roomId: string; action: GroupActionableSession['action'] } | null>(null);
   const [isStartingRoom, setIsStartingRoom] = useState(false);
   const [roomStartError, setRoomStartError] = useState<string | undefined>();
@@ -362,103 +350,15 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
   const earlyExitCleanupInFlight = useRef(new Set<string>());
   const groupCaptureWork = useRef(new Map<string, ReturnType<typeof createGroupCaptureWorkTracker>>());
   const lobbyRoom = joinedRoom ?? createdRoom;
-
-  const loadRecentGroupSessions = useCallback(async () => {
-    const requestId = ++recentSessionsRequest.current;
-    const isCurrent = () => recentSessionsRequest.current === requestId;
-    const options = { cursor: null, localPremium: profile.isPremium, serverPremium: profile.isPremium, nowUtcMs: Date.now() } as const;
-    setRecentSessionsState('loading');
-    try {
-      const localPage = await groupHistoryRepository.readPage(profile.uid, { ...options, online: false });
-      if (!isCurrent()) return;
-      setRecentGroupSessions(localPage.items);
-      const localPreviews = await Promise.all(localPage.items.slice(0, 5).map(async entry => [
-        entry.summary.roomId,
-        await groupHistoryRepository.readRoomRosterPreview(profile.uid, entry.summary.roomId, false),
-      ] as const));
-      if (!isCurrent()) return;
-      setRecentGroupMemberPreviews(previous => ({ ...Object.fromEntries(localPreviews), ...previous }));
-      const network = await Network.getNetworkStateAsync();
-      if (!isCurrent()) return;
-      const online = network.isConnected === true && network.isInternetReachable !== false;
-      if (!online) {
-        setRecentSessionsState('offline');
-        return;
-      }
-      const page = await groupHistoryRepository.readPage(profile.uid, { ...options, online: true });
-      if (!isCurrent()) return;
-      setRecentGroupSessions(page.items);
-      const remotePreviews = await Promise.all(page.items.slice(0, 5).map(async entry => [
-        entry.summary.roomId,
-        await groupHistoryRepository.readRoomRosterPreview(profile.uid, entry.summary.roomId, true),
-      ] as const));
-      if (!isCurrent()) return;
-      setRecentGroupMemberPreviews(previous => ({
-        ...previous,
-        ...Object.fromEntries(remotePreviews.map(([roomId, preview]) => [
-          roomId,
-          preview ?? previous[roomId] ?? null,
-        ])),
-      }));
-      setRecentSessionsState(page.cloudError ? 'cloud-error' : 'ready');
-    } catch {
-      if (isCurrent()) setRecentSessionsState('error');
-    }
-  }, [groupHistoryRepository, profile.isPremium, profile.uid]);
-
-  const loadActionableGroupSessions = useCallback(async () => {
-    const requestId = ++actionableRequest.current;
-    const isCurrent = () => actionableRequest.current === requestId;
-    setActionableErrorMessage(undefined);
-    setActionableSessionsState('loading');
-    try {
-      const savedPage = await groupHistoryRepository.readActionablePage(profile.uid, { online: false, cursor: null });
-      if (!isCurrent()) return;
-      setActionableGroupSessions(savedPage.items);
-      setActionableCursor(savedPage.cursor);
-      setActionableHasMore(savedPage.hasMore);
-      const network = await Network.getNetworkStateAsync();
-      if (!isCurrent()) return;
-      if (network.isConnected !== true || network.isInternetReachable === false) {
-        setActionableSessionsState('offline');
-        return;
-      }
-      const page = await groupHistoryRepository.readActionablePage(profile.uid, { online: true, cursor: null });
-      if (!isCurrent()) return;
-      setActionableGroupSessions(page.items);
-      setActionableCursor(page.cursor);
-      setActionableHasMore(page.hasMore);
-      setActionableSessionsState(page.cloudError ? 'cloud-error' : 'ready');
-    } catch {
-      if (isCurrent()) setActionableSessionsState('error');
-    }
-  }, [groupHistoryRepository, profile.uid]);
-
-  const loadMoreActionableGroupSessions = useCallback(async () => {
-    if (!actionableHasMore || isLoadingMoreActionable || actionableCursor === null) return;
-    const requestId = ++actionableRequest.current;
-    const isCurrent = () => actionableRequest.current === requestId;
-    setIsLoadingMoreActionable(true);
-    setActionableErrorMessage(undefined);
-    try {
-      const network = await Network.getNetworkStateAsync();
-      if (!isCurrent()) return;
-      if (network.isConnected !== true || network.isInternetReachable === false) {
-        setActionableSessionsState('offline');
-        return;
-      }
-      const page = await groupHistoryRepository.readActionablePage(profile.uid, { online: true, cursor: actionableCursor });
-      if (!isCurrent()) return;
-      setActionableGroupSessions(page.items);
-      setActionableCursor(page.cursor);
-      setActionableHasMore(page.hasMore);
-      setActionableSessionsState(page.cloudError ? 'cloud-error' : 'ready');
-    } catch { if (isCurrent()) setActionableSessionsState('cloud-error'); }
-    finally { if (isCurrent()) setIsLoadingMoreActionable(false); }
-  }, [actionableCursor, actionableHasMore, groupHistoryRepository, isLoadingMoreActionable, profile.uid]);
+  const lobbyDashboard = useGroupLobbyDashboard({
+    repository: groupHistoryRepository,
+    uid: profile.uid,
+    isPremium: profile.isPremium,
+    shouldLoad: currentScreen === '05-group-lobby' && !lobbyRoom,
+  });
 
   const openActionableGroupSession = useCallback(async (selected: GroupActionableSession) => {
-    setActionableErrorMessage(undefined);
+    lobbyDashboard.setActionableErrorMessage(undefined);
     pendingGroupActionDestination.current = null;
     try {
       const current = await groupHistoryRepository.readActionableSession(profile.uid, selected.roomId);
@@ -479,30 +379,10 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
     } catch (error) {
       const message = error instanceof Error && error.message.startsWith('This session')
         ? error.message : 'Could not open this session. It may have changed or your membership may no longer be active.';
-      setActionableErrorMessage(message);
-      void loadActionableGroupSessions();
+      lobbyDashboard.setActionableErrorMessage(message);
+      void lobbyDashboard.loadActionableSessions();
     }
-  }, [groupHistoryRepository, loadActionableGroupSessions, profile.uid, roomRepository]);
-
-  useEffect(() => {
-    if (currentScreen !== '05-group-lobby' || lobbyRoom) return undefined;
-    let active = true;
-    void (async () => {
-      // Keep the history and actionable queue SQLite passes serialized; both repositories cache server reads locally.
-      await loadRecentGroupSessions();
-      if (active) await loadActionableGroupSessions();
-    })();
-    return () => { active = false; recentSessionsRequest.current++; actionableRequest.current++; };
-  }, [currentScreen, lobbyRoom?.roomId, loadActionableGroupSessions, loadRecentGroupSessions]);
-
-  useEffect(() => {
-    actionableRequest.current++;
-    setActionableGroupSessions([]);
-    setActionableCursor(null);
-    setActionableHasMore(false);
-    setActionableSessionsState('loading');
-    setActionableErrorMessage(undefined);
-  }, [profile.uid]);
+  }, [groupHistoryRepository, lobbyDashboard.loadActionableSessions, lobbyDashboard.setActionableErrorMessage, profile.uid, roomRepository]);
 
 
   const reconcileGroupLifecycleAtCutoff = useCallback(async (roomId: string, userId: string, cutoffUtcMs: number) => {
@@ -2005,19 +1885,19 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
             currentUserId={profile.uid}
             currentUserPremiumExpiresAtUtcMs={profile.premiumExpiresAtUtcMs}
             onOpenHistory={() => { setGroupHistoryInitialRoomId(undefined); setCurrentScreen('15-group-history'); }}
-            recentSessions={recentGroupSessions}
-            recentMemberPreviews={recentGroupMemberPreviews}
-            recentSessionsState={recentSessionsState}
-            actionableSessions={actionableGroupSessions}
-            actionableSessionsState={actionableSessionsState}
-            actionableErrorMessage={actionableErrorMessage}
-            actionableHasMore={actionableHasMore}
-            isLoadingMoreActionable={isLoadingMoreActionable}
+            recentSessions={lobbyDashboard.recentSessions}
+            recentMemberPreviews={lobbyDashboard.recentMemberPreviews}
+            recentSessionsState={lobbyDashboard.recentSessionsState}
+            actionableSessions={lobbyDashboard.actionableSessions}
+            actionableSessionsState={lobbyDashboard.actionableSessionsState}
+            actionableErrorMessage={lobbyDashboard.actionableErrorMessage}
+            actionableHasMore={lobbyDashboard.actionableHasMore}
+            isLoadingMoreActionable={lobbyDashboard.isLoadingMoreActionable}
             onOpenRecentSession={roomId => { setGroupHistoryInitialRoomId(roomId); setCurrentScreen('15-group-history'); }}
-            onRetryRecentSessions={() => { void loadRecentGroupSessions(); }}
+            onRetryRecentSessions={() => { void lobbyDashboard.loadRecentSessions(); }}
             onOpenActionableSession={item => { void openActionableGroupSession(item); }}
-            onRetryActionableSessions={() => { void loadActionableGroupSessions(); }}
-            onLoadMoreActionableSessions={() => { void loadMoreActionableGroupSessions(); }}
+            onRetryActionableSessions={() => { void lobbyDashboard.loadActionableSessions(); }}
+            onLoadMoreActionableSessions={() => { void lobbyDashboard.loadMoreActionableSessions(); }}
             room={lobbyRoom ? {
               roomId: lobbyRoom.roomId, pin: lobbyRoom.pin, invitation: lobbyRoom.invitation,
               hostUid: lobbyRoom.hostUid,
