@@ -25,6 +25,7 @@ import { premiumIsActive } from "../features/premium/premium-entitlement";
 import { BankAppPicker } from "../features/bank-transfer/BankAppPicker";
 import { usePremiumBankTransfer } from "../features/premium/use-premium-bank-transfer";
 import { usePremiumCheckoutActions } from "../features/premium/use-premium-checkout-actions";
+import { usePremiumOrderState } from "../features/premium/use-premium-order-state";
 import { PremiumPackageSelector } from "../features/premium/components/PremiumPackageSelector";
 import { PremiumPendingOrderCard, type PendingPremiumOrder } from "../features/premium/components/PremiumPendingOrderCard";
 import type {
@@ -53,11 +54,7 @@ export function PremiumScreen({
   const [packages, setPackages] = useState<PremiumPackage[]>(
     DISPLAY_PREMIUM_PACKAGES,
   );
-  const [catalogReady, setCatalogReady] = useState(false);
   const [selected, setSelected] = useState("MONTH_12");
-  const [order, setOrder] = useState<PremiumOrder | null>(null);
-  const [pending, setPending] = useState<PendingPremiumOrder | null>(null);
-  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [checkingStatus, setCheckingStatus] = useState(false);
   const [switchPhase, setSwitchPhase] = useState<
@@ -65,14 +62,34 @@ export function PremiumScreen({
   >(null);
   const [error, setError] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
-  const alive = useRef(true);
   const working = useRef(false);
-  const pendingRef = useRef<PendingPremiumOrder | null>(null);
-  const orderRef = useRef<PremiumOrder | null>(null);
   const selectionTouched = useRef(false);
   const switchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const switchSequence = useRef(0);
-  const key = `premium-checkout:${uid}`;
+  const orderState = usePremiumOrderState({
+    api,
+    uid,
+    working,
+    selectionTouched,
+    setPackages,
+    setSelected,
+    setError,
+  });
+  const {
+    alive,
+    applyOrder,
+    catalogReady,
+    key,
+    load,
+    loading,
+    order,
+    orderRef,
+    pending,
+    pendingRef,
+    refresh,
+    setOrder,
+    setPending,
+  } = orderState;
   const expiry =
     Math.max(order?.premiumExpiresAtUtcMs ?? 0, expiresAtUtcMs ?? 0) || null;
   const active = premiumIsActive(expiry);
@@ -188,134 +205,6 @@ export function PremiumScreen({
       setBusy(false);
     }
   }
-
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-    };
-  }, []);
-
-  async function applyOrder(saved: PremiumOrder | null) {
-    if (!alive.current) return orderRef.current;
-    // Không để pointer cũ/thiết bị khác xóa request mới vừa gửi nhưng chưa nhận response.
-    if (pendingRef.current && saved?.requestId !== pendingRef.current.requestId)
-      return orderRef.current;
-    if (
-      orderRef.current?.requestId === saved?.requestId &&
-      orderRef.current?.status === "PAID" &&
-      saved?.status !== "PAID"
-    )
-      return orderRef.current;
-    orderRef.current = saved;
-    setOrder(saved);
-    if (saved && ["PAID", "CANCELLED", "EXPIRED"].includes(saved.status)) {
-      pendingRef.current = null;
-      setPending(null);
-      // Trạng thái server đã chốt; lỗi dọn cache cục bộ không được che mất kết quả thanh toán.
-      await AsyncStorage.removeItem(key).catch(() => undefined);
-    } else if (saved) {
-      const nextPending = {
-        requestId: saved.requestId,
-        packageId: saved.packageId,
-        orderCode: saved.orderCode,
-      };
-      const previousPending = pendingRef.current;
-      pendingRef.current = nextPending;
-      if (saved.status === "PAID" || !selectionTouched.current)
-        setSelected(saved.packageId);
-      setPending(pendingRef.current);
-      // Lưu mã đơn để lần sau hỏi trạng thái đúng QR, kể cả khi thiết bị khác tạo đơn mới hơn.
-      if (
-        previousPending?.requestId !== nextPending.requestId ||
-        previousPending.packageId !== nextPending.packageId ||
-        previousPending.orderCode !== nextPending.orderCode
-      ) {
-        await AsyncStorage.setItem(key, JSON.stringify(nextPending)).catch(
-          () => undefined,
-        );
-      }
-    }
-    return saved;
-  }
-
-  async function refresh(forceRefresh = false) {
-    const knownCheckout = pendingRef.current;
-    if (!knownCheckout) return applyOrder(await api.current(forceRefresh));
-
-    // Luôn đọc trạng thái của QR đang hiển thị; nếu chưa có mã đơn thì retry cùng requestId để phục hồi.
-    const checkout =
-      knownCheckout.orderCode != null
-        ? await api.get(knownCheckout.orderCode, forceRefresh)
-        : await api
-            .create(knownCheckout.requestId, knownCheckout.packageId)
-            .then((saved) => api.get(saved.orderCode));
-    if (checkout.requestId !== knownCheckout.requestId) {
-      throw new Error(
-        "The saved Premium checkout could not be matched. Keep its QR and retry status later.",
-      );
-    }
-    const applied = await applyOrder(checkout);
-    if (["PAID", "CANCELLED", "EXPIRED"].includes(checkout.status)) {
-      // Chỉ sau khi checkout đã biết kết thúc mới nhận đơn mới nhất của tài khoản.
-      return applyOrder(await api.current(forceRefresh));
-    }
-    return applied;
-  }
-  async function load() {
-    if (working.current) return;
-    working.current = true;
-    setLoading(true);
-    setError("");
-    try {
-      const cached = await AsyncStorage.getItem(key);
-      if (cached && alive.current) {
-        const value: unknown = JSON.parse(cached);
-        if (
-          value &&
-          typeof value === "object" &&
-          "requestId" in value &&
-          "packageId" in value &&
-          typeof value.requestId === "string" &&
-          typeof value.packageId === "string" &&
-          (!("orderCode" in value) ||
-            (typeof value.orderCode === "number" &&
-              Number.isSafeInteger(value.orderCode)))
-        ) {
-          pendingRef.current = {
-            requestId: value.requestId,
-            packageId: value.packageId,
-            ...("orderCode" in value &&
-            typeof value.orderCode === "number" &&
-            Number.isSafeInteger(value.orderCode)
-              ? { orderCode: value.orderCode }
-              : {}),
-          };
-          setPending(pendingRef.current);
-          setSelected(pendingRef.current.packageId);
-        }
-      }
-      const offers = await api.packages();
-      if (!alive.current) return;
-      setPackages(offers);
-      if (!selectionTouched.current && !pendingRef.current) {
-        setSelected(getBestValuePackageId(offers) ?? offers[0]?.id ?? "");
-      }
-      setCatalogReady(true);
-      await refresh();
-    } catch (cause) {
-      if (alive.current)
-        setError(
-          cause instanceof Error ? cause.message : "Unable to load Premium.",
-        );
-    } finally {
-      working.current = false;
-      if (alive.current) setLoading(false);
-    }
-  }
-  useEffect(() => {
-    void load();
-  }, [api, uid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function checkPaymentStatus() {
     if (working.current) return;
