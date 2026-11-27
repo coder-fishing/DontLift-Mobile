@@ -60,6 +60,7 @@ import { useRoomLobbyMembership } from '../features/rooms/use-room-lobby-members
 import { useRoomCompletionActions } from '../features/rooms/use-room-completion-actions';
 import { useRoomVotingActions } from '../features/rooms/use-room-voting-actions';
 import { useGroupSessionRuntime } from '../features/rooms/use-group-session-runtime';
+import { useRoomLiveness } from '../features/rooms/use-room-liveness';
 import { useGroupBillActions } from '../features/settlement/use-group-bill-actions';
 import { listenToRoomLobby, listenToOwnRoomRemoval, type RoomLobbyState, type RoomLobbySnapshot } from '../features/rooms/room-listener';
 import { createGroupViolationRepository } from '../features/rooms/group-violation-repository';
@@ -85,10 +86,7 @@ import { listenToPublishedBill, type PublishedBillState } from '../features/sett
 import { billPublicationKey, shouldOpenPublishedBillForMember } from '../features/settlement/published-bill-navigation';
 import { selectPublishedBillState } from '../features/settlement/published-bill-state';
 import { shouldTrackGroupConnectivity } from '../features/settlement/group-connectivity';
-import {
-  createRoomLivenessRepository, HOST_HEARTBEAT_INTERVAL_MS, HOST_STALE_AFTER_MS, STALE_ROOM_RETRY_MS,
-  RoomLivenessError,
-} from '../features/rooms/room-liveness-repository';
+import { createRoomLivenessRepository } from '../features/rooms/room-liveness-repository';
 import { listenToTerminationVote, type TerminationVoteState } from '../features/rooms/termination-vote-listener';
 import { JoinRoomScreen } from '../screens/JoinRoomScreen';
 import { createBackgroundRecoveryRepository } from '../features/solo/background-recovery';
@@ -478,118 +476,14 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
       snapshot => persistRoomLobbyProjection(getLocalDatabase(), snapshot, profile.uid));
   }, [lobbyRoom?.roomId, roomRuntime.firestore, profile.uid]);
 
-  useEffect(() => {
-    const snapshot = roomLobbyState?.snapshot;
-    const ownMember = snapshot?.members.find(member => member.uid === profile.uid);
-    if (!lobbyRoom || roomLobbyState?.kind !== 'live' || snapshot?.status !== 'ACTIVE'
-      || ownMember?.role !== 'HOST' || ownMember.status !== 'ACTIVE') return undefined;
+  useRoomLiveness({
+    roomId: lobbyRoom?.roomId,
+    uid: profile.uid,
+    roomState: roomLobbyState,
+    repository: roomLivenessRepository,
+  });
 
-    let active = true;
-    let heartbeatInFlight = false;
-    let resumeCheckInFlight = false;
-    // Không gửi heartbeat nền; chỉ lần commit thành công mới làm mới liveness server.
-    const sendHeartbeat = async () => {
-      if (!active || heartbeatInFlight || AppState.currentState !== 'active') return;
-      heartbeatInFlight = true;
-      try {
-        await roomLivenessRepository.sendHostHeartbeat(lobbyRoom.roomId);
-      } catch (error) {
-        if (__DEV__ && active) {
-          const code = error instanceof RoomLivenessError ? error.code : 'unknown';
-          console.warn('[room-liveness] heartbeat failed', { code });
-        }
-      } finally {
-        heartbeatInFlight = false;
-      }
-    };
-    const refreshOnResume = async () => {
-      if (!active || resumeCheckInFlight || AppState.currentState !== 'active') return;
-      resumeCheckInFlight = true;
-      try {
-        const result = await roomLivenessRepository.abortStaleRoom(lobbyRoom.roomId);
-        // Khi Host quay lại sau thời gian stale, không hồi sinh phòng đã được abort.
-        if (result === 'aborted' || result === 'terminal') return;
-      } catch (error) {
-        // Rules từ chối một lần thử sớm; heartbeat kế tiếp dùng server time làm mốc mới.
-        if (!(error instanceof RoomLivenessError) || error.code !== 'rejected') {
-          if (__DEV__ && active) {
-            const code = error instanceof RoomLivenessError ? error.code : 'unknown';
-            console.warn('[room-liveness] resume check failed', { code });
-          }
-          return;
-        }
-      } finally {
-        resumeCheckInFlight = false;
-      }
-      await sendHeartbeat();
-    };
-    void refreshOnResume();
-    const timer = setInterval(() => { void sendHeartbeat(); }, HOST_HEARTBEAT_INTERVAL_MS);
-    const appStateSubscription = AppState.addEventListener('change', state => {
-      if (state === 'active') void refreshOnResume();
-    });
-    const networkSubscription = Network.addNetworkStateListener(state => {
-      if (state.isConnected === true && state.isInternetReachable !== false) void refreshOnResume();
-    });
-    return () => {
-      active = false;
-      clearInterval(timer);
-      appStateSubscription.remove();
-      networkSubscription.remove();
-    };
-  }, [lobbyRoom?.roomId, profile.uid, roomLivenessRepository, roomLobbyState?.kind, roomLobbyState?.snapshot?.status]);
 
-  useEffect(() => {
-    const snapshot = roomLobbyState?.snapshot;
-    const ownMember = snapshot?.members.find(member => member.uid === profile.uid);
-    if (!lobbyRoom || roomLobbyState?.kind !== 'live' || snapshot?.status !== 'ACTIVE'
-      || snapshot.startedAtUtcMs == null || ownMember == null || ownMember.role === 'HOST'
-      || !['ACTIVE', 'EARLY_EXIT'].includes(ownMember.status)) return undefined;
-    const heartbeatAt = snapshot.hostHeartbeatAtUtcMs;
-    if (heartbeatAt == null) return undefined;
-
-    let active = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let abortInFlight = false;
-    const cutoffUtcMs = Math.max(heartbeatAt, snapshot.startedAtUtcMs) + HOST_STALE_AFTER_MS;
-    let attemptAbort: () => Promise<void>;
-    const retry = () => {
-      if (!active) return;
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(attemptAbort, STALE_ROOM_RETRY_MS);
-    };
-    attemptAbort = async () => {
-      if (!active || abortInFlight || AppState.currentState !== 'active') return;
-      abortInFlight = true;
-      try {
-        await roomLivenessRepository.abortStaleRoom(lobbyRoom.roomId);
-      } catch (error) {
-        if (__DEV__ && active && (!(error instanceof RoomLivenessError) || error.code !== 'rejected')) {
-          const code = error instanceof RoomLivenessError ? error.code : 'unknown';
-          console.warn('[room-liveness] stale check failed', { code });
-        }
-        retry();
-      } finally {
-        abortInFlight = false;
-      }
-    };
-    const remainingMs = cutoffUtcMs - Date.now();
-    timer = setTimeout(attemptAbort, Math.max(0, remainingMs) + 1);
-    const appStateSubscription = AppState.addEventListener('change', state => {
-      if (state === 'active') void attemptAbort();
-    });
-    const networkSubscription = Network.addNetworkStateListener(state => {
-      if (state.isConnected === true && state.isInternetReachable !== false) void attemptAbort();
-    });
-    return () => {
-      active = false;
-      if (timer) clearTimeout(timer);
-      appStateSubscription.remove();
-      networkSubscription.remove();
-    };
-  }, [lobbyRoom?.roomId, profile.uid, roomLivenessRepository, roomLobbyState?.kind,
-    roomLobbyState?.snapshot?.hostHeartbeatAtUtcMs, roomLobbyState?.snapshot?.startedAtUtcMs,
-    roomLobbyState?.snapshot?.status]);
 
   useEffect(() => {
     if (!lobbyRoom) return undefined;
