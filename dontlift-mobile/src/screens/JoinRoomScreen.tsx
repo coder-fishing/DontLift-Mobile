@@ -34,21 +34,7 @@ export function JoinRoomScreen({
   onCancel,
   onOpenLobby,
 }: JoinRoomScreenProps) {
-  const colors = {
-    ...Colors.light,
-    authFormSurface: Colors.light.authFormSurface ?? 'rgba(255, 255, 255, 0.42)',
-    glassSurface: Colors.light.glassSurface ?? 'rgba(255, 255, 255, 0.58)',
-    glassBorder: Colors.light.glassBorder ?? 'rgba(255, 255, 255, 0.88)',
-    inputSurface: Colors.light.inputSurface ?? 'rgba(255, 255, 255, 0.66)',
-    backgroundElement: Colors.light.backgroundElement ?? '#F3F4F6',
-    backgroundSelected: Colors.light.backgroundSelected ?? '#EFF6FF',
-    glassShadow: Colors.light.glassShadow ?? 'rgba(37, 74, 153, 0.12)',
-    success: Colors.light.success ?? '#059669',
-    successSurface: Colors.light.successSurface ?? '#DCFCE7',
-    error: Colors.light.error ?? '#B42318',
-    textSecondary: Colors.light.textSecondary ?? '#64748B',
-    border: Colors.light.border ?? '#C3C6D7',
-  };
+  const colors = Colors.light;
 
   const [pin, setPin] = useState('');
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -253,7 +239,6 @@ export function JoinRoomScreen({
           <PrimaryButton
             title="Close Scanner · Enter PIN"
             variant="secondary"
-            // icon={<Ionicons name="keypad-outline" size={18} color={colors.primary} />}
             onPress={() => {
               scannedRef.current = true;
               setScannerOpen(false);
