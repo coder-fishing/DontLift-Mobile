@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="base" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#eef1eb"/>
+      <stop offset=".48" stop-color="#e9eeeb"/>
+      <stop offset="1" stop-color="#efedf0"/>
+    </linearGradient>
+    <radialGradient id="mint">
+      <stop offset="0" stop-color="#a6c8bb" stop-opacity=".24"/>
+      <stop offset="1" stop-color="#86e1c6" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="blue">
+      <stop offset="0" stop-color="#a9bfd2" stop-opacity=".22"/>
+      <stop offset="1" stop-color="#80b5e9" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="lilac">
+      <stop offset="0" stop-color="#c4b9cf" stop-opacity=".18"/>
+      <stop offset="1" stop-color="#c6a1e7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="warm">
+      <stop offset="0" stop-color="#e5d2b8" stop-opacity=".16"/>
+      <stop offset="1" stop-color="#f2c893" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1600" height="1000" fill="url(#base)"/>
+  <ellipse cx="280" cy="240" rx="500" ry="390" fill="url(#mint)"/>
+  <ellipse cx="1050" cy="180" rx="530" ry="360" fill="url(#blue)"/>
+  <ellipse cx="1370" cy="750" rx="520" ry="430" fill="url(#lilac)"/>
+  <ellipse cx="520" cy="850" rx="620" ry="430" fill="url(#warm)"/>
+  <path d="M0 600C250 490 370 760 620 640s350-300 570-190 240 200 410 80v470H0Z" fill="#fff" opacity=".12"/>
+</svg>
