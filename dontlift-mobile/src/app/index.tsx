@@ -70,7 +70,7 @@ import { useCachedRoomRestore } from '../features/rooms/use-cached-room-restore'
 import { useGroupBillActions } from '../features/settlement/use-group-bill-actions';
 import { listenToOwnRoomRemoval, type RoomLobbyState, type RoomLobbySnapshot } from '../features/rooms/room-listener';
 import { createGroupViolationRepository } from '../features/rooms/group-violation-repository';
-import { createCompletedGroupViolationSyncRetry } from '../features/rooms/completed-group-violation-sync-retry';
+import { useCompletedGroupViolationSync } from '../features/rooms/use-completed-group-violation-sync';
 import { createGroupCaptureWorkTracker } from '../features/rooms/group-capture-work';
 import { createEarlyExitRepository, type EarlyExitRequest } from '../features/rooms/early-exit-repository';
 import { listenToOpenEarlyExitRequests } from '../features/rooms/early-exit-listener';
@@ -329,32 +329,7 @@ function AuthenticatedHome({ profile }: { profile: RegistrationProfile }) {
 
   useCachedRoomRestore({ uid: profile.uid, restoredRoomId: restoredGroupRoomId, setCreatedRoom });
 
-  useEffect(() => {
-    let active = true;
-    const retry = createCompletedGroupViolationSyncRetry(groupViolationRepository);
-    const updateConnectivity = (state: Network.NetworkState) => {
-      retry.setOnline(state.isConnected === true && state.isInternetReachable !== false);
-    };
-    const networkSubscription = Network.addNetworkStateListener(updateConnectivity);
-    const appStateSubscription = AppState.addEventListener('change', state => {
-      if (state !== 'active') {
-        retry.setOnline(false);
-        return;
-      }
-      void Network.getNetworkStateAsync().then(state => {
-        if (active) updateConnectivity(state);
-      }).catch(() => retry.setOnline(false));
-    });
-    void Network.getNetworkStateAsync().then(state => {
-      if (active) updateConnectivity(state);
-    }).catch(() => retry.setOnline(false));
-    return () => {
-      active = false;
-      networkSubscription.remove();
-      appStateSubscription.remove();
-      retry.dispose();
-    };
-  }, [groupViolationRepository]);
+  useCompletedGroupViolationSync(groupViolationRepository);
 
   useRoomLobbySubscription({
     firestore: roomRuntime.firestore,
