@@ -2,6 +2,36 @@ import type { Auth } from 'firebase/auth';
 import { collection, doc, getDocFromServer, getDocsFromServer, runTransaction, serverTimestamp, Timestamp, type Firestore } from 'firebase/firestore';
 import type * as SQLite from 'expo-sqlite';
 
+/**
+ * LOBBY LEAVE REPOSITORY
+ *
+ * Quản lý việc xóa thành viên và rời phòng Group
+ * khi phòng đang ở trạng thái WAITING.
+ *
+ * 1. removeMember()
+ *    - Kiểm tra quyền HOST.
+ *    - Kiểm tra phòng chưa bắt đầu.
+ *    - Xóa thành viên khỏi Firestore.
+ *    - Giảm số lượng thành viên.
+ *
+ * 2. leave()
+ *    - Kiểm tra người dùng và trạng thái phòng.
+ *    - Nếu Member rời: xóa thành viên.
+ *    - Nếu Host rời và còn người:
+ *      chuyển quyền HOST cho Member tham gia sớm nhất.
+ *    - Nếu Host là người cuối cùng:
+ *      hủy phòng (CANCELLED).
+ *    - Dọn dữ liệu thành viên trong SQLite.
+ *
+ * Sử dụng Firestore Transaction để bảo đảm
+ * các thay đổi về thành viên và trạng thái phòng
+ * được cập nhật nhất quán.
+ *
+ * LƯU Ý:
+ * - Chỉ xử lý phòng WAITING.
+ * - Không xử lý End Session hoặc Vote End.
+ * - Không trực tiếp ghi nhận vi phạm nhấc điện thoại.
+ */
 export function createLobbyLeaveRepository({ firestore, auth, database }: {
   firestore: Firestore; auth: Auth; database: Promise<SQLite.SQLiteDatabase>;
 }) {

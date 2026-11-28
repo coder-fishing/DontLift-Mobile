@@ -1,5 +1,6 @@
 type Repository = { syncPendingCompletedRooms: () => Promise<number> };
 
+/** Tạo bộ retry có backoff cho vi phạm còn chờ ở các phòng đã kết thúc. */
 export function createCompletedGroupViolationSyncRetry(
   repository: Repository,
   initialDelayMs = 5_000,

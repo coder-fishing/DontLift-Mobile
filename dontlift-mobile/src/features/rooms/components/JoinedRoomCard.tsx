@@ -5,6 +5,7 @@ import { PrimaryButton } from '../../../components/PrimaryButton';
 import { Colors } from '../../../constants/theme';
 import type { JoinedRoom } from '../room-repository';
 
+/** Hiển thị kết quả tham gia thành công và nút mở lobby của phòng vừa vào. */
 export function JoinedRoomCard({ result, onOpenLobby }: { result: JoinedRoom; onOpenLobby: () => void }) {
   const formattedPin = result.pin
     ? result.pin.length === 8 ? `${result.pin.slice(0, 4)} ${result.pin.slice(4)}` : result.pin

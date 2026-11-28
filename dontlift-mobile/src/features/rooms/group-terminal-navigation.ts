@@ -1,3 +1,4 @@
+/** Chỉ cho phép mở tổng kết khi phòng đã hoàn tất và người dùng còn quyền xem. */
 export function shouldNavigateToGroupSummary(input: {
   roomId: string;
   roomStatus: string;

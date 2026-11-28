@@ -3,6 +3,7 @@ import { RoomStartError, createRoomRepository, roomStartErrorMessage } from './r
 
 type RoomRepository = ReturnType<typeof createRoomRepository>;
 
+/** Xử lý lệnh Host bắt đầu phiên và giữ request ID để retry an toàn khi mất mạng. */
 export function useRoomStart(repository: RoomRepository, roomId: string | undefined, isBlocked: () => boolean) {
   const [isStartingRoom, setIsStartingRoom] = useState(false);
   const [roomStartError, setRoomStartError] = useState<string>();

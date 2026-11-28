@@ -4,6 +4,7 @@ import Svg, { Path } from 'react-native-svg';
 import { toQR } from 'toqr';
 import { Colors } from '../constants/theme';
 
+/** Tạo hình QR từ chuỗi đầu vào để hiển thị mã mời phòng hoặc mã thanh toán. */
 export function RoomInvitationQr({ value, size = 200, accessibilityLabel = 'Room invitation QR code' }: { value: string; size?: number; accessibilityLabel?: string }) {
   const result = useMemo(() => {
     try {

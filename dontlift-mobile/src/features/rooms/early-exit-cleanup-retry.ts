@@ -3,6 +3,7 @@ type Callbacks = {
   onRetrying: () => void;
 };
 
+/** Tạo bộ retry có backoff cho việc dọn dữ liệu theo cutoff rời sớm. */
 export function createEarlyExitCleanupRetry(
   cleanup: () => Promise<void>,
   callbacks: Callbacks,

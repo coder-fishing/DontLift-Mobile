@@ -11,6 +11,7 @@ type Callbacks = {
   onRetrying: () => void;
 };
 
+/** Retry outbox vi phạm sau rời sớm và báo trạng thái chờ, lỗi hoặc đối soát. */
 export function createEarlyExitSyncRetry(
   roomId: string,
   repository: Repository,

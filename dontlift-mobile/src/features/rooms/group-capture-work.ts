@@ -1,3 +1,4 @@
+/** Theo dõi các tác vụ capture/recovery để lifecycle cleanup có thể đợi chúng hoàn tất. */
 export function createGroupCaptureWorkTracker() {
   const pending = new Set<Promise<unknown>>();
 

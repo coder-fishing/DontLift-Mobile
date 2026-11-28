@@ -2,6 +2,7 @@ import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } 
 import { getLocalDatabase } from '../local/database';
 import { restoreCachedActiveRoom, type CreatedRoom } from './room-repository';
 
+/** Khôi phục phòng đang chờ hoặc đang chạy từ SQLite sau khi người dùng đăng nhập lại. */
 export function useCachedRoomRestore({
   uid,
   restoredRoomId,

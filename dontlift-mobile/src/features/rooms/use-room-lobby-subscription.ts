@@ -5,6 +5,7 @@ import { persistRoomLobbyProjection, type CreatedRoom, type JoinedRoom } from '.
 import { listenToRoomLobby, type RoomLobbyState } from './room-listener';
 import type { EarlyExitRequest } from './early-exit-repository';
 
+/** Theo dõi lobby Firestore và cập nhật snapshot/phép chiếu phòng cục bộ. */
 export function useRoomLobbySubscription({
   firestore,
   roomId,

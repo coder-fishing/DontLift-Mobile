@@ -15,6 +15,7 @@ type RoomLobbyMembershipOptions = {
   onLeft: (roomId: string) => void;
 };
 
+/** Xử lý thao tác rời lobby và Host loại thành viên khỏi phòng đang chờ. */
 export function useRoomLobbyMembership({
   roomId,
   roomState,

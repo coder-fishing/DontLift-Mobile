@@ -9,6 +9,7 @@ import type { RoomLobbyState } from './room-listener';
 
 type RoomLivenessRepository = ReturnType<typeof createRoomLivenessRepository>;
 
+/** Gửi heartbeat cho phòng và thử đóng phòng bị bỏ dở khi Host mất kết nối quá lâu. */
 export function useRoomLiveness({
   roomId,
   uid,

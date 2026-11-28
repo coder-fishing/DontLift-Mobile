@@ -3,6 +3,7 @@ import {
 } from 'firebase/firestore';
 import type { EarlyExitRequest } from './early-exit-repository';
 
+/** Theo dõi các yêu cầu rời sớm đang chờ Host quyết định. */
 export function listenToOpenEarlyExitRequests(
   firestore: Firestore,
   roomId: string,

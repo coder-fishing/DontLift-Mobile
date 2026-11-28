@@ -66,6 +66,38 @@ function resultFromRoom(roomId: string, requestId: string, data: Record<string, 
   };
 }
 
+/**
+ * ROOM COMPLETION REPOSITORY
+ *
+ * Quản lý quá trình kết thúc phiên Group
+ * và chốt điểm sau khi đồng bộ dữ liệu.
+ *
+ * LUỒNG XỬ LÝ:
+ *
+ * 1. completeRoom()
+ *    - Kiểm tra quyền Host.
+ *    - Chuyển phòng ACTIVE -> COMPLETED.
+ *    - Ghi thời điểm kết thúc trên Firestore.
+ *    - Chuyển reconciliationStatus -> PENDING.
+ *
+ * 2. acknowledgeMemberSync()
+ *    - Thành viên xác nhận đã đồng bộ.
+ *    - Giảm pendingMemberCount.
+ *    - Nếu tất cả đã ACK:
+ *      FINALIZED với lý do ALL_SYNCED.
+ *
+ * 3. finalizeRoomScores()
+ *    - Host xác nhận chốt điểm khi còn người
+ *      chưa hoàn tất đồng bộ.
+ *    - Chuyển trạng thái -> FINALIZED.
+ *    - Ghi audit với lý do HOST_OVERRIDE.
+ *
+ * LƯU Ý:
+ * - Chỉ quản lý kết thúc phòng và chốt điểm.
+ * - Không xử lý Vote End.
+ * - Không trực tiếp phát hiện hoặc miễn vi phạm
+ *   khi người dùng nhấc điện thoại.
+ */
 export function createRoomCompletionRepository(dependencies: Dependencies) {
   return {
     async finalizeRoomScores(input: {

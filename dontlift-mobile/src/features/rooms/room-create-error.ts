@@ -12,6 +12,7 @@ export class RoomCreateError extends Error {
   }
 }
 
+/** Chuẩn hóa lỗi tạo phòng theo giai đoạn để UI hiển thị đúng nguyên nhân. */
 export function mapRoomCreateError(error: unknown, stage: RoomCreateStage): RoomCreateError {
   if (error instanceof RoomCreateError) return error;
   const code = typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string'
@@ -27,6 +28,7 @@ export function mapRoomCreateError(error: unknown, stage: RoomCreateStage): Room
   return new RoomCreateError('unknown', stage);
 }
 
+/** Chuyển lỗi tạo phòng đã chuẩn hóa thành thông báo cho người dùng. */
 export function roomCreateErrorMessage(error: unknown): string {
   if (!(error instanceof RoomCreateError)) return 'Could not create the room. Please try again.';
   switch (error.code) {

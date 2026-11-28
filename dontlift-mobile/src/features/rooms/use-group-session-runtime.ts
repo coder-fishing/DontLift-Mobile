@@ -20,6 +20,7 @@ type BackgroundRecoveryRepository = ReturnType<typeof createBackgroundRecoveryRe
 type FeedbackService = ReturnType<typeof createFeedbackService>;
 type GroupCaptureWorkTracker = ReturnType<typeof createGroupCaptureWorkTracker>;
 
+/** Nối cảm biến, bộ phát hiện vi phạm, vòng đời app và lưu/sync dữ liệu phiên nhóm. */
 export function useGroupSessionRuntime({
   snapshot,
   userId,
