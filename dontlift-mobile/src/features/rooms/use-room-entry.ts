@@ -22,6 +22,7 @@ type Options = {
   createRequestId: () => string;
 };
 
+/** Điều phối tạo phòng, tham gia bằng PIN và cập nhật màn hình/kết quả tương ứng. */
 export function useRoomEntry({
   repository,
   displayName,

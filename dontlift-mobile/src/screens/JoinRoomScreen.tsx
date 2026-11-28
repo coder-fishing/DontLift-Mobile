@@ -48,6 +48,7 @@ export function JoinRoomScreen({
   const scannedRef = useRef(false);
   const textInputRef = useRef<TextInputInstance>(null);
 
+  // Xin quyền camera rồi mở bộ quét QR lời mời vào phòng.
   const openScanner = async () => {
     setScanError(undefined);
     scannedRef.current = false;
@@ -70,6 +71,7 @@ export function JoinRoomScreen({
     setScannerOpen(true);
   };
 
+  // Đọc PIN từ QR (quét), điền vào ô PIN và gửi yêu cầu tham gia phòng.
   const handleBarcodeScanned = (scanned: { data: string; type: string }) => {
     if (scannedRef.current) return;
     scannedRef.current = true;

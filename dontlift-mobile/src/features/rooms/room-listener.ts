@@ -41,6 +41,7 @@ export type RoomLobbyState =
   | { kind: 'cached'; snapshot: RoomLobbySnapshot }
   | { kind: 'error'; snapshot: RoomLobbySnapshot | null };
 
+/** Theo dõi việc thành viên hiện tại bị xóa khỏi danh sách lobby. */
 export function listenToOwnRoomRemoval(
   firestore: Firestore, roomId: string, uid: string, onRemoved: () => void,
 ): Unsubscribe {
@@ -55,6 +56,7 @@ export function listenToOwnRoomRemoval(
   });
 }
 
+/** Theo dõi dữ liệu phòng và roster thành viên theo thời gian thực. */
 export function listenToRoomLobby(
   firestore: Firestore,
   roomId: string,

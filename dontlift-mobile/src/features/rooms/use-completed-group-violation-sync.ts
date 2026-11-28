@@ -6,6 +6,7 @@ import { createGroupViolationRepository } from './group-violation-repository';
 
 type GroupViolationRepository = ReturnType<typeof createGroupViolationRepository>;
 
+/** Tự thử đồng bộ vi phạm còn chờ của các phòng đã kết thúc khi app có mạng và đang hoạt động. */
 export function useCompletedGroupViolationSync(repository: GroupViolationRepository) {
   useEffect(() => {
     let active = true;

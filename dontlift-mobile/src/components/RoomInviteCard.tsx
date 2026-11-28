@@ -5,6 +5,7 @@ import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Colors } from '../constants/theme';
 import { RoomInvitationQr } from './RoomInvitationQr';
 
+/** Hiển thị PIN và QR để người khác quét và tham gia phòng. */
 export function RoomInviteCard({ pin, invitation }: { pin: string; invitation: string }) {
   const [expanded, setExpanded] = useState(false);
   const formattedPin = pin.length === 8 ? `${pin.slice(0, 4)} ${pin.slice(4)}` : pin;

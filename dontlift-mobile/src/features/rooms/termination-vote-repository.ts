@@ -51,6 +51,37 @@ function toVote(roomId: string, data: Record<string, unknown>): TerminationVote 
     status: data.status === 'CANCELLED' ? 'CANCELLED' : 'OPEN',
   };
 }
+/**
+ * TERMINATION VOTE REPOSITORY
+ *
+ * Quản lý quá trình bỏ phiếu kết thúc Group Session.
+ *
+ * LUỒNG XỬ LÝ:
+ *
+ * 1. readCurrent()
+ *    - Đọc cuộc Vote hiện tại từ Firestore.
+ *
+ * 2. open()
+ *    - Kiểm tra phòng và thành viên ACTIVE.
+ *    - Tạo cuộc Vote với trạng thái OPEN.
+ *    - Lưu số lượng thành viên đủ điều kiện Vote.
+ *
+ * 3. cast()
+ *    - Kiểm tra quyền bỏ phiếu.
+ *    - Kiểm tra Vote còn hợp lệ.
+ *    - Lưu lựa chọn YES hoặc NO.
+ *    - Cập nhật số phiếu YES.
+ *
+ * 4. Nếu tất cả thành viên chọn YES:
+ *    - Đóng cuộc Vote.
+ *    - Chuyển phòng ACTIVE -> COMPLETED.
+ *    - Bắt đầu đồng bộ và đối soát điểm.
+ *
+ * LƯU Ý:
+ * - Không trực tiếp phát hiện nhấc điện thoại.
+ * - Không tự miễn vi phạm khi mở giao diện Vote.
+ * - Thời hạn Vote được kiểm soát bởi Firestore Rules.
+ */
 
 export function createTerminationVoteRepository(dependencies: {
   firestore: Firestore;

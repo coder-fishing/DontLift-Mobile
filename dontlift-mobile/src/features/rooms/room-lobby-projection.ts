@@ -55,6 +55,7 @@ export async function restoreCachedActiveRoom(
   };
 }
 
+/** Lưu snapshot lobby mới nhất vào SQLite để phục hồi giao diện khi mất kết nối. */
 export async function persistRoomLobbyProjection(
   databasePromise: Promise<SQLite.SQLiteDatabase>,
   snapshot: RoomLobbySnapshot,
@@ -89,6 +90,7 @@ export async function persistRoomLobbyProjection(
   });
 }
 
+/** Lưu trạng thái kết thúc và roster để History/lifecycle có thể đọc lại cục bộ. */
 export async function persistTerminalRoomProjection(
   databasePromise: Promise<SQLite.SQLiteDatabase>,
   input: {
@@ -123,6 +125,7 @@ export async function persistTerminalRoomProjection(
   });
 }
 
+/** Lưu projection sớm của thành viên đã rời để màn hình tiếp tục khôi phục đúng trạng thái. */
 export async function persistEarlyExitProjection(
   databasePromise: Promise<SQLite.SQLiteDatabase>,
   input: { roomId: string; userId: string; cutoffUtcMs: number; startedAtUtcMs: number; historySnapshot?: RoomLobbySnapshot },

@@ -4,6 +4,7 @@ import type { EarlyExitRequest } from './early-exit-repository';
 import { listenToOpenEarlyExitRequests } from './early-exit-listener';
 import { listenToTerminationVote, type TerminationVoteState } from './termination-vote-listener';
 
+/** Đăng ký listener cho yêu cầu rời sớm và trạng thái vote kết thúc phiên. */
 export function useRoomRequestSubscriptions({
   firestore,
   roomId,

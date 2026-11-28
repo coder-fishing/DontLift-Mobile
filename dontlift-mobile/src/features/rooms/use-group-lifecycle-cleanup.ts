@@ -11,6 +11,7 @@ type GroupCaptureWorkTracker = ReturnType<typeof createGroupCaptureWorkTracker>;
 type GroupViolationRepository = ReturnType<typeof createGroupViolationRepository>;
 type BackgroundRecoveryRepository = ReturnType<typeof createBackgroundRecoveryRepository>;
 
+/** Đợi capture hoàn tất, đối soát thời gian nền và chốt vi phạm theo cutoff của phiên. */
 export function useGroupLifecycleCleanup({
   backgroundRecovery,
   violationRepository,

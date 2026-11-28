@@ -7,6 +7,7 @@ import type { RoomLobbySnapshot } from './room-listener';
 
 type GroupViolationRepository = ReturnType<typeof createGroupViolationRepository>;
 
+/** Retry việc chốt dữ liệu tại cutoff và đồng bộ vi phạm sau khi thành viên rời phiên sớm. */
 export function useEarlyExitCutoffRetry({
   snapshot,
   uid,

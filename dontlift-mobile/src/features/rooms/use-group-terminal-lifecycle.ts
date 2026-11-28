@@ -10,6 +10,7 @@ import type { ScreenId } from '../../types';
 type GroupCaptureWorkTracker = ReturnType<typeof createGroupCaptureWorkTracker>;
 type GroupViolationRepository = ReturnType<typeof createGroupViolationRepository>;
 
+/** Dọn dữ liệu phiên và điều hướng sang tổng kết khi phòng chuyển sang trạng thái kết thúc. */
 export function useGroupTerminalLifecycle({
   roomState,
   currentScreen,

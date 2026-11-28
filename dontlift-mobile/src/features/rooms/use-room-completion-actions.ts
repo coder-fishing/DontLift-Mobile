@@ -27,6 +27,7 @@ type RoomCompletionActionsOptions = {
   onCompleted: () => void;
 };
 
+/** Điều phối Host kết thúc/chốt điểm và thành viên đồng bộ rồi xác nhận dữ liệu phòng. */
 export function useRoomCompletionActions({
   repository,
   violationRepository,

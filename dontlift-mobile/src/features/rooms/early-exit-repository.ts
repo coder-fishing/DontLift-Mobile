@@ -75,6 +75,45 @@ async function readCommittedResult(
   }
 }
 
+/**
+ * EARLY EXIT REPOSITORY
+ *
+ * Quản lý yêu cầu rời phiên tập trung sớm
+ * của thành viên trong Group Mode.
+ *
+ * LUỒNG XỬ LÝ:
+ *
+ * 1. requestEarlyExit()
+ *    - Kiểm tra phòng và thành viên ACTIVE.
+ *    - Tạo yêu cầu Early Exit với trạng thái OPEN.
+ *    - Lưu yêu cầu lên Firestore.
+ *
+ * 2. decideEarlyExit()
+ *    - Kiểm tra quyền Host.
+ *    - Host chọn APPROVE hoặc DENY.
+ *
+ *    Nếu DENY:
+ *    - Chuyển yêu cầu thành DENIED.
+ *    - Member tiếp tục phiên tập trung.
+ *
+ *    Nếu APPROVE:
+ *    - Chuyển yêu cầu thành APPROVED.
+ *    - Đổi trạng thái Member thành EARLY_EXIT.
+ *    - Ghi thời điểm rời sớm.
+ *    - Giảm activeMemberCount.
+ *
+ * 3. Nếu đang có Vote End:
+ *    - Loại Member đã rời khỏi số người đủ điều kiện.
+ *    - Điều chỉnh số phiếu YES nếu cần.
+ *    - Nếu đạt đồng thuận, kết thúc phòng.
+ *
+ * LƯU Ý:
+ * - Không trực tiếp phát hiện nhấc điện thoại.
+ * - Không tự miễn vi phạm khi yêu cầu hoặc duyệt Early Exit.
+ * - Các thay đổi liên quan được thực hiện
+ *   trong Firestore Transaction.
+ */
+
 export function createEarlyExitRepository(dependencies: Dependencies) {
   return {
     async requestEarlyExit(input: { roomId: string; requestId?: string }): Promise<Result> {

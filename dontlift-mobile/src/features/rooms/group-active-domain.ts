@@ -8,6 +8,7 @@ export type GroupMemberScore = {
 };
 
 // Server member score là nguồn xếp hạng; UID tạo thứ tự ổn định khi hòa điểm.
+/** Lọc thành viên đủ điều kiện và xếp hạng theo điểm phạt với thứ tự hòa ổn định. */
 export function rankGroupMembers(
   members: readonly GroupMemberScore[],
   eligibleStatuses: readonly string[] = ['ACTIVE'],

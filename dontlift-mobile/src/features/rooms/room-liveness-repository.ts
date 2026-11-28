@@ -31,7 +31,34 @@ function mapRoomLivenessError(error: unknown): RoomLivenessError {
   if (code === 'permission-denied') return new RoomLivenessError('rejected', code);
   return new RoomLivenessError('unknown', code || undefined);
 }
-
+/**
+ * ROOM LIVENESS REPOSITORY
+ *
+ * Quản lý trạng thái hoạt động của Host trong Group Session.
+ *
+ * LUỒNG XỬ LÝ:
+ *
+ * 1. sendHostHeartbeat()
+ *    - Kiểm tra người gửi là Host.
+ *    - Kiểm tra phòng đang ACTIVE.
+ *    - Cập nhật hostHeartbeatAt bằng thời gian server.
+ *
+ * 2. abortStaleRoom()
+ *    - Kiểm tra trạng thái phòng.
+ *    - Lấy thời điểm hoạt động gần nhất của Host.
+ *    - Tính cutoff = livenessAt + 15 phút.
+ *    - Yêu cầu chuyển phòng ACTIVE -> ABORTED.
+ *    - Firestore Rules quyết định có đủ điều kiện hủy.
+ *
+ * 3. mapRoomLivenessError()
+ *    - Chuyển lỗi Firebase thành mã lỗi thống nhất.
+ *
+ * LƯU Ý:
+ * - Không xử lý Host chủ động End Session.
+ * - Không xử lý Vote End.
+ * - Không trực tiếp ghi nhận vi phạm nhấc điện thoại.
+ * - Cần controller gọi heartbeat và kiểm tra stale định kỳ.
+ */
 export function createRoomLivenessRepository(dependencies: { firestore: Firestore; auth: Auth }) {
   return {
     async sendHostHeartbeat(roomId: string): Promise<void> {

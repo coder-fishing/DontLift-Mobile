@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View, type TextInputInstance } from 'react-native';
 import { Colors } from '../../../constants/theme';
 
+/** Ô nhập PIN thủ công để tham gia phòng, kèm trạng thái focus và gửi mã. */
 export function RoomPinInput({
   pin,
   inputRef,

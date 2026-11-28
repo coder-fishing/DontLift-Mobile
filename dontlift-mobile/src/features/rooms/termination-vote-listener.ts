@@ -7,6 +7,7 @@ export type TerminationVoteState = {
   error: boolean;
 };
 
+/** Theo dõi lá phiếu hiện tại và lựa chọn của người dùng trong phòng. */
 export function listenToTerminationVote(
   firestore: Firestore,
   roomId: string,

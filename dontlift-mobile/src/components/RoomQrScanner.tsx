@@ -8,6 +8,7 @@ interface RoomQrScannerProps {
   onMountError: () => void;
 }
 
+/** Hiển thị camera và chuyển kết quả QR lời mời vào phòng cho màn hình tham gia. */
 export function RoomQrScanner({ onBarcodeScanned, onMountError }: RoomQrScannerProps) {
   return (
     <View style={styles.container}>

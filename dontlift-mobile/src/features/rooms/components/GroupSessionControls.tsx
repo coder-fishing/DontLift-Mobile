@@ -6,6 +6,7 @@ import type { RoomLobbySnapshot } from '../room-listener';
 import type { TerminationChoice } from '../termination-vote-repository';
 import type { TerminationVoteState } from '../termination-vote-listener';
 
+/** Hiển thị và phát lệnh vote kết thúc phiên hoặc Host kết thúc phòng. */
 export function GroupSessionControls({
   snapshot,
   actorUid,

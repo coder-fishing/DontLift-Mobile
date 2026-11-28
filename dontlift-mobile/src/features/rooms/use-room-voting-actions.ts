@@ -21,6 +21,7 @@ function earlyExitErrorMessage(error: unknown): string {
   }
 }
 
+/** Xử lý yêu cầu rời sớm, quyết định của Host và các thao tác mở/gửi phiếu kết thúc. */
 export function useRoomVotingActions({
   roomId,
   earlyExitRepository,
