@@ -17,6 +17,13 @@ export type GroupHistoryAuthority = {
   earlyExitAtUtcMs: number | null;
 };
 /** Đọc phòng và thành viên cùng transaction để tránh ghép trạng thái phòng mới với roster cũ. */
+/**
+ * GROUP HISTORY AUTHORITY - Xác minh lịch sử phiên Group từ Firestore.
+ * Đọc trạng thái phòng và thành viên bằng transaction để đảm bảo nhất quán.
+ * Xác định thời điểm kết thúc hợp lệ (cutoffUtcMs),
+ * bao gồm trường hợp thành viên rời phòng sớm (EARLY_EXIT).
+ * Không thực hiện đồng bộ hoặc lưu cache SQLite.
+ */
 export async function readGroupHistoryAuthority(
   dependencies: { firestore: Firestore; auth: Auth },
   uid: string,

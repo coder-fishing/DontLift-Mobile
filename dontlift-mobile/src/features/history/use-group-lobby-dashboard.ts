@@ -47,7 +47,12 @@ type Options = {
   isPremium: boolean;
   shouldLoad: boolean;
 };
-
+/**
+ * Quản lý dữ liệu hiển thị trên Group Home:
+ * tải lịch sử gần đây, các phiên cần xử lý và hỗ trợ phân trang.
+ * Ưu tiên dữ liệu Local, cập nhật từ Remote khi có mạng
+ * và quản lý trạng thái tải dữ liệu cho giao diện.
+ */
 /** Tải lịch sử gần đây, roster xem trước và danh sách phiên cần xử lý cho Group Home. */
 export function useGroupLobbyDashboard({
   repository,

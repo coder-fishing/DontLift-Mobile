@@ -54,7 +54,18 @@ type ActionableInput = {
   bill: PublishedBill | null;
   billReadFailed: boolean;
 };
-// Xác định hành động cần hiển thị ở Group Home dựa trên phòng, thành viên và hóa đơn.
+/**
+ * Suy ra action từ trạng thái phòng, thành viên và hóa đơn; không đọc field action lưu sẵn.
+ * Quy tắc:
+ * - Thành viên không còn ACTIVE/EARLY_EXIT: không có action.
+ * - Phòng ACTIVE: RESUME_SESSION.
+ * - Phòng COMPLETED và FINALIZED, chưa đọc được hóa đơn: không đưa ra action thanh toán.
+ * - Phòng COMPLETED và FINALIZED, chưa có hóa đơn đã publish: Host SET_UP_BILL,
+ *   thành viên khác WAITING_FOR_HOST_BILL.
+ * - Đã có hóa đơn: Host REVIEW_PAYMENTS nếu còn phần chưa trả; thành viên
+ *   AWAITING_CONFIRMATION nếu phần của chính họ chưa được đánh dấu đã trả.
+ * - Các trạng thái còn lại hoặc không còn khoản cần trả: không có action.
+ */
 export function deriveGroupActionableSession(
   input: ActionableInput,
 ): Omit<GroupActionableSession, "source"> | null {
@@ -213,6 +224,12 @@ function parseActionableCache(
 }
 
 /** Tạo các thao tác đọc phiên cần xử lý và dùng chung context tài khoản/cache. */
+/**
+ * GROUP ACTIONABLE SYNC - Đồng bộ phiên Group cần xử lý.
+ * Đọc dữ liệu từ Firestore (Remote), kết hợp và lưu cache vào SQLite (Local).
+ * Hỗ trợ hiển thị offline, phân trang và cập nhật trạng thái phiên.
+ * Chỉ đồng bộ các phiên còn cần xử lý, không phải toàn bộ lịch sử Group.
+ */
 export function createGroupActionableHistory(context: GroupHistoryContext) {
   const { dependencies, database, isActor } = context;
   return {

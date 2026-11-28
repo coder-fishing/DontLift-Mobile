@@ -84,7 +84,12 @@ export function summaryCursor(entry: GroupHistoryEntry): GroupHistoryCursor {
   };
 }
 /** Gộp bản cục bộ và cloud, giữ dữ liệu chưa đồng bộ và sắp xếp theo thời gian. */
-export function mergeGroupHistory(
+/**
+ * Gộp lịch sử Group từ Local và Remote, loại bỏ bản ghi trùng.
+ * Ưu tiên Local nếu chưa đồng bộ (PENDING/FAILED), ngược lại ưu tiên Remote.
+ * Ưu tiên lịch sử PERSONAL hơn ROOM và sắp xếp mới nhất lên đầu.
+ * Bảo vệ dữ liệu Local chưa đồng bộ, còn dữ liệu đã đồng bộ thì ưu tiên Remote.
+ */export function mergeGroupHistory(
   local: GroupHistoryEntry[],
   cloud: GroupHistoryEntry[],
 ): GroupHistoryEntry[] {
