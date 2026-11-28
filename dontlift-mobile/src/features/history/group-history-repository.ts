@@ -1,568 +1,117 @@
-import { collection, doc, documentId, getDocFromServer, getDocsFromServer, limit, orderBy, query,
-  runTransaction, serverTimestamp, startAfter, Timestamp, where, type Firestore, type QueryConstraint } from 'firebase/firestore';
-import type * as SQLite from 'expo-sqlite';
-import type { Auth } from 'firebase/auth';
-import { getLocalDatabase } from '../local/database';
-import { readGroupHistoryAuthority, type GroupHistoryAuthority } from './group-history-authority';
-import { recordGroupSummary, recoverGroupSummaries } from './group-summary-repository';
-import { GROUP_HISTORY_PAGE_SIZE, GROUP_HISTORY_WINDOW_MS, mergeGroupHistory, readGroupSummary, summaryCursor,
-  type GroupHistoryCursor, type GroupHistoryEntry, type GroupLocalSummary } from './group-history-model';
-import { createBillRepository, type PublishedBill } from '../settlement/bill-repository';
-import { listenToHistoryPayment, type HistoryPaymentState } from './group-history-payment';
-import { readPremiumExpiry } from '../premium/premium-entitlement';
 
-export type GroupHistoryDetail = {
-  roomStatus: string; reconciliation: string | null; finalizationReason: string | null;
-  members: { uid: string; name: string; status: string; score: number; avatarUri?: string; premiumExpiresAtUtcMs?: number | null }[];
-  excludedCount: number; excludedHasMore: boolean; bill: PublishedBill | null; billError: boolean;
-};
-export type GroupRoomRosterPreview = {
-  totalCount: number;
-  members: { uid: string; displayName: string; avatarUri?: string; premiumExpiresAtUtcMs?: number | null }[];
-};
-export const GROUP_ACTIONABLE_PAGE_SIZE = 10;
-export type GroupActionableKind = 'RESUME_SESSION' | 'SET_UP_BILL' | 'WAITING_FOR_HOST_BILL'
-  | 'AWAITING_CONFIRMATION' | 'REVIEW_PAYMENTS';
-export type GroupActionableSession = {
-  roomId: string;
-  action: GroupActionableKind;
-  roomStatus: string;
-  role: 'HOST' | 'MEMBER';
-  startedAtUtcMs: number | null;
-  endedAtUtcMs: number | null;
-  updatedAtUtcMs?: number | null;
-  source: 'LIVE' | 'SAVED';
-};
-export type GroupActionableCursor = { joinedAtUtcMs: number; roomId: string };
-export type GroupActionablePage = { items: GroupActionableSession[]; cursor: GroupActionableCursor | null;
-  hasMore: boolean; cloudError: boolean };
-type ActionableInput = {
-  roomId: string; ownUid: string; roomStatus: string; reconciliation: string | null; role: 'HOST' | 'MEMBER';
-  ownMemberStatus: string; startedAtUtcMs: number | null; endedAtUtcMs: number | null; updatedAtUtcMs?: number | null;
-  bill: PublishedBill | null; billReadFailed: boolean;
-};
-export function deriveGroupActionableSession(input: ActionableInput): Omit<GroupActionableSession, 'source'> | null {
-  if (!['ACTIVE', 'EARLY_EXIT'].includes(input.ownMemberStatus)) return null;
-  if (input.roomStatus === 'ACTIVE') return { roomId: input.roomId, action: 'RESUME_SESSION', roomStatus: input.roomStatus,
-    role: input.role, startedAtUtcMs: input.startedAtUtcMs, endedAtUtcMs: input.endedAtUtcMs, updatedAtUtcMs: input.updatedAtUtcMs };
-  if (input.roomStatus !== 'COMPLETED' || input.reconciliation !== 'FINALIZED') return null;
-  if (input.billReadFailed) return null;
-  if (!input.bill) return { roomId: input.roomId,
-    action: input.role === 'HOST' ? 'SET_UP_BILL' : 'WAITING_FOR_HOST_BILL', roomStatus: input.roomStatus,
-    role: input.role, startedAtUtcMs: input.startedAtUtcMs, endedAtUtcMs: input.endedAtUtcMs, updatedAtUtcMs: input.updatedAtUtcMs };
-  const unpaidShares = input.bill.shares.filter(share => share.paymentStatus !== 'MARKED_AS_PAID');
-  if (input.role === 'HOST') return unpaidShares.length ? { roomId: input.roomId, action: 'REVIEW_PAYMENTS',
-    roomStatus: input.roomStatus, role: input.role, startedAtUtcMs: input.startedAtUtcMs, endedAtUtcMs: input.endedAtUtcMs,
-    updatedAtUtcMs: input.updatedAtUtcMs } : null;
-  const ownShare = input.bill.shares.find(share => share.uid === input.ownUid);
-  return ownShare && ownShare.paymentStatus !== 'MARKED_AS_PAID' ? { roomId: input.roomId,
-    action: 'AWAITING_CONFIRMATION', roomStatus: input.roomStatus, role: input.role,
-    startedAtUtcMs: input.startedAtUtcMs, endedAtUtcMs: input.endedAtUtcMs, updatedAtUtcMs: input.updatedAtUtcMs } : null;
-}
-export function sortGroupActionableSessions(items: GroupActionableSession[]): GroupActionableSession[] {
-  const rank: Record<GroupActionableKind, number> = { RESUME_SESSION: 0, SET_UP_BILL: 1,
-    WAITING_FOR_HOST_BILL: 2, AWAITING_CONFIRMATION: 3, REVIEW_PAYMENTS: 4 };
-  return [...items].sort((a, b) => rank[a.action] - rank[b.action]
-    || (b.updatedAtUtcMs ?? b.endedAtUtcMs ?? b.startedAtUtcMs ?? 0)
-      - (a.updatedAtUtcMs ?? a.endedAtUtcMs ?? a.startedAtUtcMs ?? 0));
-}
-async function readLiveActionableSession(firestore: Firestore, auth: Auth, uid: string, roomId: string): Promise<Omit<GroupActionableSession, 'source'> | null> {
-  const [roomSnapshot, memberSnapshot] = await Promise.all([
-    getDocFromServer(doc(firestore, 'rooms', roomId)), getDocFromServer(doc(firestore, 'rooms', roomId, 'members', uid)),
-  ]);
-  if (!roomSnapshot.exists() || !memberSnapshot.exists()) return null;
-  const room = roomSnapshot.data();
-  const member = memberSnapshot.data();
-  let bill: PublishedBill | null = null;
-  if (room.status === 'COMPLETED' && room.reconciliationStatus === 'FINALIZED') {
-    bill = await createBillRepository({ firestore, auth }).readPublished(roomId);
-  }
-  return deriveGroupActionableSession({ roomId, ownUid: uid, roomStatus: String(room.status),
-    reconciliation: typeof room.reconciliationStatus === 'string' ? room.reconciliationStatus : null,
-    role: member.role === 'HOST' ? 'HOST' : 'MEMBER', ownMemberStatus: String(member.status),
-    startedAtUtcMs: isTimestamp(room.startedAt) ? room.startedAt.toMillis() : null,
-    endedAtUtcMs: isTimestamp(room.endedAt) ? room.endedAt.toMillis() : null,
-    updatedAtUtcMs: isTimestamp(room.updatedAt) ? room.updatedAt.toMillis() : null, bill, billReadFailed: false });
-}
-type SavedActionableCache = { items: GroupActionableSession[]; cursor: GroupActionableCursor | null; hasMore: boolean; checkedAtUtcMs: number };
-function parseActionableCache(raw: string | undefined): SavedActionableCache | null {
-  if (!raw) return null;
-  try {
-    const value = JSON.parse(raw) as SavedActionableCache;
-    if (!Array.isArray(value.items) || value.items.some(item => typeof item.roomId !== 'string'
-      || !['RESUME_SESSION', 'SET_UP_BILL', 'WAITING_FOR_HOST_BILL', 'AWAITING_CONFIRMATION', 'REVIEW_PAYMENTS'].includes(item.action)
-      || !['HOST', 'MEMBER'].includes(item.role) || !['LIVE', 'SAVED'].includes(item.source))) return null;
-    return { ...value, items: value.items.map(item => ({ ...item, source: 'SAVED' as const })) };
-  } catch { return null; }
-}
-type HistoryRow = { summary_json: string; sync_status: 'PENDING' | 'SYNCED' | 'FAILED' };
-function decodeSummary(json: string, uid: string, roomId?: string): GroupLocalSummary | null {
-  try { return readGroupSummary(JSON.parse(json), uid, roomId); } catch { return null; }
-}
-function isTimestamp(value: unknown): value is Timestamp {
-  return typeof value === 'object' && value !== null
-    && typeof (value as { toMillis?: unknown }).toMillis === 'function';
-}
-function isUnavailableRead(error: unknown): boolean {
-  const code = error instanceof Error && 'code' in error ? String(error.code).replace(/^firestore\//, '') : '';
-  return !['permission-denied', 'not-found'].includes(code);
-}
-async function readIndexedRoomSummary(firestore: Firestore, uid: string, roomId: string): Promise<GroupHistoryEntry | null> {
-  const [roomSnapshot, memberSnapshot] = await Promise.all([
-    getDocFromServer(doc(firestore, 'rooms', roomId)),
-    getDocFromServer(doc(firestore, 'rooms', roomId, 'members', uid)),
-  ]);
-  if (!roomSnapshot.exists() || !memberSnapshot.exists()) return null;
-  const room = roomSnapshot.data(); const member = memberSnapshot.data();
-  if (!['ACTIVE', 'EARLY_EXIT'].includes(String(member.status))
-    || !['COMPLETED', 'CANCELLED', 'ABORTED'].includes(String(room.status))
-    || !(room.startedAt instanceof Timestamp) || !(room.endedAt instanceof Timestamp)) return null;
-  const earlyExitAt = member.earlyExitAt instanceof Timestamp ? member.earlyExitAt.toMillis() : null;
-  const completedAtUtcMs = earlyExitAt == null ? room.endedAt.toMillis() : Math.min(room.endedAt.toMillis(), earlyExitAt);
-  const summary = readGroupSummary({
-    version: 1, eventId: roomId, actorUid: uid, roomId,
-    status: earlyExitAt == null ? room.status : 'EARLY_EXIT',
-    startedAtUtcMs: room.startedAt.toMillis(), completedAtUtcMs,
-    liftCount: Number(member.liftCount), violationDurationSeconds: Number(member.violationDurationSeconds),
-    penaltyScore: Number(member.penaltyScore),
-  }, uid, roomId);
-  return summary ? { summary, syncStatus: 'SYNCED', source: 'ROOM' } : null;
-}
-export type GroupHistoryPage = { items: GroupHistoryEntry[]; cursor: GroupHistoryCursor | null; hasMore: boolean; cloudError: boolean };
-export function sameGroupSummary(a: GroupLocalSummary, b: GroupLocalSummary): boolean {
-  return Object.keys(a).filter(key => key !== 'uploadedAt').every(key => a[key as keyof GroupLocalSummary] === b[key as keyof GroupLocalSummary]);
-}
-// Chỉ sửa identity cũ khi server xác nhận EARLY_EXIT hoặc cutoff sớm hơn.
-export function canCorrectGroupSummary(before: GroupLocalSummary, after: GroupLocalSummary): boolean {
-  return ['version', 'eventId', 'actorUid', 'roomId', 'startedAtUtcMs'].every(
-    key => before[key as keyof GroupLocalSummary] === after[key as keyof GroupLocalSummary])
-    && after.completedAtUtcMs <= before.completedAtUtcMs
-    && (after.completedAtUtcMs < before.completedAtUtcMs || (before.status !== 'EARLY_EXIT' && after.status === 'EARLY_EXIT'))
-    && after.liftCount <= before.liftCount && after.violationDurationSeconds <= before.violationDurationSeconds
-    && (after.completedAtUtcMs < before.completedAtUtcMs
-      || (after.liftCount === before.liftCount && after.violationDurationSeconds === before.violationDurationSeconds));
-}
-export function createGroupHistoryRepository(dependencies: {
-  firestore: Firestore; auth: Auth; database?: Promise<SQLite.SQLiteDatabase>;
-  readAuthority?: (uid: string, roomId: string) => Promise<GroupHistoryAuthority>;
-}) {
+/** API chung cho đọc, đồng bộ và theo dõi lịch sử Group. */
+import { getLocalDatabase } from "../local/database";
+import { recoverGroupSummaries } from "./group-summary-repository";
+import type { GroupHistoryEntry } from "./group-history-model";
+import { listenToHistoryPayment } from "./group-history-payment";
+import { createGroupActionableHistory } from "./group-actionable-history";
+import { createGroupHistoryDetailReader } from "./group-history-detail";
+import { createGroupHistoryPageReader } from "./group-history-page";
+import { createGroupHistorySync } from "./group-history-sync";
+import {
+  decodeSummary,
+  type GroupHistoryContext,
+  type GroupHistoryDependencies,
+  type HistoryRow,
+} from "./group-history-support";
+
+export type { GroupHistoryDependencies } from "./group-history-support";
+export type { GroupHistoryDetail, GroupRoomRosterPreview } from "./group-history-detail";
+export type {
+  GroupActionableKind,
+  GroupActionableSession,
+  GroupActionableCursor,
+  GroupActionablePage,
+} from "./group-actionable-history";
+export {
+  GROUP_ACTIONABLE_PAGE_SIZE,
+  deriveGroupActionableSession,
+  sortGroupActionableSessions,
+} from "./group-actionable-history";
+export type { GroupHistoryPage } from "./group-history-page";
+export { canCorrectGroupSummary, sameGroupSummary } from "./group-history-sync";
+
+export function createGroupHistoryRepository(
+  dependencies: GroupHistoryDependencies,
+) {
   const database = () => dependencies.database ?? getLocalDatabase();
   const isActor = (uid: string) => dependencies.auth.currentUser?.uid === uid;
-  let running: { uid: string; task: Promise<void> } | null = null;
-  const repository = {
-    listenPayment(uid: string, roomId: string, onState: (state: HistoryPaymentState) => void): () => void {
-      return listenToHistoryPayment(dependencies, uid, roomId, onState);
-    },
-    async recoverLocal(uid: string): Promise<void> {
-      if (isActor(uid)) await recoverGroupSummaries(await database(), uid);
-    },
-    async syncPending(uid: string, retryFailed = false): Promise<void> {
-      if (!isActor(uid)) return;
-      if (running?.uid === uid) return running.task;
-      const task = (async () => {
-        const db = await database();
-        if (!isActor(uid)) return;
-        await recoverGroupSummaries(db, uid);
-        let afterId = '';
-        for (;;) {
-          if (!isActor(uid)) return;
-          const rows = await db.getAllAsync<{ event_id: string; aggregate_id: string; payload_json: string }>(
-            `SELECT o.event_id, o.aggregate_id, o.payload_json FROM sync_outbox o
-             JOIN group_history h ON h.actor_uid = o.actor_uid AND h.room_id = o.aggregate_id
-             WHERE o.actor_uid = ? AND event_type = 'GROUP_SESSION_LOCAL_SUMMARY'
-               AND (o.sync_status = 'PENDING' OR (? = 1 AND o.sync_status = 'FAILED')
-                 OR (o.sync_status = 'SYNCED' AND h.terminal_confirmed = 0)) AND o.event_id > ?
-             ORDER BY o.event_id LIMIT 20`, uid, retryFailed ? 1 : 0, afterId);
-          if (!rows.length) break;
-          for (const row of rows) {
-            afterId = row.event_id;
-            if (!isActor(uid)) return;
-            try {
-              const authority = await (dependencies.readAuthority
-                ? dependencies.readAuthority(uid, row.aggregate_id)
-                : readGroupHistoryAuthority(dependencies, uid, row.aggregate_id));
-              if (!isActor(uid)) return;
-              await db.withExclusiveTransactionAsync(tx => recordGroupSummary(tx, {
-                roomId: row.aggregate_id, userId: uid, status: authority.status,
-                cutoffUtcMs: authority.cutoffUtcMs, startedAtUtcMs: authority.startedAtUtcMs, terminalConfirmed: authority.terminal,
-              }));
-              const refreshed = await db.getFirstAsync<{ payload_json: string }>(
-                'SELECT payload_json FROM sync_outbox WHERE event_id = ? AND actor_uid = ?', row.event_id, uid);
-              if (!refreshed) continue;
-              row.payload_json = refreshed.payload_json;
-              const summary = decodeSummary(row.payload_json, uid, row.aggregate_id);
-              if (!summary || summary.eventId !== row.event_id) throw new Error('invalid-argument');
-              const ref = doc(dependencies.firestore, 'users', uid, 'groupHistory', summary.roomId);
-              await runTransaction(dependencies.firestore, async tx => {
-                if (!isActor(uid)) throw new Error('account-changed');
-                const saved = await tx.get(ref);
-                if (saved.exists()) {
-                  const previous = readGroupSummary(saved.data(), uid, summary.roomId);
-                  if (!previous) throw new Error('already-exists');
-                  if (!sameGroupSummary(summary, previous)) {
-                    if (!canCorrectGroupSummary(previous, summary)) throw new Error('already-exists');
-                    tx.update(ref, { ...summary, uploadedAt: serverTimestamp() });
-                  }
-                  return;
-                }
-                tx.set(ref, { ...summary, uploadedAt: serverTimestamp() });
-              });
-              await db.withExclusiveTransactionAsync(async tx => {
-                const updated = await tx.runAsync("UPDATE sync_outbox SET sync_status = 'SYNCED', synced_at = ?, last_error_code = NULL WHERE event_id = ? AND actor_uid = ? AND event_type = 'GROUP_SESSION_LOCAL_SUMMARY' AND payload_json = ?",
-                  new Date().toISOString(), row.event_id, uid, row.payload_json);
-                if (!updated.changes) return;
-                await tx.runAsync("UPDATE group_history SET sync_status = 'SYNCED' WHERE actor_uid = ? AND room_id = ?", uid, row.aggregate_id);
-              });
-            } catch (error) {
-              const code = error instanceof Error ? ('code' in error ? String(error.code).replace(/^firestore\//, '') : error.message) : 'unavailable';
-              if (code === 'account-changed' || !isActor(uid)) return;
-              const permanent = ['permission-denied', 'invalid-argument', 'already-exists'].includes(code);
-              await db.withExclusiveTransactionAsync(async tx => {
-                const updated = await tx.runAsync(`UPDATE sync_outbox SET sync_status = ?, attempt_count = attempt_count + 1, last_error_code = ?
-                  WHERE event_id = ? AND actor_uid = ? AND event_type = 'GROUP_SESSION_LOCAL_SUMMARY' AND payload_json = ?`,
-                  permanent ? 'FAILED' : 'PENDING', code, row.event_id, uid, row.payload_json);
-                if (!updated.changes) return;
-                await tx.runAsync('UPDATE group_history SET sync_status = ? WHERE actor_uid = ? AND room_id = ?',
-                  permanent ? 'FAILED' : 'PENDING', uid, row.aggregate_id);
-              });
-            }
-          }
-        }
-      })();
-      running = { uid, task };
-      try { await task; } finally { if (running?.task === task) running = null; }
-    },
-    async readPage(uid: string, options: { cursor: GroupHistoryCursor | null; online: boolean;
-      localPremium: boolean; serverPremium: boolean; nowUtcMs: number }): Promise<GroupHistoryPage> {
-      if (!isActor(uid)) throw new Error('unauthenticated');
-      const db = await database();
-      const before = options.cursor?.completedAtUtcMs ?? Number.MAX_SAFE_INTEGER;
-      const beforeId = options.cursor?.roomId ?? '\uffff';
-      const cutoff = options.nowUtcMs - GROUP_HISTORY_WINDOW_MS;
-      const localRows = await db.getAllAsync<HistoryRow>(
-        `SELECT summary_json, sync_status FROM group_history WHERE actor_uid = ?
-         AND ((? = 1 AND source = 'LOCAL') OR ? = 1 OR completed_at_utc_ms >= ? OR sync_status IN ('PENDING', 'FAILED'))
-         AND (completed_at_utc_ms < ? OR (completed_at_utc_ms = ? AND room_id < ?))
-         ORDER BY completed_at_utc_ms DESC, room_id DESC LIMIT ?`,
-        uid, options.localPremium ? 1 : 0, options.serverPremium ? 1 : 0, cutoff, before, before, beforeId, GROUP_HISTORY_PAGE_SIZE + 1);
-      const local: GroupHistoryEntry[] = localRows.flatMap(row => {
-        const summary = decodeSummary(row.summary_json, uid);
-        return summary ? [{ summary, syncStatus: row.sync_status, source: 'PERSONAL' as const }] : [];
-      });
-      const cachedRoomRows = await db.getAllAsync<{ summary_json: string }>(
-        `SELECT summary_json FROM group_room_history_cache WHERE actor_uid = ?
-         AND (? = 1 OR completed_at_utc_ms >= ?)
-         AND (completed_at_utc_ms < ? OR (completed_at_utc_ms = ? AND room_id < ?))
-         ORDER BY completed_at_utc_ms DESC, room_id DESC LIMIT ?`,
-        uid, options.serverPremium ? 1 : 0, cutoff, before, before, beforeId, GROUP_HISTORY_PAGE_SIZE + 1);
-      const cachedRooms: GroupHistoryEntry[] = cachedRoomRows.flatMap(row => {
-        const summary = decodeSummary(row.summary_json, uid);
-        return summary ? [{ summary, syncStatus: 'SYNCED', source: 'ROOM' as const }] : [];
-      });
-      let cloud: GroupHistoryEntry[] = [];
-      let sharedRooms: GroupHistoryEntry[] = [];
-      let cloudError = false;
-      if (options.online) {
-        try {
-          const constraints = [orderBy('completedAtUtcMs', 'desc'), orderBy(documentId(), 'desc')];
-          const ref = collection(dependencies.firestore, 'users', uid, 'groupHistory');
-          const result = await getDocsFromServer(query(ref, ...constraints,
-            ...(options.cursor ? [startAfter(before, beforeId)] : []), limit(GROUP_HISTORY_PAGE_SIZE + 1)));
-          if (!isActor(uid)) throw new Error('account-changed');
-          cloud = result.docs.flatMap(d => {
-            const summary = readGroupSummary(d.data(), uid, d.id);
-            return summary && (options.serverPremium || summary.completedAtUtcMs >= cutoff)
-              ? [{ summary, syncStatus: 'SYNCED' as const, source: 'PERSONAL' as const }] : [];
-          });
-          await db.withExclusiveTransactionAsync(async tx => {
-            for (const entry of cloud) await tx.runAsync(`INSERT INTO group_history
-              (actor_uid, room_id, completed_at_utc_ms, summary_json, sync_status, source) VALUES (?, ?, ?, ?, 'SYNCED', 'CLOUD')
-              ON CONFLICT(actor_uid, room_id) DO UPDATE SET summary_json=excluded.summary_json, completed_at_utc_ms=excluded.completed_at_utc_ms
-              WHERE group_history.source = 'CLOUD'`, uid, entry.summary.roomId, entry.summary.completedAtUtcMs, JSON.stringify(entry.summary));
-          });
-        } catch { cloudError = true; }
-        try {
-          // Backfill only rooms already known to this device; no cross-room collection query is used.
-          const known = await db.getAllAsync<{ room_id: string; joined_at: string }>(
-            `SELECT m.room_id, m.joined_at FROM room_members m WHERE m.uid = ? AND m.status IN ('ACTIVE', 'EARLY_EXIT')
-             ORDER BY m.joined_at DESC`, uid);
-          for (const item of known) {
-            if (!isActor(uid)) throw new Error('account-changed');
-            if (!options.serverPremium && Date.parse(item.joined_at) < cutoff) continue;
-            try {
-              await runTransaction(dependencies.firestore, async tx => {
-                const indexRef = doc(dependencies.firestore, 'users', uid, 'groupRooms', item.room_id);
-                const memberRef = doc(dependencies.firestore, 'rooms', item.room_id, 'members', uid);
-                const [index, member] = await Promise.all([tx.get(indexRef), tx.get(memberRef)]);
-                if (index.exists() || !member.exists() || !['ACTIVE', 'EARLY_EXIT'].includes(String(member.data().status))) return;
-                const joinedAt = member.data().joinedAt;
-                if (!(joinedAt instanceof Timestamp)) return;
-                tx.set(indexRef, { roomId: item.room_id, joinedAt });
-              });
-            } catch (error) { if (isUnavailableRead(error)) cloudError = true; }
-          }
-          const indexCollection = collection(dependencies.firestore, 'users', uid, 'groupRooms');
-          const indexConstraints: QueryConstraint[] = [orderBy('joinedAt', 'desc')];
-          if (!options.serverPremium) indexConstraints.push(where('joinedAt', '>=', Timestamp.fromMillis(cutoff)));
-          const indexes = await getDocsFromServer(query(indexCollection, ...indexConstraints));
-          const indexData = indexes.docs.filter(index => index.data().roomId === index.id
-            && index.data().joinedAt instanceof Timestamp
-            && (options.serverPremium || index.data().joinedAt.toMillis() >= cutoff));
-          const fetched = await Promise.all(indexData.map(async index => {
-            try {
-              const entry = await readIndexedRoomSummary(dependencies.firestore, uid, index.id);
-              return entry && (options.serverPremium || entry.summary.completedAtUtcMs >= cutoff)
-                && (entry.summary.completedAtUtcMs < before
-                  || (entry.summary.completedAtUtcMs === before && entry.summary.roomId < beforeId)) ? entry : null;
-            } catch (error) {
-              if (isUnavailableRead(error)) cloudError = true;
-              return null;
-            }
-          }));
-          if (!isActor(uid)) throw new Error('account-changed');
-          sharedRooms = fetched.filter((entry): entry is GroupHistoryEntry => entry !== null);
-          await db.withExclusiveTransactionAsync(async tx => {
-            for (const entry of sharedRooms) await tx.runAsync(`INSERT INTO group_room_history_cache
-              (actor_uid, room_id, completed_at_utc_ms, summary_json) VALUES (?, ?, ?, ?)
-              ON CONFLICT(actor_uid, room_id) DO UPDATE SET completed_at_utc_ms=excluded.completed_at_utc_ms,
-                summary_json=excluded.summary_json`, uid, entry.summary.roomId,
-            entry.summary.completedAtUtcMs, JSON.stringify(entry.summary));
-          });
-        } catch (error) {
-          if (!(error instanceof Error) || error.message !== 'account-changed') cloudError = true;
-          else throw error;
-        }
-      }
-      const merged = mergeGroupHistory([...local, ...cachedRooms], [...cloud, ...sharedRooms]);
-      const items = merged.slice(0, GROUP_HISTORY_PAGE_SIZE);
-      return { items, cursor: items.length ? summaryCursor(items[items.length - 1]) : options.cursor,
-        hasMore: merged.length > GROUP_HISTORY_PAGE_SIZE, cloudError };
-    },
-    async readActionablePage(uid: string, options: { online: boolean; cursor: GroupActionableCursor | null }): Promise<GroupActionablePage> {
-      if (!isActor(uid)) throw new Error('unauthenticated');
-      const cacheKey = `group-actionable:${uid}`;
-      const db = await database();
-      const readCache = async () => {
-        try {
-          const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM app_settings WHERE key = ?', cacheKey);
-          return parseActionableCache(row?.value);
-        } catch { return null; }
-      };
-      const cached = await readCache();
-      if (!options.online) return { items: cached?.items ?? [], cursor: cached?.cursor ?? null,
-        hasMore: cached?.hasMore ?? false, cloudError: false };
 
-      let cloudError = false;
-      let indexDocs: { id: string; data(): Record<string, unknown> }[] = [];
-      let hasMore = false;
-      let nextCursor = options.cursor;
-      const checkedRoomIds = new Set<string>();
-      const currentItems = new Map<string, GroupActionableSession>();
-      try {
-        const indexCollection = collection(dependencies.firestore, 'users', uid, 'groupRooms');
-        const constraints: QueryConstraint[] = [orderBy('joinedAt', 'desc'), orderBy(documentId(), 'desc')];
-        if (options.cursor) constraints.push(startAfter(Timestamp.fromMillis(options.cursor.joinedAtUtcMs), options.cursor.roomId));
-        const page = await getDocsFromServer(query(indexCollection, ...constraints, limit(GROUP_ACTIONABLE_PAGE_SIZE + 1)));
-        if (!isActor(uid)) throw new Error('account-changed');
-        hasMore = page.docs.length > GROUP_ACTIONABLE_PAGE_SIZE;
-        const scannedDocs = page.docs.slice(0, GROUP_ACTIONABLE_PAGE_SIZE);
-        indexDocs = scannedDocs.filter(index => {
-          const data = index.data();
-          return data.roomId === index.id && isTimestamp(data.joinedAt);
-        });
-        const last = scannedDocs[scannedDocs.length - 1];
-        const joinedAt = last?.data().joinedAt;
-        nextCursor = isTimestamp(joinedAt) ? { joinedAtUtcMs: joinedAt.toMillis(), roomId: last!.id } : options.cursor;
-
-        const settled = await Promise.all(indexDocs.map(async index => {
-          try {
-            const [roomSnapshot, memberSnapshot] = await Promise.all([
-              getDocFromServer(doc(dependencies.firestore, 'rooms', index.id)),
-              getDocFromServer(doc(dependencies.firestore, 'rooms', index.id, 'members', uid)),
-            ]);
-            if (!isActor(uid)) throw new Error('account-changed');
-            if (!roomSnapshot.exists() || !memberSnapshot.exists()) {
-              checkedRoomIds.add(index.id);
-              return null;
-            }
-            const room = roomSnapshot.data();
-            const member = memberSnapshot.data();
-            if (!['ACTIVE', 'EARLY_EXIT'].includes(String(member.status))) {
-              checkedRoomIds.add(index.id);
-              return null;
-            }
-            let bill: PublishedBill | null = null;
-            let billReadFailed = false;
-            if (room.status === 'COMPLETED' && room.reconciliationStatus === 'FINALIZED') {
-              try { bill = await createBillRepository(dependencies).readPublished(index.id); }
-              catch { billReadFailed = true; cloudError = true; }
-            }
-            if (!billReadFailed) checkedRoomIds.add(index.id);
-            const entry = deriveGroupActionableSession({
-              roomId: index.id, ownUid: uid, roomStatus: String(room.status),
-              reconciliation: typeof room.reconciliationStatus === 'string' ? room.reconciliationStatus : null,
-              role: member.role === 'HOST' ? 'HOST' : 'MEMBER', ownMemberStatus: String(member.status),
-              startedAtUtcMs: isTimestamp(room.startedAt) ? room.startedAt.toMillis() : null,
-              endedAtUtcMs: isTimestamp(room.endedAt) ? room.endedAt.toMillis() : null,
-              updatedAtUtcMs: isTimestamp(room.updatedAt) ? room.updatedAt.toMillis() : null,
-              bill, billReadFailed,
-            });
-            return entry ? { ...entry, source: 'LIVE' as const } : null;
-          } catch (error) {
-            if (error instanceof Error && error.message === 'account-changed') throw error;
-            cloudError = true;
-            return null;
-          }
-        }));
-        for (const item of settled) if (item) currentItems.set(item.roomId, item);
-      } catch (error) {
-        if (error instanceof Error && error.message === 'account-changed') throw error;
-        cloudError = true;
-        hasMore = cached?.hasMore ?? false;
-        nextCursor = options.cursor ?? cached?.cursor ?? null;
-      }
-
-      const merged = new Map<string, GroupActionableSession>(cached?.items.map(item => [item.roomId, item]) ?? []);
-      for (const roomId of checkedRoomIds) merged.delete(roomId);
-      for (const item of currentItems.values()) merged.set(item.roomId, item);
-      const items = sortGroupActionableSessions([...merged.values()]);
-      const snapshot: SavedActionableCache = { items: items.map(item => ({ ...item, source: 'SAVED' })),
-        cursor: nextCursor, hasMore, checkedAtUtcMs: Date.now() };
-      if (isActor(uid)) {
-        try {
-          await db.runAsync('INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
-            cacheKey, JSON.stringify(snapshot));
-        } catch { /* Cached actions are a convenience, never a prerequisite for Group Home. */ }
-      }
-      return { items, cursor: nextCursor, hasMore, cloudError };
-    },
-    async readActionableSession(uid: string, roomId: string): Promise<GroupActionableSession | null> {
-      if (!isActor(uid)) throw new Error('unauthenticated');
-      const entry = await readLiveActionableSession(dependencies.firestore, dependencies.auth, uid, roomId);
-      if (!isActor(uid)) throw new Error('account-changed');
-      return entry ? { ...entry, source: 'LIVE' } : null;
-    },
-    async readEntry(uid: string, roomId: string): Promise<GroupHistoryEntry | null> {
-      if (!isActor(uid)) return null;
-      const db = await database();
-      const row = await db.getFirstAsync<HistoryRow>(
-        'SELECT summary_json, sync_status FROM group_history WHERE actor_uid = ? AND room_id = ?', uid, roomId);
-      const summary = row ? decodeSummary(row.summary_json, uid, roomId) : null;
-      if (summary && row) return { summary, syncStatus: row.sync_status, source: 'PERSONAL' };
-      const shared = await db.getFirstAsync<{ summary_json: string }>(
-        'SELECT summary_json FROM group_room_history_cache WHERE actor_uid = ? AND room_id = ?', uid, roomId);
-      const roomSummary = shared ? decodeSummary(shared.summary_json, uid, roomId) : null;
-      return roomSummary ? { summary: roomSummary, syncStatus: 'SYNCED', source: 'ROOM' } : null;
-    },
-    async readRoomRosterPreview(uid: string, roomId: string, online: boolean): Promise<GroupRoomRosterPreview | null> {
-      if (!isActor(uid)) return null;
-      const rosterCacheKey = `group-roster:${uid}:${roomId}`;
-      if (!online) {
-        try {
-          const saved = await (await database()).getFirstAsync<{ value: string }>(
-            'SELECT value FROM app_settings WHERE key = ?', rosterCacheKey);
-          const preview = saved ? JSON.parse(saved.value) as GroupRoomRosterPreview : null;
-          if (preview && Number.isSafeInteger(preview.totalCount) && Array.isArray(preview.members)
-            && preview.members.length <= 3 && preview.totalCount >= preview.members.length
-            && preview.members.every(member => typeof member.uid === 'string' && typeof member.displayName === 'string'
-              && (member.avatarUri === undefined || typeof member.avatarUri === 'string')
-              && (member.premiumExpiresAtUtcMs === undefined || member.premiumExpiresAtUtcMs === null
-                || typeof member.premiumExpiresAtUtcMs === 'number'))) return preview;
-        } catch { /* Fall back to the saved session detail. */ }
-      }
-      let cachedJson: string | null = null;
-      try {
-        const local = await database();
-        const [personal, shared] = await Promise.all([
-          local.getFirstAsync<{ detail_json: string | null }>(
-            'SELECT detail_json FROM group_history WHERE actor_uid = ? AND room_id = ?', uid, roomId),
-          local.getFirstAsync<{ detail_json: string | null }>(
-            'SELECT detail_json FROM group_room_history_cache WHERE actor_uid = ? AND room_id = ?', uid, roomId),
-        ]);
-        cachedJson = personal?.detail_json ?? shared?.detail_json ?? null;
-      } catch { /* The online roster read can still succeed if the local cache is unavailable. */ }
-      if (cachedJson && !online) {
-        try {
-          const detail = JSON.parse(cachedJson) as GroupHistoryDetail;
-          if (Array.isArray(detail.members) && detail.members.length > 0) {
-            return { totalCount: detail.members.length, members: detail.members.slice(0, 3).map(member => ({
-              uid: member.uid, displayName: member.name,
-              ...(typeof member.avatarUri === 'string' ? { avatarUri: member.avatarUri } : {}),
-              premiumExpiresAtUtcMs: member.premiumExpiresAtUtcMs ?? null,
-            })) };
-          }
-        } catch { /* Ignore malformed offline roster cache. */ }
-      }
-      if (!online) return null;
-      try {
-        const roomRef = doc(dependencies.firestore, 'rooms', roomId);
-        const ownRef = doc(dependencies.firestore, 'rooms', roomId, 'members', uid);
-        const [room, own] = await Promise.all([getDocFromServer(roomRef), getDocFromServer(ownRef)]);
-        if (!isActor(uid) || !room.exists() || !own.exists()
-          || !['ACTIVE', 'EARLY_EXIT'].includes(String(own.data().status))
-          || !['COMPLETED', 'CANCELLED', 'ABORTED'].includes(String(room.data().status))) return null;
-        const roster = await getDocsFromServer(query(
-          collection(dependencies.firestore, 'rooms', roomId, 'members'), orderBy('joinedAt', 'asc'), limit(3)));
-        if (!isActor(uid)) return null;
-        const members = roster.docs.flatMap(member => {
-          const data = member.data();
-          if (!['ACTIVE', 'EARLY_EXIT'].includes(String(data.status))) return [];
-          return [{ uid: member.id, displayName: String(data.displayName ?? 'Member'),
-            ...(typeof data.avatarUri === 'string' && data.avatarUri.trim() ? { avatarUri: data.avatarUri } : {}),
-            premiumExpiresAtUtcMs: readPremiumExpiry(data.premiumExpiresAt) }];
-        });
-        const count = Number(room.data().participantCount);
-        const preview = { totalCount: Number.isSafeInteger(count) && count >= members.length ? count : members.length, members };
-        try {
-          await (await database()).runAsync(
-            'INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
-            rosterCacheKey, JSON.stringify(preview));
-        } catch { /* A failed cache write must not hide a confirmed server roster. */ }
-        return preview;
-      } catch { return null; }
-    },
-    async readDetail(uid: string, roomId: string): Promise<GroupHistoryDetail> {
-      if (!isActor(uid)) throw new Error('unauthenticated');
-      const db = dependencies.firestore;
-      const own = await getDocFromServer(doc(db, 'rooms', roomId, 'members', uid));
-      if (!own.exists() || !['ACTIVE', 'EARLY_EXIT'].includes(own.data().status)) throw new Error('permission-denied');
-      const [room, members] = await Promise.all([
-        getDocFromServer(doc(db, 'rooms', roomId)), getDocsFromServer(collection(db, 'rooms', roomId, 'members')),
-      ]);
-      if (!isActor(uid) || !room.exists()) throw new Error('unavailable');
-      const data = room.data();
-      const excluded = ['ACTIVE', 'COMPLETED'].includes(data.status)
-        ? await getDocsFromServer(query(collection(db, 'rooms', roomId, 'violations'),
-          where('excludedFromFinalScore', '==', true), limit(101))) : null;
-      let bill: PublishedBill | null = null;
-      let billError = false;
-      if (data.calculationVersion === 1) {
-        try { bill = await createBillRepository(dependencies).readPublished(roomId); } catch { billError = true; }
-      }
-      const detail: GroupHistoryDetail = { roomStatus: data.status, reconciliation: data.reconciliationStatus ?? null,
-        finalizationReason: data.finalizationReason ?? null, members: members.docs.map(m => ({ uid: m.id,
-          name: m.data().displayName, status: m.data().status, score: m.data().penaltyScore,
-          ...(typeof m.data().avatarUri === 'string' && m.data().avatarUri.trim() ? { avatarUri: m.data().avatarUri } : {}),
-          premiumExpiresAtUtcMs: readPremiumExpiry(m.data().premiumExpiresAt) })),
-        excludedCount: Math.min(excluded?.size ?? 0, 100),
-        excludedHasMore: (excluded?.size ?? 0) > 100, bill, billError };
-      const local = await database();
-      if (!isActor(uid)) throw new Error('account-changed');
-      await local.runAsync('UPDATE group_history SET detail_json = ? WHERE actor_uid = ? AND room_id = ?', JSON.stringify(detail), uid, roomId);
-      await local.runAsync('UPDATE group_room_history_cache SET detail_json = ? WHERE actor_uid = ? AND room_id = ?', JSON.stringify(detail), uid, roomId);
-      return detail;
-    },
-    async cachedDetail(uid: string, roomId: string): Promise<GroupHistoryDetail | null> {
-      if (!isActor(uid)) return null;
-      const db = await database();
-      const row = await db.getFirstAsync<{ detail_json: string | null }>(
-        'SELECT detail_json FROM group_history WHERE actor_uid = ? AND room_id = ?', uid, roomId);
-      if (row?.detail_json) return JSON.parse(row.detail_json) as GroupHistoryDetail;
-      const shared = await db.getFirstAsync<{ detail_json: string | null }>(
-        'SELECT detail_json FROM group_room_history_cache WHERE actor_uid = ? AND room_id = ?', uid, roomId);
-      return shared?.detail_json ? JSON.parse(shared.detail_json) as GroupHistoryDetail : null;
-    },
+  const context: GroupHistoryContext = {
+    dependencies,
+    database,
+    isActor,
   };
-  return repository;
+
+  // Đọc một lịch sử: ưu tiên PERSONAL, fallback sang ROOM cache.
+  const readEntry = async (
+    uid: string,
+    roomId: string,
+  ): Promise<GroupHistoryEntry | null> => {
+    if (!isActor(uid)) return null;
+
+    const db = await database();
+
+    const personal = await db.getFirstAsync<HistoryRow>(
+      `SELECT summary_json, sync_status
+       FROM group_history
+       WHERE actor_uid = ? AND room_id = ?`,
+      uid,
+      roomId,
+    );
+
+    const summary = personal
+      ? decodeSummary(personal.summary_json, uid, roomId)
+      : null;
+
+    if (summary && personal) {
+      return {
+        summary,
+        syncStatus: personal.sync_status,
+        source: "PERSONAL",
+      };
+    }
+
+    const cached = await db.getFirstAsync<{ summary_json: string }>(
+      `SELECT summary_json
+       FROM group_room_history_cache
+       WHERE actor_uid = ? AND room_id = ?`,
+      uid,
+      roomId,
+    );
+
+    const roomSummary = cached
+      ? decodeSummary(cached.summary_json, uid, roomId)
+      : null;
+
+    return roomSummary
+      ? { summary: roomSummary, syncStatus: "SYNCED", source: "ROOM" }
+      : null;
+  };
+
+  return {
+    // Theo dõi hóa đơn realtime.
+    listenPayment: (
+      uid: string,
+      roomId: string,
+      onState: Parameters<typeof listenToHistoryPayment>[3],
+    ) => listenToHistoryPayment(dependencies, uid, roomId, onState),
+
+    // Khôi phục lịch sử Local.
+    recoverLocal: async (uid: string): Promise<void> => {
+      if (isActor(uid)) {
+        await recoverGroupSummaries(await database(), uid);
+      }
+    },
+
+    // Kết hợp các API chuyên trách.
+    ...createGroupHistorySync(context),
+    ...createGroupHistoryPageReader(context),
+    ...createGroupActionableHistory(context),
+    readEntry,
+    ...createGroupHistoryDetailReader(context),
+  };
 }
-export type GroupHistoryRepository = ReturnType<typeof createGroupHistoryRepository>;
+
+export type GroupHistoryRepository =
+  ReturnType<typeof createGroupHistoryRepository>;
